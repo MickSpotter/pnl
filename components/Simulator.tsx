@@ -54,11 +54,11 @@ const Simulator: React.FC<SimulatorProps> = ({
   const [selectedContractSim, setSelectedContractSim] = useState<string>('TPOG');
   const [tableContractFilter, setTableContractFilter] = useState<string>('TPOG');
   
-  // DRŽIMO STATE ZA SVA 3 PROCENTA
   const [simCompanyTake, setSimCompanyTake] = useState<number>(0);
   const [simMarginTake, setSimMarginTake] = useState<number>(0);
   const [simDispatcherTake, setSimDispatcherTake] = useState<number>(0);
   const [simDispatcherMarginTake, setSimDispatcherMarginTake] = useState<number>(0);
+  const [simCalcType, setSimCalcType] = useState<string>('MCLOO_STYLE');
   
   const availableContracts = useMemo(() => {
     const baseContracts = Array.from(new Set(driverWithEffectiveContracts.map(d => d.contractType))).filter(Boolean) as string[];
@@ -94,11 +94,13 @@ const Simulator: React.FC<SimulatorProps> = ({
         .filter(c => c.contract_type === selectedContractSim)
         .sort((a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
       if (latestConf) {
+        setSimCalcType(latestConf.calculation_type || 'MCLOO_STYLE');
         setSimCompanyTake(Number(((latestConf.mc_gross_percent || 0) * 100).toFixed(2)));
         setSimMarginTake(Number(((latestConf.mc_margin_percent || 0) * 100).toFixed(2)));
         setSimDispatcherTake(Number(((latestConf.dispatcher_gross_percent || 0) * 100).toFixed(2)));
         setSimDispatcherMarginTake(Number((((latestConf as any).dispatcher_margin_percent || 0) * 100).toFixed(2)));
       } else {
+        setSimCalcType('MCLOO_STYLE');
         setSimCompanyTake(0);
         setSimMarginTake(0);
         setSimDispatcherTake(0);
@@ -224,6 +226,11 @@ const Simulator: React.FC<SimulatorProps> = ({
     }
   };
 
+  const handleStringChange = (setter: any, value: string) => {
+    setHasModified(true);
+    setter(value);
+  };
+
   const handleUpdateTier = (setter: any, index: number, field: string, value: string) => {
     setHasModified(true);
     const numValue = value === '' ? 0 : parseFloat(value);
@@ -322,8 +329,9 @@ const Simulator: React.FC<SimulatorProps> = ({
     return records;
   }, [lockedDataRecords, targetDate, activeDrivers]);
 
-  const processedData = useMemo(() => {
-    if (selectedContractSim === 'ALL') return [];
+  const rowLevelData = useMemo(() => {
+    if (selectedContractSim === 'ALL') return activeDrivers.map(d => ({ driver: d, isTarget: false }));
+    
     const currentConfig = [...(configContracts || [])]
       .filter(c => c.contract_type === selectedContractSim)
       .sort((a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
@@ -334,7 +342,8 @@ const Simulator: React.FC<SimulatorProps> = ({
     const oldDispTake = currentConfig ? (currentConfig.dispatcher_gross_percent || 0) * 100 : 0;
     const oldDispMargTake = currentConfig ? ((currentConfig as any).dispatcher_margin_percent || 0) * 100 : 0;
 
-    return activeDrivers.filter(d => {
+    return activeDrivers.map(driver => {
+        let isTarget = driver.contractType === selectedContractSim;
         if (selectedContractSim === 'TPOG' || selectedContractSim === 'TPOG WITH FRANCHISE') {
              const tpogRule = currentConfig;
              const otherContract = selectedContractSim === 'TPOG' ? 'TPOG WITH FRANCHISE' : 'TPOG';
@@ -346,17 +355,18 @@ const Simulator: React.FC<SimulatorProps> = ({
                                   tpogRule.dispatcher_gross_percent === otherRule.dispatcher_gross_percent &&
                                   (tpogRule as any).dispatcher_margin_percent === (otherRule as any).dispatcher_margin_percent;
              if (areRulesSame || !otherRule) {
-                 return d.contractType === 'TPOG' || d.contractType === 'TPOG WITH FRANCHISE';
+                 isTarget = driver.contractType === 'TPOG' || driver.contractType === 'TPOG WITH FRANCHISE';
              }
         }
-        return d.contractType === selectedContractSim;
-    }).map(driver => {
+        
+        if (!isTarget) return { driver, isTarget: false };
+
       const gross = driver.totalGross || driver.grossRevenue || 0;
       const margin = driver.marginAmount || 0;
       const netPay = driver.netPay || 0;
       
       const rawDriverPct = driver.driverPercentage || driver.contract || 0;
-      const driverPct = rawDriverPct > 1 ? rawDriverPct / 100 : rawDriverPct; // Normalizacija u 0.xx
+      const driverPct = rawDriverPct > 1 ? rawDriverPct / 100 : rawDriverPct; 
 
       let totalDiffDollars = 0;
       let activeOldPercent: number | string = 0;
@@ -370,18 +380,28 @@ const Simulator: React.FC<SimulatorProps> = ({
         const newM = hasModified ? simMarginTake : oldMargTake;
         const newD = hasModified ? simDispatcherTake : oldDispTake;
         const newDM = hasModified ? simDispatcherMarginTake : oldDispMargTake;
+        const activeSimCalcType = hasModified ? simCalcType : calcType;
 
-        // Određujemo koja polja formula zaista koristi za prikaz u tabeli
         const needsComp = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_FRANCHISE', 'NEW_FORMULA'].includes(calcType);
         const needsMarg = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_NONF', 'TPOG_FRANCHISE', 'CPM_STYLE', 'POG_STYLE', 'NEW_FORMULA'].includes(calcType);
         const needsDisp = ['TPOG_NONF', 'TPOG_FRANCHISE', 'POG_STYLE', 'NEW_FORMULA'].includes(calcType);
         const needsDispMarg = ['NEW_FORMULA'].includes(calcType);
 
+        const simNeedsComp = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_FRANCHISE', 'NEW_FORMULA'].includes(activeSimCalcType);
+        const simNeedsMarg = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_NONF', 'TPOG_FRANCHISE', 'CPM_STYLE', 'POG_STYLE', 'NEW_FORMULA'].includes(activeSimCalcType);
+        const simNeedsDisp = ['TPOG_NONF', 'TPOG_FRANCHISE', 'POG_STYLE', 'NEW_FORMULA'].includes(activeSimCalcType);
+        const simNeedsDispMarg = ['NEW_FORMULA'].includes(activeSimCalcType);
+
         let oldStr = []; let newStr = [];
-        if (needsComp) { oldStr.push(`${Number(oldCompTake).toFixed(1)}%`); newStr.push(`${Number(newC).toFixed(1)}%`); }
-        if (needsMarg) { oldStr.push(`${Number(oldMargTake).toFixed(1)}%`); newStr.push(`${Number(newM).toFixed(1)}%`); }
-        if (needsDisp) { oldStr.push(`${Number(oldDispTake).toFixed(1)}%`); newStr.push(`${Number(newD).toFixed(1)}%`); }
-        if (needsDispMarg) { oldStr.push(`${Number(oldDispMargTake).toFixed(1)}%`); newStr.push(`${Number(newDM).toFixed(1)}%`); }
+        if (needsComp) { oldStr.push(`${Number(oldCompTake).toFixed(1)}%`); }
+        if (needsMarg) { oldStr.push(`${Number(oldMargTake).toFixed(1)}%`); }
+        if (needsDisp) { oldStr.push(`${Number(oldDispTake).toFixed(1)}%`); }
+        if (needsDispMarg) { oldStr.push(`${Number(oldDispMargTake).toFixed(1)}%`); }
+
+        if (simNeedsComp) { newStr.push(`${Number(newC).toFixed(1)}%`); }
+        if (simNeedsMarg) { newStr.push(`${Number(newM).toFixed(1)}%`); }
+        if (simNeedsDisp) { newStr.push(`${Number(newD).toFixed(1)}%`); }
+        if (simNeedsDispMarg) { newStr.push(`${Number(newDM).toFixed(1)}%`); }
 
         activeOldPercent = oldStr.length > 0 ? oldStr.join(' / ') : 'N/A';
         activeNewPercent = newStr.length > 0 ? newStr.join(' / ') : 'N/A';
@@ -406,17 +426,17 @@ const Simulator: React.FC<SimulatorProps> = ({
         };
 
         activeOldDollars = calculateFormula(calcType, gross, margin, netPay, driverPct, oldCompTake, oldMargTake, oldDispTake, oldDispMargTake);
-        activeNewDollars = calculateFormula(calcType, gross, margin, netPay, driverPct, newC, newM, newD, newDM);
+        activeNewDollars = calculateFormula(activeSimCalcType, gross, margin, netPay, driverPct, newC, newM, newD, newDM);
         
         activePnlImpact = activeNewDollars - activeOldDollars;
         totalDiffDollars = -activePnlImpact;
         
       } else if (selectedContractSim === 'TPOG') {
         const record = targetDateRecords.find(r => (r.json?.name || r.driver_name) === driver.name);
-        if (!record) return null;
+        if (!record) return { driver, isTarget: false };
         const json = record.json;
         const settings = json.lockedSettings;
-        if (!settings) return null;
+        if (!settings) return { driver, isTarget: false };
         const milesWeek = Number(json.milesWeek) || Number(json.distanceSource === 'milesWeek' ? json.milesWeek : json.distance) || Number(json.distance) || Number(json.metrics?.milesWeek) || Number(json.metrics?.distance) || 0;
         const weeksOut = Number(json.weeksOut) || Number(json.metrics?.weeksOut) || 0;
         const safetyScore = Number(json.safetyScore) || Number(json.metrics?.safetyScore) || 0;
@@ -558,46 +578,61 @@ const Simulator: React.FC<SimulatorProps> = ({
         else if (activeSimulator === 'grossTarget') { activeOldPercent = oldG; activeNewPercent = hasModified ? newG : oldG; }
         else if (activeSimulator === 'tenure') { activeOldPercent = oldT; activeNewPercent = hasModified ? newT : oldT; }
         else if (activeSimulator === 'fuel') { activeOldPercent = oldF; activeNewPercent = hasModified ? newF : oldF; }
-        activeOldDollars = gross * (activeOldPercent / 100);
-        activeNewDollars = gross * (activeNewPercent / 100);
+        activeOldDollars = gross * (Number(activeOldPercent) / 100);
+        activeNewDollars = gross * (Number(activeNewPercent) / 100);
         activePnlImpact = activeOldDollars - activeNewDollars;
       }
       const currentRevenue = driver.companyPay || 0;
       const potentialRevenue = currentRevenue + activePnlImpact;
-      return { driverName: driver.name, currentRevenue, potentialRevenue, totalDiffDollars, activeOldPercent, activeNewPercent, activeOldDollars, activeNewDollars, activePnlImpact, hasImpact: Math.abs(activeOldDollars - activeNewDollars) > 0.001 };
-    }).filter(Boolean) as any[];
-  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, configContracts]);
+      return { 
+          driver, 
+          isTarget: true, 
+          driverName: driver.name, 
+          currentRevenue, 
+          potentialRevenue, 
+          totalDiffDollars, 
+          activeOldPercent, 
+          activeNewPercent, 
+          activeOldDollars, 
+          activeNewDollars, 
+          activePnlImpact, 
+          hasImpact: Math.abs(activeOldDollars - activeNewDollars) > 0.001 
+      };
+    });
+  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, configContracts]);
+
+  const processedData = useMemo(() => {
+    const rawData = rowLevelData.filter(d => d.isTarget);
+    const aggregated = new Map<string, any>();
+    rawData.forEach(row => {
+        if (aggregated.has(row.driverName)) {
+            const existing = aggregated.get(row.driverName);
+            existing.currentRevenue += row.currentRevenue;
+            existing.potentialRevenue += row.potentialRevenue;
+            existing.totalDiffDollars += row.totalDiffDollars;
+            existing.activeOldDollars += row.activeOldDollars;
+            existing.activeNewDollars += row.activeNewDollars;
+            existing.activePnlImpact += row.activePnlImpact;
+            existing.hasImpact = existing.hasImpact || row.hasImpact;
+            if (row.activeOldPercent !== 'N/A' && row.activeOldPercent !== 0) existing.activeOldPercent = row.activeOldPercent;
+            if (row.activeNewPercent !== 'N/A' && row.activeNewPercent !== 0) existing.activeNewPercent = row.activeNewPercent;
+        } else {
+            aggregated.set(row.driverName, { ...row });
+        }
+    });
+    return Array.from(aggregated.values());
+  }, [rowLevelData]);
 
   const simulatedDrivers = useMemo(() => {
-    const applied = new Set();
-    return activeDrivers.map(driver => {
-      let isTarget = driver.contractType === selectedContractSim;
-      if (selectedContractSim === 'TPOG' && driver.contractType === 'TPOG WITH FRANCHISE') {
-         const tpogRule = [...(configContracts || [])].filter(c => c.contract_type === 'TPOG').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-         const franRule = [...(configContracts || [])].filter(c => c.contract_type === 'TPOG WITH FRANCHISE').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-         const areRulesSame = tpogRule && franRule && 
-                              tpogRule.calculation_type === franRule.calculation_type &&
-                              tpogRule.mc_gross_percent === franRule.mc_gross_percent &&
-                              tpogRule.mc_margin_percent === franRule.mc_margin_percent &&
-                              tpogRule.dispatcher_gross_percent === franRule.dispatcher_gross_percent &&
-                              (tpogRule as any).dispatcher_margin_percent === (franRule as any).dispatcher_margin_percent;
-         if (areRulesSame || !franRule) isTarget = true;
-      }
-
-      if (!isTarget) return driver;
-
-      const p = processedData.find(d => d.driverName === driver.name);
-      if (p && !applied.has(driver.name)) {
-        applied.add(driver.name);
-        return {
-          ...driver,
-          netPay: driver.netPay + p.totalDiffDollars,
-          companyPay: driver.companyPay - p.totalDiffDollars
-        };
-      }
-      return driver;
+    return rowLevelData.map(d => {
+      if (!d.isTarget) return d.driver;
+      return {
+        ...d.driver,
+        netPay: d.driver.netPay + d.totalDiffDollars,
+        companyPay: d.driver.companyPay - d.totalDiffDollars
+      };
     });
-  }, [activeDrivers, processedData, selectedContractSim, configContracts]);
+  }, [rowLevelData]);
 
   const totalModuleImpact = useMemo(() => processedData.reduce((sum, d) => sum + d.activePnlImpact, 0), [processedData]);
 
@@ -743,11 +778,12 @@ const Simulator: React.FC<SimulatorProps> = ({
             {activeSimulator === 'revenueSplits' && (() => {
                 const currentRules = (configContracts || []).filter(c => c.contract_type === selectedContractSim).sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime());
                 const calcType = currentRules[0]?.calculation_type || 'MCLOO_STYLE';
+                const activeSimCalcType = hasModified ? simCalcType : calcType;
                 
-                const needsComp = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_FRANCHISE', 'NEW_FORMULA'].includes(calcType);
-                const needsMarg = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_NONF', 'TPOG_FRANCHISE', 'CPM_STYLE', 'POG_STYLE', 'NEW_FORMULA'].includes(calcType);
-                const needsDisp = ['TPOG_NONF', 'TPOG_FRANCHISE', 'POG_STYLE', 'NEW_FORMULA'].includes(calcType);
-                const needsDispMarg = ['NEW_FORMULA'].includes(calcType);
+                const needsComp = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_FRANCHISE', 'NEW_FORMULA'].includes(activeSimCalcType);
+                const needsMarg = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_NONF', 'TPOG_FRANCHISE', 'CPM_STYLE', 'POG_STYLE', 'NEW_FORMULA'].includes(activeSimCalcType);
+                const needsDisp = ['TPOG_NONF', 'TPOG_FRANCHISE', 'POG_STYLE', 'NEW_FORMULA'].includes(activeSimCalcType);
+                const needsDispMarg = ['NEW_FORMULA'].includes(activeSimCalcType);
 
                 return (
                   <div className="bg-zinc-950 border border-zinc-800 rounded p-3 space-y-2">
@@ -760,10 +796,24 @@ const Simulator: React.FC<SimulatorProps> = ({
                         </div>
                       </div>
                     </h4>
+
+                    <div className="flex items-center gap-4 pt-1">
+                      <label className="text-xs text-zinc-400 flex-1">Formula</label>
+                      <select value={activeSimCalcType} onChange={e => handleStringChange(setSimCalcType, e.target.value)} className="w-max max-w-[150px] bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500">
+                        <option value="MCLOO_STYLE">MCLOO Style</option>
+                        <option value="OO_NONF">OO Style</option>
+                        <option value="OO_FRANCHISE">OO With Franchise</option>
+                        <option value="TPOG_NONF">Classic TPOG</option>
+                        <option value="TPOG_FRANCHISE">TPOG With Franchise Formula</option>
+                        <option value="NEW_FORMULA">New TPOG Formula</option>
+                        <option value="CPM_STYLE">CPM Style</option>
+                        <option value="POG_STYLE">POG Style</option>
+                      </select>
+                    </div>
                     
                     {needsComp && (
                       <div className="flex items-center gap-4 pt-1">
-                        <label className="text-xs text-zinc-400 flex-1">{calcType === 'TPOG_FRANCHISE' ? 'Company Take %' : 'Company Gross %'}</label>
+                        <label className="text-xs text-zinc-400 flex-1">{activeSimCalcType === 'TPOG_FRANCHISE' ? 'Company Take %' : 'Company Gross %'}</label>
                         <input type="number" step="0.1" value={simCompanyTake} onChange={e => handleChange(setSimCompanyTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
                       </div>
                     )}

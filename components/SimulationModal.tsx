@@ -385,7 +385,7 @@ const fixedExpenseNames = Array.from(new Set([
         </div>
 
         <div className="flex px-6 pt-2 border-b border-zinc-800 gap-2 bg-zinc-950 overflow-x-auto flex-shrink-0">
-            <button onClick={() => setActiveTab('fixed')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fixed' ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Fixed Expenses</button>
+            <button onClick={() => setActiveTab('fixed')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fixed' ? 'border-blue-500 text-blue-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Fixed Expenses</button>
             <button onClick={() => setActiveTab('contracts')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'contracts' ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Contract Rules</button>
         </div>
 
@@ -609,9 +609,9 @@ const fixedExpenseNames = Array.from(new Set([
                                  return (
                                     <React.Fragment key={exp.name}>
                                        <tr onClick={() => setSelectedExpenseName(isExpanded ? '' : exp.name)} className="cursor-pointer hover:bg-zinc-800/30 transition-colors group">
-                                          <td className="p-3 text-sm font-bold text-emerald-500 flex items-center gap-2">
+                                          <td className={`p-3 text-sm font-bold flex items-center gap-2 ${['Plates', 'Factoring'].includes(exp.name) ? 'text-blue-400' : 'text-emerald-500'}`}>
                                              <ChevronDown size={14} className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`} />
-                                             <span className={['Plates', 'Factoring'].includes(exp.name) ? 'text-blue-400' : ''}>{exp.name}</span>
+                                             <span>{exp.name}</span>
                                           </td>
                                           </tr>
                                         {isExpanded && (
@@ -665,16 +665,16 @@ const fixedExpenseNames = Array.from(new Set([
                                                                {activeColumns.includes('amount_before') && (
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7">
-                                                                        {expObj.unit !== '%' && <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">$</span>}
-                                                                        <input type="number" value={expObj.amount_before === 0 ? '' : expObj.amount_before} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_before', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${expObj.unit !== '%' ? 'pl-5 pr-2' : 'px-2'}`} />
+                                                                        <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
+                                                                        <input type="number" value={expObj.amount_before === 0 ? '' : expObj.amount_before} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_before', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
                                                                {activeColumns.includes('amount_after') && (
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7">
-                                                                        {expObj.unit !== '%' && <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">$</span>}
-                                                                        <input type="number" value={expObj.amount_after === 0 ? '' : expObj.amount_after} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_after', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${expObj.unit !== '%' ? 'pl-5 pr-2' : 'px-2'}`} />
+                                                                        <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
+                                                                        <input type="number" value={expObj.amount_after === 0 ? '' : expObj.amount_after} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_after', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
@@ -682,11 +682,12 @@ const fixedExpenseNames = Array.from(new Set([
                                                                {activeColumns.includes('amount') && (
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7 w-32">
-                                                                        {expObj.unit !== '%' && <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">$</span>}
-                                                                        <input type="number" value={expObj.amount === 0 ? '' : expObj.amount} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${expObj.unit !== '%' ? 'pl-5 pr-2' : 'px-2'}`} />
+                                                                        <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
+                                                                        <input type="number" value={expObj.amount === 0 ? '' : expObj.amount} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
+                                                               
                                                                {activeColumns.includes('unit') && (
                                                                   <td className="py-1.5 px-2">
                                                                      {exp.name === 'Factoring' || expObj.unit === '%' ? (
@@ -841,7 +842,11 @@ const fixedExpenseNames = Array.from(new Set([
                                                              </tr>
                                                           </thead>
                                                          <tbody className="divide-y divide-zinc-800/30">
-                                                     {exceptionRules.filter(e => e.companyId !== 'ALL' && (e as any).is_extension !== true).map(cRule => (
+                                                     {exceptionRules.filter(e => e.companyId !== 'ALL' && !uniqueDates.some(ds => {
+                                                         const dBase = new Date(ds);
+                                                         const vfStr = new Date(dBase.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+                                                         return e.valid_from === vfStr;
+                                                     })).map(cRule => (
                                                           <React.Fragment key={`standalone_${cRule.id}`}>
                                                               <tr className="bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
                                                                   <td className="py-1.5 px-3">
@@ -852,10 +857,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   </td>
                                                                   <td className="py-1.5 px-3 flex items-center gap-2">
                                                                      <select value={cRule.companyId} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)} className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7">
-                                                                        <option value="ALL">GLOBAL (ALL)</option>
-                                                                        <option value="" disabled>Select Company</option>
-                                                                        {companies.map(c => <option key={c} value={c}>{c}</option>)}
-                                                                     </select>
+                                                                     <option value="" disabled>Select Company</option>
+                                                                     {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                  </select>
                                                                   </td>
                                                                  <td className="py-1.5 px-3">
                                                                        <div className="flex flex-col gap-2">
@@ -1002,7 +1006,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                         const vToStr = new Date(dBase.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                                                         
                                                         const cRules = exceptionRules.filter(e => {
-                                                            return (e as any).is_extension === true && e.valid_from === vFromStr;
+                                                            return e.companyId !== 'ALL' && e.valid_from === vFromStr;
                                                         });
 
                                                         if (!gRule && cRules.length === 0) return null;
@@ -1220,13 +1224,13 @@ const fixedExpenseNames = Array.from(new Set([
                                                                          <td className="py-1.5 px-3 flex items-center gap-2">
                                                                                                     <CornerDownRight size={14} className="text-amber-500/50 flex-shrink-0" />
                                                                                                     <select
-                                                                                                       value={cRule.companyId}
-                                                                                                       onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)}
-                                                                                                       className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7"
-                                                                                                    >
-                                                                                                       <option value="" disabled>Select Company</option>
-                                                                                                       {companies.filter(c => c !== 'UNRECONCILED' && c !== 'Unassigned').map(c => <option key={c} value={c}>{c}</option>)}
-                                                                                                    </select>
+                                                                          value={cRule.companyId}
+                                                                          onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)}
+                                                                          className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7"
+                                                                        >
+                                                                           <option value="" disabled>Select Company</option>
+                                                                           {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                        </select>
                                                                                                  </td>
                                                                          <td className="py-1.5 px-3">
                                                                                     <div className="flex flex-col gap-2">

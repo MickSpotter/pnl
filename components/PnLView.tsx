@@ -77,7 +77,7 @@ const MasterTable: React.FC<{
   chartData?: any[],
   isAverageView?: boolean
 }> = ({ companyMetrics, drivers, calculateMetrics, totalActiveCount, selectedDate, groupBy, chartData = [], isAverageView = false }) => {
-  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'netIncome', direction: 'desc' });
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'name', direction: 'asc' });
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'desc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'desc') {
@@ -2394,7 +2394,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                                 {breakdown.map((b: any, i: number) => (
                                     <div key={i} className="flex justify-between gap-4">
                                         <span className="text-zinc-400">{b.company}</span>
-                                        <span className="text-zinc-200 font-bold">{formatCurrency(b.perUnit)}</span>
+                                        <span className="text-zinc-200 font-bold">-{formatCurrency(Math.abs(b.perUnit))}</span>
                                     </div>
                                 ))}
                             </div>
@@ -2410,15 +2410,101 @@ const PnLView: React.FC<PnLViewProps> = ({
                                 {breakdown.map((b: any, i: number) => (
                                     <div key={i} className="flex justify-between gap-4">
                                         <span className="text-zinc-400">{b.company}</span>
-                                        <span className="text-zinc-200 font-bold">{formatCurrency(b.literal)}</span>
+                                        <span className="text-zinc-200 font-bold">-{formatCurrency(Math.abs(b.literal))}</span>
                                     </div>
                                 ))}
                             </div>
                         );
                     };
 
-                    const liabAutoData = getDetailedExpenseTotal('Liability Insurance (Auto)', 'Liability Insurance (Global)');
-                    const liabAutoPU = getDetailedExpensePerUnit('Liability Insurance (Auto)');
+
+                    const getLiabilityAutoBreakdown = () => {
+                         const puBreakdown: { company: string, perUnit: number }[] = [];
+                         const totalBreakdown: { company: string, literal: number, frequency: string, weekly: number }[] = [];
+                         let sumPerUnit = 0;
+                         let totalWeekly = 0;
+                         let count = 0;
+
+                         uniqueCompsInWeek.forEach(compId => {
+                             const compDrivers = weekAllDrivers.filter(d => d.companyId === compId);
+                             if (compDrivers.length === 0) return;
+                             
+                             let totalCompanyLiability = 0;
+                             let totalCompNT = 0;
+                             
+                             let amount: number | null = null;
+                             if (specCosts && Array.isArray(specCosts)) {
+                                 const compRule = specCosts.find((el: any) =>
+                                     (el.company_id || '').replace(/\s+/g, '').toLowerCase() === (compId || '').replace(/\s+/g, '').toLowerCase() &&
+                                     (el.expense_name || '').toLowerCase().includes('liability insurance (auto)')
+                                 );
+                                 if (compRule && compRule.amount !== undefined && compRule.amount !== null) {
+                                     amount = Math.abs(Number(compRule.amount));
+                                 }
+                             }
+                             if (amount === null && fcSidebar['liability_insurance_custom'] !== undefined && fcSidebar['liability_insurance_custom'] !== null && fcSidebar['liability_insurance_custom'] !== '') {
+                                 amount = Math.abs(Number(fcSidebar['liability_insurance_custom']));
+                             }
+                             if (amount === null && fcSidebar['liability_insurance'] !== undefined && fcSidebar['liability_insurance'] !== null && fcSidebar['liability_insurance'] !== '') {
+                                 amount = Math.abs(Number(fcSidebar['liability_insurance']));
+                             }
+                             const baseLiabilityAuto = amount || 0;
+                             
+                             const currTime = companyMetrics.currentPayDate ? new Date(companyMetrics.currentPayDate).getTime() : Date.now();
+                             
+                             compDrivers.forEach(d => {
+                                 const effNT = d.effectiveNonTeams || 0;
+                                 if (effNT <= 0) return;
+                                 
+                                 totalCompNT += effNT;
+                                 let sharedLiabilityValue = 0;
+                                 
+                                 if (d.contractType === 'MCLOO') {
+                                     const isValidVal = (val: any) => val !== undefined && val !== null && String(val).trim() !== '';
+
+                                     let matchedExp = fixedExpenses.find(e => 
+                                         (e.companyId || '').replace(/\s+/g, '').toLowerCase() === (d.companyId || '').replace(/\s+/g, '').toLowerCase() && 
+                                         (isValidVal((e as any).shared_liability) || isValidVal((e as any).shared_insurance)) &&
+                                         (!e.valid_from || new Date(e.valid_from).getTime() <= currTime) &&
+                                         (!e.valid_to || new Date(e.valid_to).getTime() >= currTime)
+                                     );
+                                     
+                                     if (!matchedExp) {
+                                         matchedExp = fixedExpenses.find(e => 
+                                             e.companyId === 'ALL' && 
+                                             (isValidVal((e as any).shared_liability) || isValidVal((e as any).shared_insurance)) &&
+                                             (!e.valid_from || new Date(e.valid_from).getTime() <= currTime) &&
+                                             (!e.valid_to || new Date(e.valid_to).getTime() >= currTime)
+                                         );
+                                     }
+                                     if (matchedExp) {
+                                         sharedLiabilityValue = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
+                                     }
+                                 }
+                                 totalCompanyLiability += (baseLiabilityAuto - sharedLiabilityValue) * effNT;
+                             });
+                             
+                             if (totalCompNT > 0) {
+                                 const effPerUnit = totalCompanyLiability / totalCompNT;
+                                 puBreakdown.push({ company: compId, perUnit: effPerUnit });
+                                 totalBreakdown.push({ company: compId, literal: totalCompanyLiability * 52, frequency: 'Weekly', weekly: totalCompanyLiability });
+                                 sumPerUnit += effPerUnit;
+                                 totalWeekly += totalCompanyLiability;
+                                 count++;
+                             }
+                         });
+                         
+                         return {
+                             averagePerUnit: count > 0 ? sumPerUnit / count : 0,
+                             totalWeekly,
+                             puBreakdown,
+                             totalBreakdown
+                         };
+                    };
+
+                    const liabAutoStats = getLiabilityAutoBreakdown();
+                    const liabAutoData = { weeklySum: liabAutoStats.totalWeekly, breakdown: liabAutoStats.totalBreakdown };
+                    const liabAutoPU = { averagePerUnit: liabAutoStats.averagePerUnit, breakdown: liabAutoStats.puBreakdown };
                     
                     const liabGenData = getDetailedExpenseTotal('Liability Insurance (General)');
                     const liabGenPU = getDetailedExpensePerUnit('Liability Insurance (General)');
@@ -2430,7 +2516,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                     const pdPU = getDetailedExpensePerUnit('Physical Damage');
 
                     const finalLiabAutoPerUnit = liabAutoPU.averagePerUnit > 0 ? liabAutoPU.averagePerUnit : getSidebarVal('liability_insurance', 'liability_insurance_custom');
-                    const finalLiabAutoTotal = liabAutoData.weeklySum > 0 ? liabAutoData.weeklySum : (finalLiabAutoPerUnit * globalNT);
+                    const finalLiabAutoTotal = liabAutoData.weeklySum > 0 ? liabAutoData.weeklySum * 52 : (finalLiabAutoPerUnit * globalNT * 52);
 
                     const finalLiabGenPerUnit = liabGenPU.averagePerUnit;
                     const finalLiabGenTotal = liabGenData.weeklySum;
@@ -2446,8 +2532,8 @@ const PnLView: React.FC<PnLViewProps> = ({
 
                     const insTotal = finalLiabAutoTotal + finalLiabGenTotal + finalCargoTotal + finalPdTruckTotal + finalPdTrailerTotal;
 
-                    const liabAutoPUTooltip = buildPerUnitTooltip('Liability Insurance (Auto)', liabAutoPU.breakdown);
-                    const liabAutoTotalTooltip = buildTotalTooltip('Liability Insurance (Auto)', liabAutoData.breakdown);
+                    const liabAutoPUTooltip = buildPerUnitTooltip('Liability Ins. (Auto) *Inc. MCLOO', liabAutoPU.breakdown);
+                    const liabAutoTotalTooltip = buildTotalTooltip('Liability Ins. (Auto) *Inc. MCLOO', liabAutoData.breakdown);
 
                     const liabGenPUTooltip = buildPerUnitTooltip('Liability Insurance (General)', liabGenPU.breakdown);
                     const liabGenTotalTooltip = buildTotalTooltip('Liability Insurance (General)', liabGenData.breakdown);
