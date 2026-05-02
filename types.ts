@@ -98,6 +98,7 @@ export interface DriverPerformance {
   netPay: number; 
   dispatcherCommission: number; 
   tpogPercentage: number; 
+  contract_calc?: number;
   calculatedFixedCost?: number;
   fixed_costs?: number;
   

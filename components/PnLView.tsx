@@ -4,7 +4,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { DriverPerformance, DriverStatus, SimulationConfig, ExpenseItem, FinImportRecord } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../utils';
-import { Sliders, LayoutList, PieChart, DollarSign, TrendingUp, BarChart3, LineChart, Maximize2, X, History, Filter, Info, ChevronDown, Check, LayoutDashboard, Activity, Truck, Container } from 'lucide-react';
+import { Sliders, LayoutList, PieChart, DollarSign, TrendingUp, BarChart3, LineChart, Maximize2, X, History, Filter, Info, ChevronDown, Check, LayoutDashboard, Activity, Truck, Container, AlertTriangle } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import SimulationModal from './SimulationModal';
 import HistoricalChart, { ChartSeries } from './HistoricalChart';
@@ -489,23 +489,59 @@ const MasterTable: React.FC<{
           const drvRecords = groupedDrivers.get(d.name || 'Unassigned') || [];
           const metrics = getAggregatedMetrics([d]);
           const w4 = get4wMetrics(d.name);
-          const isSwap = drvRecords.length > 1;
+          
+          const validRecordsForSwap = drvRecords.filter(r => r.companyId !== 'UNRECONCILED' && (r.effectiveDrivers || 0) > 0);
+          let isSwap = validRecordsForSwap.length > 1;
+          if (isSwap) {
+              const uniqueContractsInSwap = new Set(validRecordsForSwap.map(r => {
+                  let ct = r.contractType;
+                  if (ct === 'TPOG WITH FRANCHISE') ct = 'TPOG';
+                  if (ct === 'OO WITH FRANCHISE') ct = 'OO';
+                  return ct;
+              }));
+              const uniqueCompaniesInSwap = new Set(validRecordsForSwap.map(r => r.companyId));
+              if (uniqueContractsInSwap.size === 1 && uniqueCompaniesInSwap.size === 1) {
+                  isSwap = false;
+              }
+          }
+
+          const isStub = metrics.effCount === 0 && (Math.abs(metrics.totalPOCov) > 0 || Math.abs(metrics.totalPO) > 0 || Math.abs(metrics.tolls) > 0);
+          const isUnreconciled = d.companyId === 'UNRECONCILED' || isStub;
+          
+          let unrecReason = "Company missing or unmapped";
+          if (isStub) {
+              const hasPo = Math.abs(metrics.totalPOCov) > 0 || Math.abs(metrics.totalPO) > 0;
+              const hasTolls = Math.abs(metrics.tolls) > 0;
+              if (hasPo && hasTolls) unrecReason = "Artificial stub for PO and tolls from previous contract";
+              else if (hasPo) unrecReason = "Artificial stub for PO cost from previous contract";
+              else if (hasTolls) unrecReason = "Artificial stub for tolls from previous contract";
+          } else if (isUnreconciled) {
+              unrecReason = "Company missing or unmapped";
+          }
+
             return (
               <tr key={`${d.id}_${idx}`} className="group hover:bg-zinc-800/20 transition-colors">
                 <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 group-hover:z-[100] bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">
                   <div className="flex items-center gap-1.5">
                     <span>{displayLabel}</span>
-                    {isSwap && (
+                    {isUnreconciled ? (
+                      <div className="group/unrec relative flex items-center cursor-help">
+                        <AlertTriangle size={12} className="text-yellow-500" />
+                        <div className="absolute hidden group-hover/unrec:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-2 rounded-lg shadow-2xl text-[10px] whitespace-nowrap pointer-events-none top-0 left-full ml-2">
+                          <span className="font-bold text-yellow-500">{unrecReason}</span>
+                        </div>
+                      </div>
+                    ) : isSwap ? (
                       <div className="group/swap relative flex items-center cursor-help">
                         <Info size={12} className="text-blue-400" />
                         <div className="absolute hidden group-hover/swap:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-2 rounded-lg shadow-2xl text-[10px] whitespace-nowrap pointer-events-none top-0 left-full ml-2">
                           <span className="font-bold text-blue-400">SWAP:</span> {d.companyId || 'Unknown'} ({d.contractType || 'Unknown'})
                         </div>
                       </div>
-                    )}
+                    ) : null}
                   </div>
                 </td>
-                <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[100px]">{d.companyId || '-'}</td>
+                <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[100px]">{d.companyId === 'UNRECONCILED' || isStub ? '-' : (d.companyId || '-')}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.teamId || '-'}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.franchiseId || '-'}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.contractType || '-'}</td>

@@ -256,6 +256,7 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
             name: row.driver_name,
             companyId: row.company_name || 'UNRECONCILED',
             contractType: row.contract_type || 'Unassigned',
+            contract_calc: row.contract_calc,
             franchiseId: row.franchise_name,
             dispatcherId: row.stub_dispatcher,
             teamId: row.stub_team,
