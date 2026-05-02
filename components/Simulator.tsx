@@ -84,11 +84,11 @@ const Simulator: React.FC<SimulatorProps> = ({
                            ooRule.dispatcher_gross_percent === ooFranRule.dispatcher_gross_percent &&
                            (ooRule as any).dispatcher_margin_percent === (ooFranRule as any).dispatcher_margin_percent;
       if (areOoRulesSame) {
-        baseContracts = baseContracts.filter(c => c !== 'OO WITH FRANCHISE');
-      }
-    }
-    return baseContracts.sort();
-  }, [driverWithEffectiveContracts, configContracts]);
+        baseContracts = baseContracts.filter(c => c !== 'OO WITH FRANCHISE');
+      }
+    }
+    return baseContracts.filter(c => c !== 'TCPML' && c !== 'CMPL' && c !== 'MCLPOO').sort();
+  }, [driverWithEffectiveContracts, configContracts]);
 
   useEffect(() => {
     if (availableContracts.length > 0 && !availableContracts.includes(selectedContractSim)) {
