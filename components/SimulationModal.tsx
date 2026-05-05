@@ -94,8 +94,15 @@ const fixedExpenseNames = Array.from(new Set([
   React.useEffect(() => {
         if (isOpen) {
           setLocalSimConfig(simulationConfig);
-          setLocalFixedExpenses(fixedExpenses.map(e => e.name === 'Liability Insurance' ? { ...e, name: 'Liability Insurance (Auto)' } : e));
-          setLocalConfigContracts(configContracts || []);
+          setLocalFixedExpenses(fixedExpenses.map(e => {
+              const mapped: any = { ...e };
+              if (mapped.name === 'Liability Insurance') mapped.name = 'Liability Insurance (Auto)';
+              if (mapped.contract_type) {
+                  mapped.contractType = mapped.contract_type;
+              }
+              return mapped;
+          }));
+          setLocalConfigContracts(configContracts || []);
 
           const fetchFinData = async () => {
              const { data: importData } = await supabase.from('finImport').select('*').order('week_ending', { ascending: false });
@@ -115,7 +122,27 @@ const fixedExpenseNames = Array.from(new Set([
   if (!isOpen) return null;
 
   const handleCompanyExpenseChange = (id: string, field: keyof ExpenseItem, newVal: any) => {
-     setLocalFixedExpenses(prev => prev.map(e => String(e.id) === String(id) ? { ...e, [field]: newVal } : e));
+     setLocalFixedExpenses(prev => {
+        let next = prev.map(e => String(e.id) === String(id) ? { ...e, [field]: newVal } : e);
+        if (field === 'valid_from') {
+           const updatedExp = next.find(e => String(e.id) === String(id));
+           if (updatedExp && updatedExp.companyId === 'ALL' && newVal) {
+              const globals = next.filter(e => e.name === updatedExp.name && e.companyId === 'ALL' && e.valid_from)
+                                  .sort((a, b) => new Date(a.valid_from!).getTime() - new Date(b.valid_from!).getTime());
+              for (let i = 0; i < globals.length - 1; i++) {
+                 const current = globals[i];
+                 const nextRule = globals[i + 1];
+                 const d = new Date(nextRule.valid_from!);
+                 d.setUTCDate(d.getUTCDate() - 1);
+                 const newValidTo = d.toISOString().split('T')[0];
+                 if (current.valid_to !== newValidTo) {
+                    next = next.map(e => e.id === current.id ? { ...e, valid_to: newValidTo } : e);
+                 }
+              }
+           }
+        }
+        return next;
+     });
   };
 
   const handleAddCompanyExpense = (expName: string, company: string) => {
@@ -129,7 +156,26 @@ const fixedExpenseNames = Array.from(new Set([
         amount_after: 0,
         frequency: 'Weekly' as const,
         allocationType: 'divide' as const,
-        unit: '$' as const
+        unit: '$' as const,
+        valid_from: new Date().toISOString().split('T')[0]
+     };
+     setLocalFixedExpenses(prev => [...prev, newExp]);
+  };
+
+  const handleAddContractExpense = (expName: string) => {
+     const newExp: any = {
+        id: Math.random().toString(36).substring(2, 11),
+        category: 'Fixed',
+        name: expName,
+        companyId: '',
+        contractType: '',
+        amount: 0,
+        amount_before: 0,
+        amount_after: 0,
+        frequency: 'Weekly',
+        allocationType: 'divide',
+        unit: '$',
+        valid_from: new Date().toISOString().split('T')[0]
      };
      setLocalFixedExpenses(prev => [...prev, newExp]);
   };
@@ -148,7 +194,29 @@ const fixedExpenseNames = Array.from(new Set([
          unit: expName === 'Factoring' ? '%' : '$',
          valid_from: dateFrom || '',
          valid_to: dateTo || '',
-         is_extension: isExtension
+         is_extension: isExtension,
+         is_standalone: !isExtension
+     };
+     setLocalFixedExpenses(prev => [...prev, newExp]);
+  };
+
+  const handleAddFinImportContractException = (expName: string, dateFrom: string, dateTo: string, defaultAmount: number = 0, isExtension: boolean = false) => {
+     const newExp: any = {
+         id: Math.random().toString(36).substring(2, 11),
+         category: 'Fixed',
+         name: expName,
+         companyId: '',
+         contractType: '', 
+         amount: defaultAmount,
+         amount_before: defaultAmount,
+         amount_after: defaultAmount,
+         frequency: 'Weekly',
+         allocationType: 'divide',
+         unit: expName === 'Factoring' ? '%' : '$',
+         valid_from: dateFrom || '',
+         valid_to: dateTo || '',
+         is_extension: isExtension,
+         is_standalone: !isExtension
      };
      setLocalFixedExpenses(prev => [...prev, newExp]);
   };
@@ -184,17 +252,30 @@ const fixedExpenseNames = Array.from(new Set([
   };
 
   const handleAddFinImportDate = async (expName: string) => {
-      const dateStr = newFinDates[expName];
-      if (!dateStr) return;
-      const exists = finImportData.find(d => d.week_ending === dateStr);
+      const fromDateStr = newFinDates[expName];
+      if (!fromDateStr) return;
+
+      const dObj = new Date(fromDateStr);
+      dObj.setUTCDate(dObj.getUTCDate() + 5);
+      const weekEndingStr = dObj.toISOString().split('T')[0];
+      
+      const expKey = finImportKeys.find(k => k.name === expName)?.key;
+
+      const exists = finImportData.find(d => d.week_ending === weekEndingStr);
       if (exists) {
+          if (expKey) {
+              setFinImportData(prev => prev.map(d => d.week_ending === weekEndingStr ? { ...d, [`is_custom_${expKey}`]: true } : d));
+              if (!modifiedFinImportIds.includes(String(exists.id))) setModifiedFinImportIds(prev => [...prev, String(exists.id)]);
+          }
           setNewFinDates(prev => ({ ...prev, [expName]: '' }));
+          setNewFinToDates(prev => ({ ...prev, [expName]: '' }));
           return;
       }
 
-      const newRecord = {
+      const newRecord: any = {
           id: `new_${Math.random().toString(36).substring(2, 11)}`,
-          week_ending: dateStr,
+          week_ending: weekEndingStr,
+          valid_to: newFinToDates[expName] || '',
           num_of_trucks: 0,
           avg_truck_price: 0,
           num_of_trailers: 0,
@@ -207,10 +288,15 @@ const fixedExpenseNames = Array.from(new Set([
           back_office_pay: 0,
           tech_pay: 0
       };
+      
+      if (expKey) {
+          newRecord[`is_custom_${expKey}`] = true;
+      }
 
       setFinImportData(prev => [newRecord, ...prev].sort((a,b) => new Date(b.week_ending).getTime() - new Date(a.week_ending).getTime()));
       setModifiedFinImportIds(prev => [...prev, newRecord.id]);
       setNewFinDates(prev => ({ ...prev, [expName]: '' }));
+      setNewFinToDates(prev => ({ ...prev, [expName]: '' }));
   };
 
   const handleSaveAndClose = async () => {
@@ -259,7 +345,7 @@ const fixedExpenseNames = Array.from(new Set([
                                allocationType: 'divide',
                                unit: '$',
                                valid_from: vFromStr,
-                               valid_to: vToStr
+                               valid_to: String(d.id).startsWith('new_') ? ((d as any).valid_to || '') : ''
                            };
                            if (customCpm !== undefined) newExp.cpm = customCpm;
                            if (fi.key === 'liability_insurance') {
@@ -287,6 +373,7 @@ const fixedExpenseNames = Array.from(new Set([
            amount: Number(exp.amount) || 0,
            cpm: exp.cpm !== undefined ? Number(exp.cpm) : null,
            company_id: exp.companyId === 'ALL' ? 'ALL' : (exp.companyId || null),
+           contract_type: (exp as any).contractType || null,
           unit: exp.unit || '$',
           valid_from: exp.valid_from && String(exp.valid_from).trim() !== '' ? exp.valid_from : null,
           valid_to: exp.valid_to && String(exp.valid_to).trim() !== '' ? exp.valid_to : null,
@@ -635,22 +722,35 @@ const fixedExpenseNames = Array.from(new Set([
                                                          {rules.sort((a, b) => {
                                                             if (a.companyId === 'ALL' && b.companyId !== 'ALL') return -1;
                                                             if (a.companyId !== 'ALL' && b.companyId === 'ALL') return 1;
-                                                            return 0;
-                                                         }).map(expObj => (
-                                                            <tr key={expObj.id} className="hover:bg-zinc-800/30 transition-colors group/row">
+                                                            const dateA = a.valid_from ? new Date(a.valid_from).getTime() : 0;
+                                                            const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0;
+                                                            return dateB - dateA;
+                                                         }).map(expObj => {
+                                                            const isPast = expObj.companyId === 'ALL' && expObj.valid_to && new Date(expObj.valid_to).getTime() < Date.now();
+                                                            return (
+                                                            <tr key={expObj.id} className={`transition-colors group/row ${isPast ? 'opacity-40 bg-zinc-900/50' : 'hover:bg-zinc-800/30'}`}>
                                                               <td className="py-1.5 pr-2">
                                                                    {expObj.companyId === 'ALL' ? (
-                                                                      <div className="text-xs font-bold text-emerald-500 uppercase tracking-wider h-7 flex items-center">Global (ALL)</div>
-                                                                   ) : (
-                                                                      <select
-                                                                          value={expObj.companyId}
-                                                                         onChange={(e) => handleCompanyExpenseChange(expObj.id, 'companyId', e.target.value)}
-                                                                         className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none transition-colors h-7"
-                                                                      >
-                                                                         <option value="" disabled>Select Company</option>
-                                                                         {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
-                                                                      </select>
-                                                                   )}
+                                                                  <div className="text-xs font-bold text-emerald-500 uppercase tracking-wider h-7 flex items-center">Global (ALL)</div>
+                                                               ) : (expObj as any).contractType ? (
+                                                                  <select
+                                                                      value={(expObj as any).contractType}
+                                                                     onChange={(e) => handleCompanyExpenseChange(expObj.id, 'contractType' as any, e.target.value)}
+                                                                     className="w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold focus:border-purple-500 outline-none transition-colors h-7"
+                                                                  >
+                                                                     <option value="" disabled>Select Contract</option>
+                                                                     {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
+                                                                  </select>
+                                                               ) : (
+                                                                  <select
+                                                                      value={expObj.companyId}
+                                                                     onChange={(e) => handleCompanyExpenseChange(expObj.id, 'companyId', e.target.value)}
+                                                                     className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none transition-colors h-7"
+                                                                  >
+                                                                     <option value="" disabled>Select Company</option>
+                                                                     {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                  </select>
+                                                               )}
                                                                 </td>
                                                                {activeColumns.includes('valid_from') && (
                                                                   <td className="py-1.5 px-2">
@@ -705,12 +805,22 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   </button>
                                                                </td>
                                                             </tr>
-                                                         ))}
+                                                         );})}
                                                       </tbody>
                                                    </table>
                                                    <div className="flex items-center gap-4 mt-3">
                                                       <button onClick={() => handleAddCompanyExpense(exp.name, 'ALL')} className="w-max px-4 py-1.5 border border-dashed border-emerald-500/50 bg-emerald-500/5 rounded hover:bg-emerald-500/20 text-emerald-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"><Plus size={12} /> ADD GLOBAL RULE</button>
-                                                      <button onClick={() => handleAddCompanyExpense(exp.name, '')} className="w-max px-4 py-1.5 border border-dashed border-amber-500/50 bg-amber-500/5 rounded hover:bg-amber-500/20 text-amber-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all"><Plus size={12} /> ADD COMPANY RULE</button>
+                                                      <div className="relative group/dropdown">
+                                                         <button className="w-max px-4 py-1.5 border border-dashed border-amber-500/50 bg-amber-500/5 rounded hover:bg-amber-500/20 text-amber-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all">
+                                                            <Plus size={12} /> Add Rule For <ChevronDown size={10} />
+                                                         </button>
+                                                         <div className="absolute hidden group-hover/dropdown:flex flex-col top-full left-0 pt-1 w-full z-50">
+                                                            <div className="bg-zinc-900 border border-zinc-700 rounded shadow-xl overflow-hidden flex flex-col w-full">
+                                                               <button onClick={() => handleAddContractExpense(exp.name)} className="px-4 py-2 text-left text-[10px] font-bold text-purple-500 hover:bg-zinc-800 transition-colors">Contract</button>
+                                                               <button onClick={() => handleAddCompanyExpense(exp.name, '')} className="px-4 py-2 text-left text-[10px] font-bold text-amber-500 hover:bg-zinc-800 transition-colors">Company</button>
+                                                            </div>
+                                                         </div>
+                                                      </div>
                                                    </div>
                                                 </div>
                                              </td>
@@ -724,22 +834,27 @@ const fixedExpenseNames = Array.from(new Set([
 
                                  const uniqueDates = Array.from(new Set([
                                      ...globalRules.map(d => d.week_ending),
-                                     ...exceptionRules.filter(e => !globalRules.some(gr => {
+                                     ...exceptionRules.filter(e => e.companyId === 'ALL' && !globalRules.some(gr => {
                                          const d = new Date(gr.week_ending);
                                          const vf = new Date(d); vf.setUTCDate(d.getUTCDate() - 5);
-                                         return e.valid_from === vf.toISOString().split('T')[0] && e.companyId === 'ALL';
-                                     })).map(e => e.valid_from).filter(Boolean)
+                                         return e.valid_from === vf.toISOString().split('T')[0];
+                                     })).map(e => {
+                                         if (!e.valid_from) return null;
+                                         const d = new Date(e.valid_from);
+                                         d.setUTCDate(d.getUTCDate() + 5);
+                                         return d.toISOString().split('T')[0];
+                                     }).filter(Boolean)
                                  ])).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).filter(dateStr => {
                                      const puData = finImportPerUnitData.find(d => d.week_ending === dateStr);
                                      const gRule = globalRules.find(d => d.week_ending === dateStr);
                                      const puVal = puData && (exp as any).puKey ? Math.abs(puData[(exp as any).puKey] || 0) : 0;
                                      const gVal = gRule && exp.key ? Math.abs((gRule as any)[exp.key] || 0) : 0;
                                      if (puVal > 0 || gVal > 0) return true;
-                                     const hasException = exceptionRules.some(e => e.valid_from === dateStr);
-                                     if (hasException) return true;
                                      const dBase = new Date(dateStr);
                                      const vfObj = new Date(dBase); vfObj.setUTCDate(dBase.getUTCDate() - 5);
                                      const vfStr = vfObj.toISOString().split('T')[0];
+                                     const hasException = exceptionRules.some(e => e.valid_from === vfStr);
+                                     if (hasException) return true;
                                      const hasOverride = localFixedExpenses.some(e => e.name === exp.name && e.valid_from === vfStr && e.companyId === 'ALL');
                                      if (hasOverride) return true;
                                      if (gRule && (gRule as any)[`is_custom_${exp.key}`]) return true;
@@ -822,12 +937,23 @@ const fixedExpenseNames = Array.from(new Set([
                                                           }} className="px-3 py-1 bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/30 rounded text-[10px] font-bold uppercase transition-colors whitespace-nowrap flex items-center gap-1">
                                                               <Plus size={12}/> ADD GLOBAL RULE
                                                           </button>
-                                                          <button onClick={() => {
-                                                              if (!newFinDates[exp.name]) { alert('Please select a From date first.'); return; }
-                                                              handleAddFinImportException(exp.name, '', newFinDates[exp.name], newFinToDates[exp.name] || '', 0);
-                                                          }} className="px-3 py-1 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/30 rounded text-[10px] font-bold uppercase transition-colors whitespace-nowrap flex items-center gap-1">
-                                                              <Plus size={12}/> ADD COMPANY RULE
-                                                          </button>
+                                                          <div className="relative group/dropdown">
+                                                             <button className="px-3 py-1 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/30 rounded text-[10px] font-bold uppercase transition-colors whitespace-nowrap flex items-center gap-1">
+                                                                 <Plus size={12}/> Add Rule For <ChevronDown size={10} />
+                                                             </button>
+                                                             <div className="absolute hidden group-hover/dropdown:flex flex-col top-full right-0 pt-1 w-max min-w-full z-50">
+                                                                <div className="bg-zinc-900 border border-zinc-700 rounded shadow-xl overflow-hidden flex flex-col w-full">
+                                                                   <button onClick={() => {
+                                                                       if (!newFinDates[exp.name]) { alert('Please select a From date first.'); return; }
+                                                                       handleAddFinImportContractException(exp.name, newFinDates[exp.name], newFinToDates[exp.name] || '', 0);
+                                                                   }} className="px-4 py-2 text-left text-[10px] font-bold text-purple-500 hover:bg-zinc-800 transition-colors">Contract</button>
+                                                                   <button onClick={() => {
+                                                                       if (!newFinDates[exp.name]) { alert('Please select a From date first.'); return; }
+                                                                       handleAddFinImportException(exp.name, '', newFinDates[exp.name], newFinToDates[exp.name] || '', 0);
+                                                                   }} className="px-4 py-2 text-left text-[10px] font-bold text-amber-500 hover:bg-zinc-800 transition-colors">Company</button>
+                                                                </div>
+                                                             </div>
+                                                          </div>
                                                       </div>
                                                    </div>
                                                    <div className="max-h-[400px] overflow-y-auto border border-zinc-800 rounded">
@@ -842,11 +968,11 @@ const fixedExpenseNames = Array.from(new Set([
                                                              </tr>
                                                           </thead>
                                                          <tbody className="divide-y divide-zinc-800/30">
-                                                     {exceptionRules.filter(e => e.companyId !== 'ALL' && !uniqueDates.some(ds => {
+                                                     {exceptionRules.filter(e => e.companyId !== 'ALL' && (e.is_standalone || !uniqueDates.some(ds => {
                                                          const dBase = new Date(ds);
                                                          const vfStr = new Date(dBase.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                                                          return e.valid_from === vfStr;
-                                                     })).map(cRule => (
+                                                     }))).map(cRule => (
                                                           <React.Fragment key={`standalone_${cRule.id}`}>
                                                               <tr className="bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
                                                                   <td className="py-1.5 px-3">
@@ -856,10 +982,17 @@ const fixedExpenseNames = Array.from(new Set([
                                                                      <input type="date" value={cRule.valid_to || ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'valid_to', e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:border-emerald-500 outline-none transition-colors h-7" />
                                                                   </td>
                                                                   <td className="py-1.5 px-3 flex items-center gap-2">
-                                                                     <select value={cRule.companyId} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)} className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7">
-                                                                     <option value="" disabled>Select Company</option>
-                                                                     {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
-                                                                  </select>
+                                                                     {cRule.contractType !== undefined ? (
+                                                                        <select value={cRule.contractType} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'contractType' as any, e.target.value)} className="w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold focus:border-purple-500 outline-none h-7">
+                                                                           <option value="" disabled>Select Contract</option>
+                                                                           {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
+                                                                        </select>
+                                                                     ) : (
+                                                                        <select value={cRule.companyId} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)} className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7">
+                                                                           <option value="" disabled>Select Company</option>
+                                                                           {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                        </select>
+                                                                     )}
                                                                   </td>
                                                                  <td className="py-1.5 px-3">
                                                                        <div className="flex flex-col gap-2">
@@ -1000,13 +1133,17 @@ const fixedExpenseNames = Array.from(new Set([
                                                           </React.Fragment>
                                                       ))}
                                                      {uniqueDates.flatMap(dateStr => {
-                                                        const gRule = globalRules.find(d => d.week_ending === dateStr);
+                                                        let gRule = globalRules.find(d => d.week_ending === dateStr);
                                                         const dBase = new Date(dateStr);
                                                         const vFromStr = new Date(dBase.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                                                         const vToStr = new Date(dBase.getTime() + 1 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
                                                         
+                                                        if (!gRule && globalOverrides.some(go => go.valid_from === vFromStr)) {
+                                                            gRule = { id: `dummy_${dateStr}`, week_ending: dateStr } as any;
+                                                        }
+
                                                         const cRules = exceptionRules.filter(e => {
-                                                            return e.companyId !== 'ALL' && e.valid_from === vFromStr;
+                                                            return e.companyId !== 'ALL' && !e.is_standalone && e.valid_from === vFromStr;
                                                         });
 
                                                         if (!gRule && cRules.length === 0) return null;
@@ -1015,9 +1152,24 @@ const fixedExpenseNames = Array.from(new Set([
                                                              if (!go.valid_from) return false;
                                                              const d = new Date(dateStr);
                                                              const vf = new Date(d); vf.setUTCDate(d.getUTCDate() - 5);
-                                                             if (go.valid_from === vf.toISOString().split('T')[0]) return false;
-                                                             const afterFrom = dateStr >= go.valid_from;
-                                                             const beforeTo = !go.valid_to || dateStr <= go.valid_to;
+                                                             const currVfStr = vf.toISOString().split('T')[0];
+                                                             if (go.valid_from === currVfStr) return false;
+                                                             const afterFrom = currVfStr > go.valid_from;
+                                                             const beforeTo = !go.valid_to || currVfStr <= go.valid_to;
+                                                             return afterFrom && beforeTo;
+                                                         }) || finImportData.some(fd => {
+                                                             const isCustom = (fd as any)[`is_custom_${exp.key}`] || String(fd.id).startsWith('new_');
+                                                             if (!isCustom) return false;
+                                                             const fdDate = new Date(fd.week_ending);
+                                                             const fdVf = new Date(fdDate); fdVf.setUTCDate(fdDate.getUTCDate() - 5);
+                                                             const fdVfStr = fdVf.toISOString().split('T')[0];
+                                                             const d = new Date(dateStr);
+                                                             const currVf = new Date(d); currVf.setUTCDate(d.getUTCDate() - 5);
+                                                             const currVfStr = currVf.toISOString().split('T')[0];
+                                                             if (fdVfStr === currVfStr) return false;
+                                                             const fdTo = String(fd.id).startsWith('new_') ? ((fd as any).valid_to || '') : '';
+                                                             const afterFrom = currVfStr > fdVfStr;
+                                                             const beforeTo = !fdTo || currVfStr <= fdTo;
                                                              return afterFrom && beforeTo;
                                                          });
 
@@ -1035,7 +1187,13 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                  {gRule && String(gRule.id).startsWith('new_') && <span className="mt-1 block w-max text-[9px] text-emerald-500 uppercase font-bold px-1.5 py-0.5 bg-emerald-500/10 rounded">New</span>}
                                                                               </td>
                                                                             <td className="py-2 px-3 text-xs text-zinc-300 font-mono align-top">
-                                                                             {(() => { const go = globalOverrides.find(g => g.valid_from === vFromStr); return go && !go.valid_to ? '' : vToStr; })()}
+                                                                             {(() => { 
+                                                                                if (gRule && String(gRule.id).startsWith('new_')) {
+                                                                                    return (gRule as any).valid_to || '';
+                                                                                }
+                                                                                const go = globalOverrides.find(g => g.valid_from === vFromStr); 
+                                                                                return go && !go.valid_to ? '' : vToStr; 
+                                                                             })()}
                                                                           </td>
                                                                           <td className="py-2 px-3 text-xs text-zinc-500 font-bold uppercase tracking-wider align-top">
                                                                              Global Rule
@@ -1191,25 +1349,19 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                </td>
                                                                                <td className="py-2 px-3 text-right">
                                                                                 <div className="flex items-center justify-end gap-2">
-                                                                                    {expandedMclooRules.includes(gRule.id) && exp.key === 'liability_insurance' ? (
-                                                                    <button onClick={(e) => { e.stopPropagation(); handleAddFinImportException(exp.name, '', vFromStr, vToStr, 0, true); }} className="p-1 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 rounded transition-colors inline-flex justify-center items-center w-6 h-6" title="Add Company Exception">
-                                                                       <Plus size={14}/>
-                                                                    </button>
-                                                                 ) : (
-                                                                    <button onClick={(e) => { e.stopPropagation(); handleAddFinImportException(exp.name, '', vFromStr, vToStr, 0, true); }} className="px-2 py-1 bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 rounded text-[9px] font-bold uppercase transition-colors whitespace-nowrap inline-flex items-center gap-1">
-                                                                       <Plus size={10}/> Add Company Exception
-                                                                    </button>
-                                                                 )}
-                                                                                    <button onClick={(e) => { 
-                                                                                     e.stopPropagation(); 
-                                                                                     if (String(gRule.id).startsWith('new_')) {
-                                                                                         setFinImportData(prev => prev.filter(d => d.id !== gRule.id));
-                                                                                     } else {
-                                                                                         handleResetFinImportCustom(gRule.id, exp.key, exp.name);
-                                                                                     }
-                                                                                 }} className="p-1 text-zinc-600 hover:text-rose-500 transition-colors">
-                                                                                    <Trash2 size={14} />
-                                                                                 </button>
+                                                                                    
+                                                                 <button onClick={(e) => { 
+                                                                     e.stopPropagation(); 
+                                                                     if (String(gRule.id).startsWith('new_')) {
+                                                                         setFinImportData(prev => prev.filter(d => d.id !== gRule.id));
+                                                                     } else if (String(gRule.id).startsWith('dummy_')) {
+                                                                         setLocalFixedExpenses(prev => prev.filter(x => !(x.name === exp.name && x.valid_from === vFromStr && x.companyId === 'ALL')));
+                                                                     } else {
+                                                                         handleResetFinImportCustom(gRule.id, exp.key, exp.name);
+                                                                     }
+                                                                 }} className="p-1 text-zinc-600 hover:text-rose-500 transition-colors">
+                                                                    <Trash2 size={14} />
+                                                                 </button>
                                                                               </div>
                                                                           </td>
                                                                      </tr>
@@ -1217,21 +1369,31 @@ const fixedExpenseNames = Array.from(new Set([
                                                          }
                                                          
                                                          cRules.forEach(cRule => {
-                                                             fragmentRows.push(
-                                                                     <tr key={cRule.id} className="bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
-                                                                         <td className="py-1.5 px-3"></td>
-                                                                         <td className="py-1.5 px-3"></td>
-                                                                         <td className="py-1.5 px-3 flex items-center gap-2">
-                                                                                                    <CornerDownRight size={14} className="text-amber-500/50 flex-shrink-0" />
-                                                                                                    <select
-                                                                          value={cRule.companyId}
-                                                                          onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)}
-                                                                          className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7"
-                                                                        >
-                                                                           <option value="" disabled>Select Company</option>
-                                                                           {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
-                                                                        </select>
-                                                                                                 </td>
+                                                             fragmentRows.push(
+                                                                     <tr key={cRule.id} className="bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
+                                                                         <td className="py-1.5 px-3">
+                                                                            <input type="date" value={cRule.valid_from || ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'valid_from', e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:border-emerald-500 outline-none transition-colors h-7" />
+                                                                         </td>
+                                                                         <td className="py-1.5 px-3">
+                                                                            <input type="date" value={cRule.valid_to || ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'valid_to', e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:border-emerald-500 outline-none transition-colors h-7" />
+                                                                         </td>
+                                                                         <td className="py-1.5 px-3 flex items-center gap-2">
+                                                                            {cRule.contractType ? (
+                                                                               <select value={cRule.contractType} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'contractType' as any, e.target.value)} className="w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold focus:border-purple-500 outline-none h-7">
+                                                                                  <option value="" disabled>Select Contract</option>
+                                                                                  {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
+                                                                               </select>
+                                                                            ) : (
+                                                                               <select
+                                                                                 value={cRule.companyId}
+                                                                                 onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)}
+                                                                                 className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7"
+                                                                               >
+                                                                                  <option value="" disabled>Select Company</option>
+                                                                                  {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                               </select>
+                                                                            )}
+                                                                         </td>
                                                                          <td className="py-1.5 px-3">
                                                                                     <div className="flex flex-col gap-2">
                                                                                        <div className="flex items-start gap-4">
@@ -1239,19 +1401,27 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                              <div className="relative flex items-center h-7">
                                                                                                 <span className="absolute left-2 text-amber-500/50 text-xs pointer-events-none">$</span>
                                                                                                 <input type="number" value={cRule.amount || cRule.amount_after ? Math.round(Number(cRule.amount || cRule.amount_after)) : ''} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                                                   {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'physical_damage'].includes(exp.key) ? (
-                                                                                <span className="absolute right-2 text-amber-500/50 text-[9px] pointer-events-none">/ pu</span>
-                                                                             ) : (
-                                                                                                                      <div className="absolute right-2 group/tooltip flex items-center justify-center">
-                                                                                                                         <Info size={12} className="text-amber-500/70 hover:text-amber-500 transition-colors cursor-help" />
-                                                                                                                         <div className="hidden group-hover/tooltip:block absolute right-0 bottom-full mb-1 w-48 bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal z-[100] text-center border border-zinc-700 pointer-events-none">
-                                                                                                                            Enter the total amount for the entire period, not per driver.
-                                                                                                                         </div>
-                                                                                                                      </div>
-                                                                                                                   )}
-                                                                                                                </div>
-                                                                                            
+                                                                                                {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'physical_damage'].includes(exp.key) ? (
+                                                                                                   <span className="absolute right-2 text-amber-500/50 text-[9px] pointer-events-none">/ pu</span>
+                                                                                                ) : (
+                                                                                                   <div className="absolute right-2 group/tooltip flex items-center justify-center">
+                                                                                                      <Info size={12} className="text-amber-500/70 hover:text-amber-500 transition-colors cursor-help" />
+                                                                                                      <div className="hidden group-hover/tooltip:block absolute right-0 bottom-full mb-1 w-48 bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal z-[100] text-center border border-zinc-700 pointer-events-none">
+                                                                                                         Enter the total amount for the entire period, not per driver.
+                                                                                                      </div>
+                                                                                                   </div>
+                                                                                                )}
+                                                                                             </div>
                                                                                           </div>
+                                                                                          {exp.key === 'avg_truck_price' && (
+                                                                                             <>
+                                                                                                <span className="text-zinc-500 font-bold text-xs mt-1">+</span>
+                                                                                                <div className="relative flex items-center h-7 w-24 mt-1">
+                                                                                                   <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
+                                                                                                   <input type="number" step="0.01" value={cRule.cpm ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'cpm', e.target.value)} placeholder="CPM" className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
+                                                                                                </div>
+                                                                                             </>
+                                                                                          )}
                                                                                           {exp.key === 'liability_insurance' && (
                                                                                              <div className="flex flex-col items-start gap-1 mt-1">
                                                                                                 <button onClick={() => toggleMclooRule(String(cRule.id))} className="px-2 py-0.5 bg-amber-950 hover:bg-amber-900 text-amber-500/70 text-[10px] rounded border border-amber-900/50 transition-colors h-max whitespace-nowrap">
@@ -1260,47 +1430,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                              </div>
                                                                                           )}
                                                                                        </div>
-                                                                                       {exp.key === 'liability_insurance' && expandedMclooRules.includes(String(cRule.id)) && (
-                                                                                          <div className="flex items-start gap-4 bg-amber-500/5 p-2 rounded border border-amber-500/20 w-max">
-                                                                                             {(() => {
-                                                                                                const puData = finImportPerUnitData.find(d => d.week_ending === dateStr);
-                                                                                                const multiplier = puData?.eff_non_teams_total || 0;
-                                                                                                const currentPu = Number(cRule.amount || cRule.amount_after || 0);
-                                                                                                const currentTotal = currentPu * multiplier;
-                                                                                                return (
-                                                                                                 <>
-                                                                                                      <div className="flex flex-col gap-0.5">
-                                                                                                         <label className="text-[8px] text-amber-500/70 font-bold uppercase">Company</label>
-                                                                                                         <div className="flex items-center gap-1">
-                                                                                                            <div className="relative h-5 w-20">
-                                                                                                               <span className="absolute left-1.5 top-0.5 text-amber-500/50 text-[9px] pointer-events-none">$</span>
-                                                                                                               <input type="number" value={(cRule as any).company_perc ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'company_perc' as any, e.target.value)} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-amber-500 outline-none h-full" />
-                                                                                                            </div>
-                                                                                                         </div>
-                                                                                                      </div>
-                                                                                                      <div className="flex flex-col gap-0.5 border-l border-amber-900/30 pl-2">
-                                                                                                         <label className="text-[8px] text-amber-500/70 font-bold uppercase">Franchise</label>
-                                                                                                         <div className="flex items-center gap-1">
-                                                                                                            <div className="relative h-5 w-20">
-                                                                                                               <span className="absolute left-1.5 top-0.5 text-amber-500/50 text-[9px] pointer-events-none">$</span>
-                                                                                                               <input type="number" value={(cRule as any).franchise_perc ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'franchise_perc' as any, e.target.value)} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-amber-500 outline-none h-full" />
-                                                                                                            </div>
-                                                                                                         </div>
-                                                                                                      </div>
-                                                                                                      <div className="flex flex-col gap-0.5 border-l border-amber-900/30 pl-2">
-                                                                                                         <label className="text-[8px] text-amber-500/70 font-bold uppercase">Dispatcher</label>
-                                                                                                         <div className="flex items-center gap-1">
-                                                                                                            <div className="relative h-5 w-20">
-                                                                                                               <span className="absolute left-1.5 top-0.5 text-amber-500/50 text-[9px] pointer-events-none">$</span>
-                                                                                                               <input type="number" value={(cRule as any).dispatcher_perc ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'dispatcher_perc' as any, e.target.value)} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-amber-500 outline-none h-full" />
-                                                                                                            </div>
-                                                                                                         </div>
-                                                                                                      </div>
-                                                                                                   </>
-                                                                                                );
-                                                                                             })()}
-                                                                                          </div>
-                                                                                       )}
+                                                                                       
                                                                                     </div>
                                                                                  </td>
                                                                                 <td className="py-1.5 px-3 text-right">
@@ -1310,6 +1440,99 @@ const fixedExpenseNames = Array.from(new Set([
                                                                          </td>
                                                                      </tr>
                                                              );
+
+                                                             if (exp.key === 'liability_insurance' && expandedMclooRules.includes(String(cRule.id))) {
+                                                                 fragmentRows.push(
+                                                                     <tr key={`${cRule.id}_expanded`} className="bg-amber-500/5">
+                                                                         <td colSpan={5} className="px-3 pb-3 pt-0 border-t-0">
+                                                                             <div className="flex flex-col gap-3 bg-zinc-950/50 p-3 rounded-lg border border-amber-500/20 w-full relative ml-4">
+                                                                                <div className="absolute -top-2.5 -left-3 text-amber-500/30">
+                                                                                    <CornerDownRight size={16} />
+                                                                                </div>
+                                                                                <div className="flex flex-col gap-1 w-64 pl-4">
+                                                                                   <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Shared Insurance Resp. (Per Unit)</label>
+                                                                                   <div className="relative h-7 w-32">
+                                                                                      <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
+                                                                                      <input type="number" value={(cRule as any).shared_insurance ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'shared_insurance' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
+                                                                                   </div>
+                                                                                </div>
+                                                                                <div className="flex flex-col gap-1 pl-4">
+                                                                                   {(() => {
+                                                                                      const rawAvailRecords = finImportData.filter(d => d.week_ending >= (cRule.valid_from || '2000-01-01') && (!cRule.valid_to || d.week_ending <= cRule.valid_to)).sort((a, b) => new Date(b.week_ending).getTime() - new Date(a.week_ending).getTime());
+                                                                                      const availRecords = rawAvailRecords.filter(record => {
+                                                                                          const targetDateStr = record.week_ending;
+                                                                                          let effNT = 0;
+                                                                                          const validFcRecords = (fixedCostsData || []).filter(r => (r.week_ending || '').startsWith(targetDateStr));
+                                                                                          if (validFcRecords.length > 0) {
+                                                                                             let nts = validFcRecords[0].company_eff_non_teams;
+                                                                                             if (typeof nts === 'string') { try { nts = JSON.parse(nts); } catch(e){} }
+                                                                                             if (nts) {
+                                                                                                if (Array.isArray(nts)) {
+                                                                                                   const match = nts.find((x:any) => String(x.company_id || x.company || '').trim().toLowerCase() === String(cRule.companyId || '').trim().toLowerCase());
+                                                                                                   if (match) effNT = Number(match.eff_non_teams_total || match.eff_non_teams || match.value || match.amount || 0);
+                                                                                                } else {
+                                                                                                   const companyKey = Object.keys(nts).find(k => String(k).trim().toLowerCase() === String(cRule.companyId || '').trim().toLowerCase());
+                                                                                                   if (companyKey) effNT = Number(nts[companyKey] || 0);
+                                                                                                }
+                                                                                             }
+                                                                                          }
+                                                                                          if (effNT <= 0 && (!cRule.companyId || cRule.companyId === 'ALL')) {
+                                                                                             const puData = finImportPerUnitData.find(d => (d.week_ending || '').startsWith(targetDateStr));
+                                                                                             effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
+                                                                                          }
+                                                                                          return effNT > 0;
+                                                                                      });
+
+                                                                                      const rows = availRecords.map((record, index) => {
+                                                                                         const targetDateStr = record.week_ending;
+                                                                                         let effNT = 0;
+                                                                                         const validFcRecords = (fixedCostsData || []).filter(r => (r.week_ending || '').startsWith(targetDateStr));
+                                                                                         if (validFcRecords.length > 0) {
+                                                                                            let nts = validFcRecords[0].company_eff_non_teams;
+                                                                                            if (typeof nts === 'string') { try { nts = JSON.parse(nts); } catch(e){} }
+                                                                                            if (nts) {
+                                                                                               if (Array.isArray(nts)) {
+                                                                                                  const match = nts.find((x:any) => String(x.company_id || x.company || '').trim().toLowerCase() === String(cRule.companyId || '').trim().toLowerCase());
+                                                                                                  if (match) effNT = Number(match.eff_non_teams_total || match.eff_non_teams || match.value || match.amount || 0);
+                                                                                               } else {
+                                                                                                  const companyKey = Object.keys(nts).find(k => String(k).trim().toLowerCase() === String(cRule.companyId || '').trim().toLowerCase());
+                                                                                                  if (companyKey) effNT = Number(nts[companyKey] || 0);
+                                                                                               }
+                                                                                            }
+                                                                                         }
+                                                                                         if (effNT <= 0 && (!cRule.companyId || cRule.companyId === 'ALL')) {
+                                                                                            const puData = finImportPerUnitData.find(d => (d.week_ending || '').startsWith(targetDateStr));
+                                                                                            effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
+                                                                                         }
+                                                                                         if (effNT <= 0) return null;
+                                                                                         const dObj = new Date(targetDateStr);
+                                                                                         while(dObj.getUTCDay() !== 4) {
+                                                                                             dObj.setUTCDate(dObj.getUTCDate() + 1);
+                                                                                         }
+                                                                                         const payDateStr = dObj.toISOString().split('T')[0];
+                                                                                         const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
+                                                                                         const perUnitAmt = effNT > 0 ? (baseAmt / 52) / effNT : 0;
+                                                                                         const sharedResp = Number((cRule as any).shared_insurance || 0);
+                                                                                         const compPay = perUnitAmt - sharedResp;
+                                                                                         const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
+                                                                                         return (
+                                                                                            <div key={`${targetDateStr}_${index}`} className="flex items-center gap-6 py-1 border-b border-amber-900/10 last:border-0">
+                                                                                               <div className="w-24 text-[10px] text-zinc-300 font-mono">{payDateStr}</div>
+                                                                                               <div className="w-32 text-[10px] text-zinc-300 font-mono">Amount (PU): {perUnitAmt.toFixed(2)}</div>
+                                                                                               <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay (PU): {compPay.toFixed(2)}</div>
+                                                                                            </div>
+                                                                                         );
+                                                                                      });
+                                                                                      const validRows = rows.filter(Boolean);
+                                                                                      if (validRows.length === 0) return <div className="text-[10px] text-zinc-500 italic">No valid dates found.</div>;
+                                                                                      return validRows;
+                                                                                   })()}
+                                                                                </div>
+                                                                             </div>
+                                                                         </td>
+                                                                     </tr>
+                                                                 );
+                                                             }
                                                          });
 
                                                          return fragmentRows;
