@@ -267,7 +267,7 @@ const MasterTable: React.FC<{
   
   return (
     <div className="overflow-auto flex-1 h-full relative">
-      <table className="w-full min-h-full h-full text-left text-[11px] whitespace-nowrap">
+      <table className="w-full min-h-full h-full text-left text-[11px] whitespace-nowrap [&_th.text-right]:w-[75px] [&_th.text-right]:min-w-[75px] [&_th.text-right]:max-w-[75px] [&_td.text-right]:w-[75px] [&_td.text-right]:min-w-[75px] [&_td.text-right]:max-w-[75px] [&_td.text-right]:overflow-hidden [&_td.text-right]:text-ellipsis">
         <thead className="bg-zinc-950 text-zinc-500 font-medium uppercase sticky top-0 z-[60] shadow-sm select-none">
          <tr>
             <th onClick={() => requestSort('name')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-[10px] sticky left-0 z-30 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)] cursor-pointer hover:text-white">Segment {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
@@ -314,7 +314,7 @@ const MasterTable: React.FC<{
                          
             <th onClick={() => requestSort('companyPay')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300">
               <div className="flex items-center justify-end gap-1">
-                Rev Coll. {sortConfig?.key === 'companyPay' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                Rev. Col. {sortConfig?.key === 'companyPay' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
               </div>
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[450px] pointer-events-none transform -translate-x-[80%] flex flex-col gap-2 whitespace-normal break-words">
                 <div className="font-bold text-white text-[11px] border-b border-zinc-600 pb-1">Revenue Collected Calculation:</div>
@@ -351,7 +351,7 @@ const MasterTable: React.FC<{
               </div>
             </th>
            <th onClick={() => requestSort('allocatedFixed')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300">
-              Weekly Expenses {sortConfig?.key === 'allocatedFixed' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+              Wkly Exp. {sortConfig?.key === 'allocatedFixed' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[450px] pointer-events-none transform -translate-x-[80%] flex flex-col gap-2 whitespace-normal break-words">
                 <div className="font-bold text-white text-[11px] border-b border-zinc-600 pb-1">Fixed Cost Calculation &amp; Components:</div>
                 <div className="text-zinc-300">Base Fixed Costs depend on the contract type:</div>
@@ -383,7 +383,7 @@ const MasterTable: React.FC<{
                       </div>
                     </th>
                    <th onClick={() => requestSort('totalPOCov')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300">
-                   PO Co Cov {sortConfig?.key === 'totalPOCov' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                   PO {sortConfig?.key === 'totalPOCov' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                    <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[450px] pointer-events-none transform -translate-x-[80%] flex flex-col gap-1.5 whitespace-normal break-words">
                      <div className="font-bold text-white text-[11px] border-b border-zinc-600 pb-1">PO Company Coverage (PO Co Cov) Calculation:</div>
                      <div className="text-zinc-300">This column shows the total Purchase Order amount covered by the company. Note: Execution priority goes from top to bottom.</div>
@@ -512,9 +512,9 @@ const MasterTable: React.FC<{
           if (isStub) {
               const hasPo = Math.abs(metrics.totalPOCov) > 0 || Math.abs(metrics.totalPO) > 0;
               const hasTolls = Math.abs(metrics.tolls) > 0;
-              if (hasPo && hasTolls) unrecReason = "Artificial stub for PO and tolls from previous contract";
-              else if (hasPo) unrecReason = "Artificial stub for PO cost from previous contract";
-              else if (hasTolls) unrecReason = "Artificial stub for tolls from previous contract";
+              if (hasPo && hasTolls) unrecReason = "Artificial stub for PO and tolls from previous contract or company";
+              else if (hasPo) unrecReason = "Artificial stub for PO cost from previous contract or company";
+              else if (hasTolls) unrecReason = "Artificial stub for tolls from previous contract or company";
           } else if (isUnreconciled) {
               unrecReason = "Company missing or unmapped";
           }
@@ -1874,8 +1874,8 @@ const PnLView: React.FC<PnLViewProps> = ({
 
         const metricLabels: any = {
           gross: 'Gross', netIncome: 'Total PnL', margin: 'Margin',
-          companyPay: 'Rev Coll.', allocatedFixed: 'Weekly Expenses',
-          totalPOCov: 'PO Co Cov', totalRecruiting: 'Recruiting', tolls: 'Tolls'
+          companyPay: 'Rev. Col.', allocatedFixed: 'Wkly Exp.',
+          totalPOCov: 'PO', totalRecruiting: 'Recruiting', tolls: 'Tolls'
         };
         const metricColors: any = {
           gross: '#a1a1aa', netIncome: '#ffffff', margin: '#c084fc',
@@ -2185,8 +2185,8 @@ const PnLView: React.FC<PnLViewProps> = ({
                             </button>
                             {['netIncome', 'totalRecruiting', 'totalPOCov', 'tolls', 'allocatedFixed', 'companyPay', 'margin', 'gross'].map(m => {
                               const labels: any = {
-                                gross: 'Gross', companyPay: 'Rev Coll.', margin: 'Margin',
-                                allocatedFixed: 'Weekly Expenses', tolls: 'Tolls', totalPOCov: 'PO Co Cov',
+                                gross: 'Gross', companyPay: 'Rev. Col.', margin: 'Margin',
+                                allocatedFixed: 'Wkly Exp.', tolls: 'Tolls', totalPOCov: 'PO',
                                 totalRecruiting: 'Recruiting', netIncome: 'Total PnL'
                               };
                               return (
@@ -2998,21 +2998,21 @@ const PnLView: React.FC<PnLViewProps> = ({
                <table className="w-full text-[10px]">
                  <thead className="bg-zinc-900 text-zinc-500 sticky top-0">
                     <tr>
-                       <th className="px-3 py-1.5 text-left font-medium">Pay Date</th>
-                       <th className="px-3 py-1.5 text-right font-medium">Total PnL</th>
+                       <th className="px-2 py-1 text-left font-medium">Pay Date</th>
+                       <th className="px-2 py-1 text-right font-medium">Total PnL</th>
                     </tr>
                  </thead>
                  <tbody className="divide-y divide-zinc-800/50">
                     {pnlHistory.length > 0 ? (
                       pnlHistory.map((item, idx) => (
                          <tr key={idx} className="hover:bg-zinc-800/30 transition-colors">
-                            <td className="px-3 py-1 text-zinc-400 font-mono">
+                            <td className="px-2 py-0.5 text-zinc-400 font-mono">
                                {(() => {
                                   const d = new Date(item.date);
                                   return `${d.getUTCFullYear().toString().slice(-2)}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
                                })()}
                             </td>
-                            <td className={`px-3 py-1 text-right font-mono font-bold ${item.totalAmount >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
+                            <td className={`px-2 py-0.5 text-right font-mono font-bold ${item.totalAmount >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
                                {item.totalAmount < 0 ? '-' : ''}{formatCurrency(Math.abs(item.totalAmount))}
                             </td>
                          </tr>
@@ -3079,15 +3079,15 @@ const PnLView: React.FC<PnLViewProps> = ({
                         <table className="w-full text-xs border-collapse relative">
                            <thead className="sticky top-0 z-20 shadow-md">
                               <tr>
-                                 <th className="bg-zinc-900 px-4 py-2.5 text-left font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">Pay Date</th>
+                                 <th className="bg-zinc-900 px-2 py-1 text-left font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">Pay Date</th>
                                  {pnlHistoryGroupBy === 'ALL' && (
-                                     <th className="bg-zinc-900 px-4 py-2.5 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">Total PnL</th>
+                                     <th className="bg-zinc-900 px-2 py-1 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">Total PnL</th>
                                  )}
                                  {pnlHistoryGroupBy === 'Contract' && pnlHistoryOptions.map(opt => (
-                                     <th key={opt} className="bg-zinc-900 px-4 py-2.5 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">{opt}</th>
+                                     <th key={opt} className="bg-zinc-900 px-2 py-1 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">{opt}</th>
                                  ))}
                                  {pnlHistoryGroupBy !== 'ALL' && pnlHistoryGroupBy !== 'Contract' && pnlHistoryFilterValue && (
-                                     <th className="bg-zinc-900 px-4 py-2.5 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">{pnlHistoryFilterValue}</th>
+                                     <th className="bg-zinc-900 px-2 py-1 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">{pnlHistoryFilterValue}</th>
                                  )}
                               </tr>
                            </thead>
@@ -3098,16 +3098,16 @@ const PnLView: React.FC<PnLViewProps> = ({
                                  
                                  return (
                                     <tr key={idx} className="bg-zinc-900/40 hover:bg-zinc-800/40 transition-colors whitespace-nowrap">
-                                       <td className="px-4 py-2 font-bold text-zinc-200">{formattedDate}</td>
+                                       <td className="px-2 py-0.5 font-bold text-zinc-200">{formattedDate}</td>
                                        {pnlHistoryGroupBy === 'ALL' && (
-                                           <td className={`px-4 py-2 text-right font-mono font-bold ${item.totalAmount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+                                           <td className={`px-2 py-0.5 text-right font-mono font-bold ${item.totalAmount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                                               {item.totalAmount < 0 ? '-' : ''}{formatCurrency(Math.abs(item.totalAmount))}
                                            </td>
                                        )}
                                        {pnlHistoryGroupBy === 'Contract' && pnlHistoryOptions.map(opt => {
                                            const val = item.entityAmounts[opt] || 0;
                                            return (
-                                               <td key={opt} className={`px-4 py-2 text-right font-mono font-medium ${val >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
+                                               <td key={opt} className={`px-2 py-0.5 text-right font-mono font-medium ${val >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
                                                   {val < 0 ? '-' : ''}{formatCurrency(Math.abs(val))}
                                                </td>
                                            );
@@ -3115,7 +3115,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                                        {pnlHistoryGroupBy !== 'ALL' && pnlHistoryGroupBy !== 'Contract' && pnlHistoryFilterValue && (() => {
                                            const val = item.entityAmounts[pnlHistoryFilterValue] || 0;
                                            return (
-                                               <td className={`px-4 py-2 text-right font-mono font-medium ${val >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
+                                               <td className={`px-2 py-0.5 text-right font-mono font-medium ${val >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
                                                   {val < 0 ? '-' : ''}{formatCurrency(Math.abs(val))}
                                                </td>
                                            );
