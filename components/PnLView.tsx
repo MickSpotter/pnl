@@ -241,7 +241,7 @@ const MasterTable: React.FC<{
 
      return computedArr.map(item => item.original);
   };
-  const renderRowCells = (metrics: any, w4: any) => {
+  const renderRowCells = (metrics: any, w4: any, isStub: boolean = false) => {
     const div = metrics.effNonTeamsCount > 0 ? metrics.effNonTeamsCount : metrics.effCount;
     return (
     <>
@@ -256,8 +256,8 @@ const MasterTable: React.FC<{
       <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.totalPOCov, div))}</td>
        <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.totalRecruiting, div))}</td>
        <td className="px-1 py-0.5 text-right text-blue-400">{val(metrics.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.fuel, div)))}` : formatCurrency(val(metrics.fuel, div))}</td>
-       {show4w && <td className="px-1 py-0.5 text-right font-medium text-orange-300">{formatCurrency(val(w4.sum, div))}</td>}
-      {show4w && <td className="px-1 py-0.5 text-right font-bold text-orange-300">{formatCurrency(val(w4.avg, div))}</td>}
+       {show4w && <td className="px-1 py-0.5 text-right font-medium text-orange-300">{isStub ? '-' : formatCurrency(val(w4.sum, div))}</td>}
+      {show4w && <td className="px-1 py-0.5 text-right font-bold text-orange-300">{isStub ? '-' : formatCurrency(val(w4.avg, div))}</td>}
       <td className={`px-1 py-0.5 text-right font-medium sticky z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] right-0 ${val(metrics.netIncome, div) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
         {formatCurrency(val(metrics.netIncome, div))}
       </td>
@@ -545,7 +545,7 @@ const MasterTable: React.FC<{
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.teamId || '-'}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.franchiseId || '-'}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.contractType || '-'}</td>
-                {renderRowCells(metrics, w4)}
+                {renderRowCells(metrics, w4, isStub)}
               </tr>
             );
           })}
@@ -690,6 +690,7 @@ const PnLView: React.FC<PnLViewProps> = ({
   
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
   const [chartWeeksLimit, setChartWeeksLimit] = useState<number | 'ALL'>('ALL');
+  const [isPnlHistoryAverageView, setIsPnlHistoryAverageView] = useState(false);
   const [isMetricsOpen, setIsMetricsOpen] = useState(false);
   const [isEntitiesOpen, setIsEntitiesOpen] = useState(false);
   const metricsRef = useRef<HTMLDivElement>(null);
@@ -1210,12 +1211,29 @@ const PnLView: React.FC<PnLViewProps> = ({
             }
 
             if (matchedExp) {
-                sharedLiabilityValue = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
-            }
-            liability = liability - sharedLiabilityValue;
-        }
-        
-        const cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
+                 sharedLiabilityValue = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
+             }
+             liability = liability - sharedLiabilityValue;
+         }
+
+         if (d.name === 'Angela Sega' && effContractType === 'MCLOO' && String(d.payDate).includes('04-09')) {
+             console.log('--- DEBUG LIABILITY: Angela Sega | Pay Date:', d.payDate, '---');
+             console.log('Company:', d.companyId);
+             console.log('1. liabilityAuto:', liabilityAuto);
+             console.log('2. liabilityGeneral:', liabilityGeneral);
+             console.log('3. liabilityGlobal:', liabilityGlobal);
+             console.log('4. sharedLiabilityValue:', sharedLiabilityValue);
+             console.log('5. FINAL liability (before effNT):', liability);
+             console.log('--- RAW FC DATA ---');
+             console.log('company_specific_costs:', fc.company_specific_costs);
+             console.log('contract_specific_costs:', fc.contract_specific_costs);
+             console.log('liability_insurance_custom:', fc.liability_insurance_custom);
+             console.log('liability_insurance (global):', fc.liability_insurance);
+             console.log('--- SHARED LIABILITY SEARCH ---');
+             console.log('fixedExpenses examined:', fixedExpenses.filter(e => e.companyId === d.companyId || e.companyId === 'ALL'));
+         }
+         
+         const cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
         const phd = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
         const plates = getFcRule('Plates', 'plates_custom', 'plates');
         const factoring = getFcRule('Factoring', 'factoring_custom', 'factoring');
@@ -1254,34 +1272,9 @@ const PnLView: React.FC<PnLViewProps> = ({
              }
          }
          
-      if (effContractType === 'MCLOO' && d.name === 'Angela Sega' && !loggedTpogDrivers.has('Angela Sega')) {
-           loggedTpogDrivers.add('Angela Sega');
-           console.log('--- MCLOO DEBUG | DRIVER:', d.name, ' | TYPE:', effContractType, ' | COMPANY:', d.companyId, ' | PAY DATE:', d.payDate, '---');
-           console.log('FIXED TOTAL:', fixed_costs_calc);
-           console.log('effNT:', effNT);
-           console.log('effTr:', effTr);
-           console.log('liability (after shared insurance deduction):', liability);
-           console.log('cargo:', cargo);
-           console.log('phd:', phd);
-           console.log('truck_weekly:', truck_weekly);
-           console.log('plates:', plates);
-           console.log('telematics:', telematics);
-           console.log('phone_and_internet:', phone_and_internet);
-           console.log('office_supplies:', office_supplies);
-           console.log('rent_and_parking:', rent_and_parking);
-           console.log('backup_mc:', backup_mc);
-           console.log('backoffice_reg:', backoffice_reg);
-           console.log('backoffice_tech:', backoffice_tech);
-           console.log('truck_cpm:', truck_cpm);
-           console.log('milesDriven:', d.milesDriven);
-           console.log('trailer_weekly:', trailer_weekly);
-           console.log('driver_gross:', driver_gross);
-           console.log('margin_amt:', margin_amt);
-           console.log('factoring (%):', factoring);
-       }
-       if ((effContractType === 'TPOG' || effContractType === 'TPOG WITH FRANCHISE') && String(d.payDate).includes('04-30') && !loggedTpogDrivers.has(effContractType)) {
-           loggedTpogDrivers.add(effContractType);
-           console.log('--- TPOG DEBUG | DRIVER:', d.name, ' | TYPE:', effContractType, ' | COMPANY:', d.companyId, ' | PAY DATE:', d.payDate, '---');
+      if (d.name === 'Darryl Cook' && String(d.payDate).includes('04-30') && !loggedTpogDrivers.has('Darryl Cook')) {
+           loggedTpogDrivers.add('Darryl Cook');
+           console.log('--- CPM DEBUG | DRIVER:', d.name, ' | TYPE:', effContractType, ' | COMPANY:', d.companyId, ' | PAY DATE:', d.payDate, '---');
            console.log('FIXED TOTAL:', fixed_costs_calc);
            console.log('effNT:', effNT);
            console.log('effTr:', effTr);
@@ -1660,16 +1653,18 @@ const PnLView: React.FC<PnLViewProps> = ({
       const weekDrivers = groups[date];
       const uniqueDriverNames = Array.from(new Set(weekDrivers.map(d => d.name))).filter(Boolean);
       let totalNetIncome = 0;
-      let filteredNetIncome = 0;
-      let hasData = false;
+      let totalNT = 0;
       
-      const entityAmounts: Record<string, number> = {};
-      pnlHistoryOptions.forEach(opt => entityAmounts[opt] = 0);
+      const entityData: Record<string, { amount: number, nt: number }> = {};
+      pnlHistoryOptions.forEach(opt => entityData[opt] = { amount: 0, nt: 0 });
 
       uniqueDriverNames.forEach(dName => {
         const drvRecords = weekDrivers.filter(drv => drv.name === dName);
         const m = calculateMetrics(drvRecords, true);
+        
         totalNetIncome += m.netIncome;
+        const div = m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount;
+        totalNT += div;
 
         if (pnlHistoryGroupBy !== 'ALL') {
             drvRecords.forEach(d => {
@@ -1679,39 +1674,26 @@ const PnLView: React.FC<PnLViewProps> = ({
                else if (pnlHistoryGroupBy === 'Franchise') groupKey = d.franchiseId || 'Unknown';
                else if (pnlHistoryGroupBy === 'Team') groupKey = d.teamId || 'Unknown';
 
-               const allocatedIncome = m.netIncome / drvRecords.length;
-               
-               if (entityAmounts[groupKey] !== undefined) {
-                   entityAmounts[groupKey] += allocatedIncome;
-               } else if (pnlHistoryOptions.includes(groupKey)) {
-                   entityAmounts[groupKey] = allocatedIncome;
-               }
-
-               if (groupKey === resolvedPnlFilter) {
-                   filteredNetIncome += allocatedIncome;
-                   hasData = true;
+               const count = drvRecords.length;
+               if (entityData[groupKey]) {
+                   entityData[groupKey].amount += (m.netIncome / count);
+                   entityData[groupKey].nt += (div / count);
                }
             });
         }
       });
 
-      if (pnlHistoryGroupBy === 'ALL' && uniqueDriverNames.length > 0) {
-          hasData = true;
-      }
-
       return { 
          date, 
-         amount: pnlHistoryGroupBy === 'ALL' ? totalNetIncome : filteredNetIncome,
-         name: pnlHistoryGroupBy === 'ALL' ? 'Total (All Entities)' : resolvedPnlFilter,
-         hasData,
          totalAmount: totalNetIncome,
-         entityAmounts
+         totalNT,
+         entityData
       };
     });
 
     const sortedHistory = history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
     return sortedHistory.length > 1 ? sortedHistory.slice(0, -1) : sortedHistory;
-  }, [enrichedDrivers, calculateMetrics, pnlHistoryGroupBy, resolvedPnlFilter, pnlHistoryOptions]);
+  }, [enrichedDrivers, calculateMetrics, pnlHistoryGroupBy, pnlHistoryOptions]);
 
 
   const chartData = useMemo(() => {
@@ -1927,6 +1909,29 @@ const PnLView: React.FC<PnLViewProps> = ({
   };
 
   const formatPercentage = (val: number) => `${Math.round(val)}%`;
+
+  const sidebarUtilization = useMemo(() => {
+      const baseDrivers = allDrivers || drivers;
+      const gfComps = globalFilter?.companies || [];
+      const isCompFiltered = gfComps.length > 0;
+      
+      let utilDrivers = baseDrivers;
+      if (selectedDate !== 'ALL') {
+         const targetDate = selectedDate === 'LATEST' ? latestPayDate : selectedDate;
+         utilDrivers = utilDrivers.filter(d => d.payDate === targetDate);
+      }
+      if (isCompFiltered) {
+         utilDrivers = utilDrivers.filter(d => gfComps.includes(d.companyId || ''));
+      }
+      
+      const metrics = calculateMetrics(utilDrivers);
+      return {
+          trucks: metrics.numOfTrucks,
+          trailers: metrics.numOfTrailers,
+          nt: metrics.effNonTeamsForTrucks,
+          tr: metrics.effTrailersCount
+      };
+  }, [allDrivers, drivers, selectedDate, latestPayDate, globalFilter, calculateMetrics]);
 
   return (
     <div className="flex flex-col h-full gap-2">
@@ -2383,13 +2388,13 @@ const PnLView: React.FC<PnLViewProps> = ({
              <div className="flex justify-between items-center gap-2 mb-3 bg-zinc-950/50 p-2 rounded border border-zinc-800/50 flex-shrink-0">
                <div className="flex items-center justify-center gap-2 w-1/2 border-r border-zinc-800/50 pr-2">
                   <Truck size={14} className="text-emerald-500" />
-                  <span className="text-[11px] font-mono font-bold text-zinc-300">{Math.round(companyMetrics.effNonTeamsForTrucks)} / {companyMetrics.numOfTrucks}</span>
-                  <span className="text-[10px] font-bold text-emerald-400">({formatPercentage(companyMetrics.numOfTrucks > 0 ? Math.min(100, (companyMetrics.effNonTeamsForTrucks / companyMetrics.numOfTrucks) * 100) : 0)})</span>
+                  <span className="text-[11px] font-mono font-bold text-zinc-300">{Math.round(sidebarUtilization.nt)} / {sidebarUtilization.trucks}</span>
+                  <span className="text-[10px] font-bold text-emerald-400">({formatPercentage(sidebarUtilization.trucks > 0 ? Math.min(100, (sidebarUtilization.nt / sidebarUtilization.trucks) * 100) : 0)})</span>
                </div>
                <div className="flex items-center justify-center gap-2 w-1/2 pl-2">
                   <Container size={14} className="text-emerald-500" />
-                  <span className="text-[11px] font-mono font-bold text-zinc-300">{Math.round(companyMetrics.effTrailersCount)} / {companyMetrics.numOfTrailers}</span>
-                  <span className="text-[10px] font-bold text-emerald-400">({formatPercentage(companyMetrics.numOfTrailers > 0 ? Math.min(100, (companyMetrics.effTrailersCount / companyMetrics.numOfTrailers) * 100) : 0)})</span>
+                  <span className="text-[11px] font-mono font-bold text-zinc-300">{Math.round(sidebarUtilization.tr)} / {sidebarUtilization.trailers}</span>
+                  <span className="text-[10px] font-bold text-emerald-400">({formatPercentage(sidebarUtilization.trailers > 0 ? Math.min(100, (sidebarUtilization.tr / sidebarUtilization.trailers) * 100) : 0)})</span>
                </div>
              </div>
 
@@ -2441,6 +2446,14 @@ const PnLView: React.FC<PnLViewProps> = ({
                         return tr || 1;
                     })();
 
+                    const filteredWeekDrivers = displayedDrivers.filter(d => d.payDate === companyMetrics.currentPayDate);
+
+                    const filteredNT = filteredWeekDrivers.reduce((sum, d) => sum + (d.effectiveNonTeams || 0), 0);
+
+                    const filteredTr = filteredWeekDrivers.reduce((sum, d) => sum + ((d as any).effectiveTrailers || 0), 0);
+                    
+                    const filteredTruckNT = filteredWeekDrivers.filter(d => d.contractType !== 'OO').reduce((sum, d) => sum + (d.effectiveNonTeams || 0), 0);
+
                     const getSidebarVal = (globalKey: string, customKey?: string) => {
                         let amount: number | null = null;
                         if (customKey && fcSidebar[customKey] !== undefined && fcSidebar[customKey] !== null && fcSidebar[customKey] !== '') {
@@ -2452,52 +2465,58 @@ const PnLView: React.FC<PnLViewProps> = ({
                         return amount || 0;
                     };
 
-                    const renderRow = (label: string, globalKey: string, customKey?: string, isPercent: boolean = false, multiplier: number = globalNT, valTooltip?: any, totalTooltip?: any, customVal?: number, customTotal?: number) => {
-                        const val = customVal !== undefined ? customVal : getSidebarVal(globalKey, customKey);
-                        if (val === 0) return null;
-                        
-                        let total = customTotal !== undefined ? customTotal : 0;
-                        if (customTotal === undefined) {
-                            if (isPercent) {
-                                total = (companyMetrics.gross + companyMetrics.margin) * (val / 100);
-                            } else {
-                                total = val * multiplier;
-                            }
-                        }
-                        return (
-                            <div key={label} className="flex items-center p-1.5 hover:bg-zinc-800/20 transition-colors relative">
-                               <div className="w-[50%] text-left pr-2">
-                                 <span className="text-[10px] text-zinc-300 block truncate">{label}</span>
-                               </div>
-                               <div className="w-[25%] text-center">
-                                 <div className="relative group/tooltip inline-block">
-                                    <span className={`text-[10px] font-mono font-bold transition-colors duration-200 ${valTooltip ? 'cursor-help text-zinc-400 hover:text-emerald-300' : 'text-zinc-400'}`}>
-                                      {isPercent ? `-${val}%` : `-${formatCurrency(val)}`}
-                                    </span>
-                                    {valTooltip && (
-                                       <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none transform -translate-x-[105%] -translate-y-1/2">
-                                          {valTooltip}
-                                       </div>
-                                    )}
-                                 </div>
-                               </div>
-                               <div className="w-[25%] text-right">
-                                 <div className="relative group/tooltip inline-block">
-                                    <span className={`text-[10px] font-mono font-bold transition-colors duration-200 ${totalTooltip ? 'cursor-help text-sky-400/80 hover:text-sky-300' : 'text-sky-400/80'}`}>
-                                      -{formatCurrency(total)}
-                                    </span>
-                                    {totalTooltip && (
-                                       <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none transform -translate-x-[105%] -translate-y-1/2">
-                                          {totalTooltip}
-                                       </div>
-                                    )}
-                                 </div>
-                               </div>
-                            </div>
-                        );
-                    };
+                    const renderRow = (label: string, globalKey: string, customKey?: string, isPercent: boolean = false, multiplier: number = filteredNT, valTooltip?: any, totalTooltip?: any, customVal?: number, customTotal?: number) => {
+    const val = customVal !== undefined ? customVal : getSidebarVal(globalKey, customKey);
+    if (val === 0) return null;
+    
+    let total = customTotal !== undefined ? customTotal : 0;
+    if (customTotal === undefined) {
+        if (isPercent) {
+            total = (companyMetrics.gross + companyMetrics.margin) * (val / 100);
+        } else {
+            total = val * multiplier;
+        }
+    }
 
-                    const getRowTotal = (globalKey: string, customKey?: string, isPercent: boolean = false, multiplier: number = globalNT) => {
+    const isProfit = val < 0;
+    const isTotalProfit = total < 0;
+
+    return (
+        <div key={label} className="flex items-center p-1.5 hover:bg-zinc-800/20 transition-colors relative">
+           <div className="w-[50%] text-left pr-2">
+             <span className="text-[10px] text-zinc-300 block truncate">{label}</span>
+           </div>
+           <div className="w-[25%] text-center">
+             <div className="relative group/tooltip inline-block">
+                <span className={`text-[10px] font-mono font-bold transition-colors duration-200 ${valTooltip ? 'cursor-help text-zinc-400 hover:text-emerald-300' : 'text-zinc-400'}`}>
+                  {isPercent 
+                      ? `${isProfit ? '+' : '-'}${Math.abs(val)}%` 
+                      : `${isProfit ? '+' : '-'}${label.includes('General') ? `$${Math.abs(val).toFixed(2)}` : formatCurrency(Math.abs(val))}`}
+                </span>
+                {valTooltip && (
+                   <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none transform -translate-x-[105%] -translate-y-1/2">
+                      {valTooltip}
+                   </div>
+                )}
+             </div>
+           </div>
+           <div className="w-[25%] text-right">
+             <div className="relative group/tooltip inline-block">
+                <span className={`text-[10px] font-mono font-bold transition-colors duration-200 ${totalTooltip ? 'cursor-help text-sky-400/80 hover:text-sky-300' : 'text-sky-400/80'}`}>
+                  {isTotalProfit ? `+${formatCurrency(Math.abs(total))}` : `-${formatCurrency(Math.abs(total))}`}
+                </span>
+                {totalTooltip && (
+                   <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none transform -translate-x-[105%] -translate-y-1/2">
+                      {totalTooltip}
+                   </div>
+                )}
+             </div>
+           </div>
+        </div>
+    );
+};
+
+                    const getRowTotal = (globalKey: string, customKey?: string, isPercent: boolean = false, multiplier: number = filteredNT) => {
                         const val = getSidebarVal(globalKey, customKey);
                         if (val === 0) return 0;
                         if (isPercent) return (companyMetrics.gross + companyMetrics.margin) * (val / 100);
@@ -2511,12 +2530,13 @@ const PnLView: React.FC<PnLViewProps> = ({
                     if (!Array.isArray(specCosts)) specCosts = [];
 
                     const uniqueCompsInWeek = Array.from(new Set(weekAllDrivers.map(d => d.companyId))).filter(Boolean) as string[];
+                    const activeCompsInWeek = Array.from(new Set(filteredWeekDrivers.map(d => d.companyId))).filter(Boolean) as string[];
 
                     const getDetailedExpenseTotal = (expName: string, fallbackExpName?: string) => {
                         let weeklySum = 0;
                         const breakdown: { company: string, literal: number, frequency: string, weekly: number }[] = [];
 
-                        uniqueCompsInWeek.forEach(compId => {
+                        activeCompsInWeek.forEach(compId => {
                             let { amount, exp } = getActiveAmount(expName, companyMetrics.currentPayDate, compId, uniqueCompsInWeek.length);
                             if (amount === 0 && !exp && fallbackExpName) {
                                 const fallback = getActiveAmount(fallbackExpName, companyMetrics.currentPayDate, compId, uniqueCompsInWeek.length);
@@ -2548,11 +2568,14 @@ const PnLView: React.FC<PnLViewProps> = ({
 
                         specCosts.forEach((el: any) => {
                             if ((el.expense_name || '').toLowerCase().includes(expNameKeyword.toLowerCase())) {
-                                const amt = Math.abs(Number(el.amount) || 0);
-                                if (amt > 0) {
-                                    sumPerUnit += amt;
-                                    count++;
-                                    breakdown.push({ company: el.company_id || 'Unknown', perUnit: amt });
+                                const compId = el.company_id || 'Unknown';
+                                if (activeCompsInWeek.includes(compId)) {
+                                    const amt = Math.abs(Number(el.amount) || 0);
+                                    if (amt > 0) {
+                                        sumPerUnit += amt;
+                                        count++;
+                                        breakdown.push({ company: compId, perUnit: amt });
+                                    }
                                 }
                             }
                         });
@@ -2560,163 +2583,180 @@ const PnLView: React.FC<PnLViewProps> = ({
                         return { averagePerUnit, breakdown };
                     };
 
-                    const buildPerUnitTooltip = (title: string, breakdown: any[]) => {
-                        if (breakdown.length === 0) return null;
-                        return (
-                            <div className="flex flex-col gap-1 w-full text-left min-w-[200px]">
-                                <div className="text-emerald-400 font-bold mb-1 border-b border-zinc-700 pb-0.5">{title}</div>
-                                <div className="text-[9px] text-zinc-400 mb-1.5 leading-tight">This value represents the Average. Below are the exact amounts per company:</div>
-                                {breakdown.map((b: any, i: number) => (
-                                    <div key={i} className="flex justify-between gap-4">
-                                        <span className="text-zinc-400">{b.company}</span>
-                                        <span className="text-zinc-200 font-bold">-{formatCurrency(Math.abs(b.perUnit))}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        );
-                    };
+                    const buildPerUnitTooltip = (title: string, breakdown: any[], showDecimals: boolean = false) => {
+    if (breakdown.length === 0) return null;
+    return (
+        <div className="flex flex-col gap-1 w-full text-left min-w-[200px]">
+            <div className="text-emerald-400 font-bold mb-1 border-b border-zinc-700 pb-0.5">{title}</div>
+            <div className="text-[9px] text-zinc-400 mb-1.5 leading-tight">This value represents the Average. Below are the exact amounts per company:</div>
+            {breakdown.map((b: any, i: number) => (
+                <div key={i} className="flex justify-between gap-4">
+                    <span className="text-zinc-400">{b.company}</span>
+                    <span className="text-zinc-200 font-bold">
+                        {b.perUnit < 0 ? '+' : '-'}{showDecimals ? `$${Math.abs(b.perUnit).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : formatCurrency(Math.abs(b.perUnit))}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+};
 
-                    const buildTotalTooltip = (title: string, breakdown: any[]) => {
-                        if (breakdown.length === 0) return null;
-                        return (
-                            <div className="flex flex-col gap-1 w-full text-left min-w-[200px]">
-                                <div className="text-sky-400 font-bold mb-1 border-b border-zinc-700 pb-0.5">{title}</div>
-                                <div className="text-[9px] text-zinc-400 mb-1.5 leading-tight">This value represents the Total sum of all companies. Below are the weekly expenses per company:</div>
-                                {breakdown.map((b: any, i: number) => (
-                                    <div key={i} className="flex justify-between gap-4">
-                                        <span className="text-zinc-400">{b.company}</span>
-                                        <span className="text-zinc-200 font-bold">-{formatCurrency(Math.abs(b.weekly))}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        );
-                    };
+const buildTotalTooltip = (title: string, breakdown: any[]) => {
+    if (breakdown.length === 0) return null;
+    return (
+        <div className="flex flex-col gap-1 w-full text-left min-w-[200px]">
+            <div className="text-sky-400 font-bold mb-1 border-b border-zinc-700 pb-0.5">{title}</div>
+            <div className="text-[9px] text-zinc-400 mb-1.5 leading-tight">This value represents the Total sum of all companies. Below are the weekly expenses per company:</div>
+            {breakdown.map((b: any, i: number) => (
+                <div key={i} className="flex justify-between gap-4">
+                    <span className="text-zinc-400">{b.company}</span>
+                    <span className="text-zinc-200 font-bold">
+                        {b.weekly < 0 ? '+' : '-'}{formatCurrency(Math.abs(b.weekly))}
+                    </span>
+                </div>
+            ))}
+        </div>
+    );
+};
 
 
                     const getLiabilityAutoBreakdown = () => {
-                         const puBreakdown: { company: string, perUnit: number }[] = [];
-                         const totalBreakdown: { company: string, literal: number, frequency: string, weekly: number }[] = [];
-                         let sumPerUnit = 0;
-                         let totalWeekly = 0;
-                         let count = 0;
+                                                  const puBreakdown: { company: string, perUnit: number }[] = [];
+                                                  const totalBreakdown: { company: string, literal: number, frequency: string, weekly: number }[] = [];
+                                                  let totalWeekly = 0;
+                                                  let totalNTAllComps = 0;
 
-                         uniqueCompsInWeek.forEach(compId => {
-                             const compDrivers = weekAllDrivers.filter(d => d.companyId === compId);
-                             if (compDrivers.length === 0) return;
-                             
-                             let totalCompanyLiability = 0;
-                             let totalCompNT = 0;
-                             
-                             let amount: number | null = null;
-                             if (specCosts && Array.isArray(specCosts)) {
-                                 const compRule = specCosts.find((el: any) =>
-                                     (el.company_id || '').replace(/\s+/g, '').toLowerCase() === (compId || '').replace(/\s+/g, '').toLowerCase() &&
-                                     (el.expense_name || '').toLowerCase().includes('liability insurance (auto)')
-                                 );
-                                 if (compRule && compRule.amount !== undefined && compRule.amount !== null) {
-                                     amount = Math.abs(Number(compRule.amount));
-                                 }
-                             }
-                             if (amount === null && fcSidebar['liability_insurance_custom'] !== undefined && fcSidebar['liability_insurance_custom'] !== null && fcSidebar['liability_insurance_custom'] !== '') {
-                                 amount = Math.abs(Number(fcSidebar['liability_insurance_custom']));
-                             }
-                             if (amount === null && fcSidebar['liability_insurance'] !== undefined && fcSidebar['liability_insurance'] !== null && fcSidebar['liability_insurance'] !== '') {
-                                 amount = Math.abs(Number(fcSidebar['liability_insurance']));
-                             }
-                             const baseLiabilityAuto = amount || 0;
-                             
-                             const currTime = companyMetrics.currentPayDate ? new Date(companyMetrics.currentPayDate).getTime() : Date.now();
-                             
-                             compDrivers.forEach(d => {
-                                 const effNT = d.effectiveNonTeams || 0;
-                                 if (effNT <= 0) return;
-                                 
-                                 totalCompNT += effNT;
-                                 let sharedLiabilityValue = 0;
-                                 
-                                 if (d.contractType === 'MCLOO') {
-                                     const isValidVal = (val: any) => val !== undefined && val !== null && String(val).trim() !== '';
+                                                  activeCompsInWeek.forEach(compId => {
+                                                      const compDrivers = filteredWeekDrivers.filter(d => d.companyId === compId);
+                                                  if (compDrivers.length === 0) return;
+                                                  
+                                                  let totalCompanyLiability = 0;
+                                                  let totalCompNT = 0;
+                                                  
+                                                  let amount: number | null = null;
+                                                  if (specCosts && Array.isArray(specCosts)) {
+                                                      const compRule = specCosts.find((el: any) =>
+                                                          (el.company_id || '').replace(/\s+/g, '').toLowerCase() === (compId || '').replace(/\s+/g, '').toLowerCase() &&
+                                                          (el.expense_name || '').toLowerCase().includes('liability insurance (auto)')
+                                                      );
+                                                      if (compRule && compRule.amount !== undefined && compRule.amount !== null && String(compRule.amount).trim() !== '') {
+                                                          amount = Math.abs(Number(compRule.amount));
+                                                      }
+                                                  }
+                                                  if (amount === null && fcSidebar['liability_insurance_custom'] !== undefined && fcSidebar['liability_insurance_custom'] !== null && String(fcSidebar['liability_insurance_custom']).trim() !== '') {
+                                                      amount = Math.abs(Number(fcSidebar['liability_insurance_custom']));
+                                                  }
+                                                  if (amount === null && fcSidebar['liability_insurance'] !== undefined && fcSidebar['liability_insurance'] !== null && String(fcSidebar['liability_insurance']).trim() !== '') {
+                                                      amount = Math.abs(Number(fcSidebar['liability_insurance']));
+                                                  }
+                                                  const baseLiabilityAuto = amount || 0;
+                                                  
+                                                  const parseDateSafely = (dStr: string) => {
+                                                       if (!dStr) return 0;
+                                                       const dt = new Date(dStr);
+                                                       return dt.getTime();
+                                                  };
+                                                  const currTime = companyMetrics.currentPayDate ? parseDateSafely(companyMetrics.currentPayDate) : Date.now();
+                                                  
+                                                  compDrivers.forEach(d => {
+                                                      const effNT = d.effectiveNonTeams || 0;
+                                                      if (effNT <= 0) return;
+                                                      
+                                                      totalCompNT += effNT;
+                                                      let sharedLiabilityValue = 0;
+                                                      
+                                                      if (d.contractType === 'MCLOO') {
+                                                          const isValidVal = (val: any) => val !== undefined && val !== null && String(val).trim() !== '';
 
-                                     let matchedExp = fixedExpenses.find(e => 
-                                         (e.companyId || '').replace(/\s+/g, '').toLowerCase() === (d.companyId || '').replace(/\s+/g, '').toLowerCase() && 
-                                         (isValidVal((e as any).shared_liability) || isValidVal((e as any).shared_insurance)) &&
-                                         (!e.valid_from || new Date(e.valid_from).getTime() <= currTime) &&
-                                         (!e.valid_to || new Date(e.valid_to).getTime() >= currTime)
-                                     );
-                                     
-                                     if (!matchedExp) {
-                                         matchedExp = fixedExpenses.find(e => 
-                                             e.companyId === 'ALL' && 
-                                             (isValidVal((e as any).shared_liability) || isValidVal((e as any).shared_insurance)) &&
-                                             (!e.valid_from || new Date(e.valid_from).getTime() <= currTime) &&
-                                             (!e.valid_to || new Date(e.valid_to).getTime() >= currTime)
-                                         );
-                                     }
-                                     if (matchedExp) {
-                                         sharedLiabilityValue = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
-                                     }
-                                 }
-                                 totalCompanyLiability += (baseLiabilityAuto - sharedLiabilityValue) * effNT;
-                             });
-                             
-                             if (totalCompNT > 0) {
-                                 const effPerUnit = totalCompanyLiability / totalCompNT;
-                                 puBreakdown.push({ company: compId, perUnit: effPerUnit });
-                                 totalBreakdown.push({ company: compId, literal: totalCompanyLiability * 52, frequency: 'Weekly', weekly: totalCompanyLiability });
-                                 sumPerUnit += effPerUnit;
-                                 totalWeekly += totalCompanyLiability;
-                                 count++;
-                             }
-                         });
-                         
-                         return {
-                             averagePerUnit: count > 0 ? sumPerUnit / count : 0,
-                             totalWeekly,
-                             puBreakdown,
-                             totalBreakdown
-                         };
-                    };
+                                                          let matchedExp = fixedExpenses.find(e => 
+                                                              (e.name || '').toLowerCase().includes('liability') &&
+                                                              (e.companyId || '').replace(/\s+/g, '').toLowerCase() === (d.companyId || '').replace(/\s+/g, '').toLowerCase() && 
+                                                              (isValidVal((e as any).shared_liability) || isValidVal((e as any).shared_insurance)) &&
+                                                              (!e.valid_from || parseDateSafely(e.valid_from) <= currTime) &&
+                                                              (!e.valid_to || parseDateSafely(e.valid_to) >= currTime)
+                                                          );
+                                                          
+                                                          if (!matchedExp) {
+                                                              matchedExp = fixedExpenses.find(e => 
+                                                                  (e.name || '').toLowerCase().includes('liability') &&
+                                                                  e.companyId === 'ALL' && 
+                                                                  (isValidVal((e as any).shared_liability) || isValidVal((e as any).shared_insurance)) &&
+                                                                  (!e.valid_from || parseDateSafely(e.valid_from) <= currTime) &&
+                                                                  (!e.valid_to || parseDateSafely(e.valid_to) >= currTime)
+                                                              );
+                                                          }
 
-                    const liabAutoStats = getLiabilityAutoBreakdown();
-                    const liabAutoData = { weeklySum: liabAutoStats.totalWeekly, breakdown: liabAutoStats.totalBreakdown };
-                    const liabAutoPU = { averagePerUnit: liabAutoStats.averagePerUnit, breakdown: liabAutoStats.puBreakdown };
-                    
-                    const liabGenData = getDetailedExpenseTotal('Liability Insurance (General)');
-                    const liabGenPU = getDetailedExpensePerUnit('Liability Insurance (General)');
-                    
-                    const cargoData = getDetailedExpenseTotal('Cargo Insurance');
-                    const cargoPU = getDetailedExpensePerUnit('Cargo Insurance');
-                    
-                    const pdData = getDetailedExpenseTotal('Physical Damage');
-                    const pdPU = getDetailedExpensePerUnit('Physical Damage');
+                                                          if (matchedExp) {
+                                                              sharedLiabilityValue = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
+                                                          }
+                                                      }
+                                                      totalCompanyLiability += (baseLiabilityAuto - sharedLiabilityValue) * effNT;
+                                                  });
+                                                  
+                                                  if (totalCompNT > 0) {
+                                                      const effPerUnit = totalCompanyLiability / totalCompNT;
+                                                      puBreakdown.push({ company: compId, perUnit: effPerUnit });
+                                                      totalBreakdown.push({ company: compId, literal: totalCompanyLiability * 52, frequency: 'Weekly', weekly: totalCompanyLiability });
+                                                      totalWeekly += totalCompanyLiability;
+                                                      totalNTAllComps += totalCompNT;
+                                                  }
+                                              });
+                                              
+                                              return {
+                                                  averagePerUnit: totalNTAllComps > 0 ? totalWeekly / totalNTAllComps : 0,
+                                                  totalWeekly,
+                                                  puBreakdown,
+                                                  totalBreakdown
+                                              };
+                                         };
 
-                    const finalLiabAutoPerUnit = liabAutoPU.averagePerUnit > 0 ? liabAutoPU.averagePerUnit : getSidebarVal('liability_insurance', 'liability_insurance_custom');
-                    const finalLiabAutoTotal = finalLiabAutoPerUnit * globalNT;
+                                         const liabAutoStats = getLiabilityAutoBreakdown();
+                                         const liabAutoData = { weeklySum: liabAutoStats.totalWeekly, breakdown: liabAutoStats.totalBreakdown };
+                                         const liabAutoPU = { averagePerUnit: liabAutoStats.averagePerUnit, breakdown: liabAutoStats.puBreakdown };
+                                         
+                                         const liabGenData = getDetailedExpenseTotal('Liability Insurance (General)');
+                                         const liabGenPU = getDetailedExpensePerUnit('Liability Insurance (General)');
+                                         
+                                         const cargoData = getDetailedExpenseTotal('Cargo Insurance');
+                                         const cargoPU = getDetailedExpensePerUnit('Cargo Insurance');
+                                         
+                                         const pdData = getDetailedExpenseTotal('Physical Damage');
+                                         const pdPU = getDetailedExpensePerUnit('Physical Damage');
+
+                                         let finalLiabAutoTotal = 0;
+                                         let finalLiabAutoPerUnit = 0;
+                                         if (liabAutoStats.totalWeekly > 0 || liabAutoStats.puBreakdown.length > 0) {
+                                             finalLiabAutoTotal = liabAutoStats.totalWeekly;
+                                             finalLiabAutoPerUnit = filteredNT > 0 ? finalLiabAutoTotal / filteredNT : 0;
+                                         } else {
+                                             finalLiabAutoPerUnit = getSidebarVal('liability_insurance', 'liability_insurance_custom');
+                                             finalLiabAutoTotal = finalLiabAutoPerUnit * filteredNT;
+                                         }
 
                     const finalLiabGenPerUnit = liabGenPU.averagePerUnit;
-                    const finalLiabGenTotal = finalLiabGenPerUnit * globalNT;
+                    const finalLiabGenTotal = finalLiabGenPerUnit * filteredNT;
 
                     const finalCargoPerUnit = cargoPU.averagePerUnit > 0 ? cargoPU.averagePerUnit : getSidebarVal('cargo_insurance', 'cargo_insurance_custom');
-                    const finalCargoTotal = finalCargoPerUnit * globalNT;
+                    const finalCargoTotal = finalCargoPerUnit * filteredNT;
 
                     const finalPdTruckPerUnit = pdPU.averagePerUnit > 0 ? pdPU.averagePerUnit : getSidebarVal('physical_damage', 'physical_damage_custom');
-                    const finalPdTruckTotal = finalPdTruckPerUnit * companyMetrics.effNonTeamsForTrucks;
+                    const finalPdTruckTotal = finalPdTruckPerUnit * filteredTruckNT;
                     
                     const finalPdTrailerPerUnit = finalPdTruckPerUnit / 4;
-                    const finalPdTrailerTotal = finalPdTrailerPerUnit * globalTr;
+                    const finalPdTrailerTotal = finalPdTrailerPerUnit * filteredTr;
 
                     const insPerUnitTotal = finalLiabAutoPerUnit + finalLiabGenPerUnit + finalCargoPerUnit + finalPdTruckPerUnit + finalPdTrailerPerUnit;
                     const insTotal = finalLiabAutoTotal + finalLiabGenTotal + finalCargoTotal + finalPdTruckTotal + finalPdTrailerTotal;
 
-                    const getCompNT = (compId: string) => weekAllDrivers.filter(d => d.companyId === compId).reduce((sum, d) => sum + (d.effectiveNonTeams || 0), 0);
-                    const getCompTruckNT = (compId: string) => weekAllDrivers.filter(d => d.companyId === compId && d.contractType !== 'OO').reduce((sum, d) => sum + (d.effectiveNonTeams || 0), 0);
-                    const getCompTr = (compId: string) => weekAllDrivers.filter(d => d.companyId === compId).reduce((sum, d) => sum + ((d as any).effectiveTrailers || 0), 0);
+                    const getCompNT = (compId: string) => filteredWeekDrivers.filter(d => d.companyId === compId).reduce((sum, d) => sum + (d.effectiveNonTeams || 0), 0);
+                    const getCompTruckNT = (compId: string) => filteredWeekDrivers.filter(d => d.companyId === compId && d.contractType !== 'OO').reduce((sum, d) => sum + (d.effectiveNonTeams || 0), 0);
+                    const getCompTr = (compId: string) => filteredWeekDrivers.filter(d => d.companyId === compId).reduce((sum, d) => sum + ((d as any).effectiveTrailers || 0), 0);
 
                     const liabAutoPUTooltip = buildPerUnitTooltip('Liability Ins. (Auto) *Inc. MCLOO', liabAutoPU.breakdown);
                     const liabAutoTotalBreakdown = liabAutoPU.breakdown.map(b => ({ company: b.company, weekly: b.perUnit * getCompNT(b.company) }));
                     const liabAutoTotalTooltip = buildTotalTooltip('Liability Ins. (Auto) *Inc. MCLOO', liabAutoTotalBreakdown);
 
-                    const liabGenPUTooltip = buildPerUnitTooltip('Liability Insurance (General)', liabGenPU.breakdown);
+                    const liabGenPUTooltip = buildPerUnitTooltip('Liability Insurance (General)', liabGenPU.breakdown, true);
                     const liabGenTotalBreakdown = liabGenPU.breakdown.map(b => ({ company: b.company, weekly: b.perUnit * getCompNT(b.company) }));
                     const liabGenTotalTooltip = buildTotalTooltip('Liability Insurance (General)', liabGenTotalBreakdown);
 
@@ -2734,23 +2774,42 @@ const PnLView: React.FC<PnLViewProps> = ({
                     const pdTrailerTotalTooltip = buildTotalTooltip('Physical Damage (Trailer)', pdTrailerTotalBreakdown);
                     
                     const adminItems = [
-                       { label: 'Phone & Internet', gk: 'phone_and_internet', ck: 'phone_and_internet_custom' },
-                       { label: 'Office Supplies', gk: 'office_supplies', ck: 'office_supplies_custom' },
-                       { label: 'Telematics', gk: 'telematics', ck: 'telematics_custom' },
-                       { label: 'Rent & Parking', gk: 'rent_and_parking', ck: 'rent_and_parking_custom' },
-                       { label: 'Backup MCs', gk: 'backup_mc', ck: 'backup_mc_custom' },
-                       { label: 'Back Office Pay', gk: 'backoffice_reg', ck: 'backoffice_reg_custom' },
-                       { label: 'Tech Pay', gk: 'backoffice_tech', ck: 'backoffice_tech_custom' }
-                    ].map(item => ({
-                       ...item,
-                       val: getSidebarVal(item.gk, item.ck),
-                       total: getRowTotal(item.gk, item.ck)
-                    })).filter(item => item.val > 0).sort((a, b) => b.total - a.total);
+                       { label: 'Phone & Internet', keyword: 'Phone & Internet', gk: 'phone_and_internet', ck: 'phone_and_internet_custom' },
+                       { label: 'Office Supplies', keyword: 'Office Supplies', gk: 'office_supplies', ck: 'office_supplies_custom' },
+                       { label: 'Telematics', keyword: 'Telematics', gk: 'telematics', ck: 'telematics_custom' },
+                       { label: 'Rent & Parking', keyword: 'Rent & Parking', gk: 'rent_and_parking', ck: 'rent_and_parking_custom' },
+                       { label: 'Backup MCs', keyword: 'Backup MC', gk: 'backup_mc', ck: 'backup_mc_custom' },
+                       { label: 'Back Office Pay', keyword: 'Back Office Pay', gk: 'backoffice_reg', ck: 'backoffice_reg_custom' },
+                       { label: 'Tech Pay', keyword: 'Tech Pay', gk: 'backoffice_tech', ck: 'backoffice_tech_custom' }
+                    ].map(item => {
+                       const detailedPU = getDetailedExpensePerUnit(item.keyword);
+                       const val = detailedPU.averagePerUnit > 0 ? detailedPU.averagePerUnit : getSidebarVal(item.gk, item.ck);
+                       const total = val * filteredNT;
+                       
+                       const tooltipBreakdown = detailedPU.breakdown;
+                       let valTooltip = null;
+                       let totalTooltip = null;
+                       
+                       if (tooltipBreakdown.length > 0) {
+                           valTooltip = buildPerUnitTooltip(item.label, tooltipBreakdown);
+                           const totalBd = tooltipBreakdown.map(b => ({ company: b.company, weekly: b.perUnit * getCompNT(b.company) }));
+                           totalTooltip = buildTotalTooltip(item.label, totalBd);
+                       }
+                       
+                       return {
+                           ...item,
+                           val,
+                           total,
+                           valTooltip,
+                           totalTooltip
+                       };
+                    }).filter(item => item.val > 0).sort((a, b) => b.total - a.total);
 
                     const adminTotal = adminItems.reduce((sum, item) => sum + item.val, 0);
                                          
                                          let totalTruckCpmCost = 0;
-                                         weekAllDrivers.forEach(d => {
+                                         let totalTruckWeeklyCost = 0;
+                                         filteredWeekDrivers.forEach(d => {
                                              let effContractType = d.contractType || '';
                                              if (d.contractType === 'TPOG' && d.franchiseId) {
                                                  effContractType = 'TPOG WITH FRANCHISE';
@@ -2759,6 +2818,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                                              }
 
                                              let cpm: number | null = null;
+                                             let amount: number | null = null;
                                              let cCosts = fcSidebar.contract_specific_costs;
                                              if (typeof cCosts === 'string') {
                                                  try { cCosts = JSON.parse(cCosts); } catch(e) {}
@@ -2768,12 +2828,17 @@ const PnLView: React.FC<PnLViewProps> = ({
                                                      (el.contract_type || '').trim().toLowerCase() === effContractType.trim().toLowerCase() &&
                                                      (el.expense_name || '').toLowerCase().includes('truck price')
                                                  );
-                                                 if (contractRule && contractRule.cpm !== undefined && contractRule.cpm !== null) {
-                                                     cpm = Math.abs(Number(contractRule.cpm));
+                                                 if (contractRule) {
+                                                     if (contractRule.cpm !== undefined && contractRule.cpm !== null) {
+                                                         cpm = Math.abs(Number(contractRule.cpm));
+                                                     }
+                                                     if (contractRule.amount !== undefined && contractRule.amount !== null) {
+                                                         amount = Math.abs(Number(contractRule.amount));
+                                                     }
                                                  }
                                              }
 
-                                             if (cpm === null) {
+                                             if (cpm === null || amount === null) {
                                                  let sCosts = fcSidebar.company_specific_costs;
                                                  if (typeof sCosts === 'string') {
                                                      try { sCosts = JSON.parse(sCosts); } catch(e) {}
@@ -2783,8 +2848,13 @@ const PnLView: React.FC<PnLViewProps> = ({
                                                          (el.company_id || '').trim().toLowerCase() === (d.companyId || '').trim().toLowerCase() &&
                                                          (el.expense_name || '').toLowerCase().includes('truck price')
                                                      );
-                                                     if (compRule && compRule.cpm !== undefined && compRule.cpm !== null) {
-                                                         cpm = Math.abs(Number(compRule.cpm));
+                                                     if (compRule) {
+                                                         if (cpm === null && compRule.cpm !== undefined && compRule.cpm !== null) {
+                                                             cpm = Math.abs(Number(compRule.cpm));
+                                                         }
+                                                         if (amount === null && compRule.amount !== undefined && compRule.amount !== null) {
+                                                             amount = Math.abs(Number(compRule.amount));
+                                                         }
                                                      }
                                                  }
                                              }
@@ -2792,17 +2862,28 @@ const PnLView: React.FC<PnLViewProps> = ({
                                              if (cpm === null && fcSidebar['truck_price_cpm'] !== undefined && fcSidebar['truck_price_cpm'] !== null) {
                                                  cpm = Math.abs(Number(fcSidebar['truck_price_cpm']));
                                              }
-                                             totalTruckCpmCost += (cpm || 0) * (Number(d.milesDriven) || 0);
-                                         });
-                                         const tCpmPerUnit = globalNT > 0 ? totalTruckCpmCost / globalNT : 0;
+                                             if (amount === null && fcSidebar['truck_weekly_custom'] !== undefined && fcSidebar['truck_weekly_custom'] !== null && fcSidebar['truck_weekly_custom'] !== '') {
+                                                 amount = Math.abs(Number(fcSidebar['truck_weekly_custom']));
+                                             }
+                                             if (amount === null && fcSidebar['truck_weekly'] !== undefined && fcSidebar['truck_weekly'] !== null && fcSidebar['truck_weekly'] !== '') {
+                                                 amount = Math.abs(Number(fcSidebar['truck_weekly']));
+                                             }
 
-                                         const equipTotal = getSidebarVal('truck_weekly') + getSidebarVal('trailer_weekly') + tCpmPerUnit;
+                                             totalTruckCpmCost += (cpm || 0) * (Number(d.milesDriven) || 0);
+                                             if (d.contractType !== 'OO') {
+                                                 totalTruckWeeklyCost += (amount || 0) * (d.effectiveNonTeams || 0);
+                                             }
+                                         });
+                                         const tCpmPerUnit = filteredNT > 0 ? totalTruckCpmCost / filteredNT : 0;
+                                         const tWeeklyPerUnit = filteredTruckNT > 0 ? totalTruckWeeklyCost / filteredTruckNT : 0;
+
+                                         const equipTotal = tWeeklyPerUnit + getSidebarVal('trailer_weekly') + tCpmPerUnit;
                                          
                                          const factoringTotalAmount = (companyMetrics.gross + companyMetrics.margin) * (getSidebarVal('factoring', 'factoring_custom') / 100);
-                    const factoringPerUnitValue = globalNT > 0 ? factoringTotalAmount / globalNT : 0;
+                    const factoringPerUnitValue = filteredNT > 0 ? factoringTotalAmount / filteredNT : 0;
                     const opTotal = getSidebarVal('plates', 'plates_custom') + factoringPerUnitValue;
-                    const equipTotalWeekly = (getSidebarVal('truck_weekly') * companyMetrics.effNonTeamsForTrucks) + getRowTotal('trailer_weekly', undefined, false, globalTr) + totalTruckCpmCost;
-                    const opTotalWeekly = getRowTotal('plates', 'plates_custom', false, Math.round(companyMetrics.effNonTeamsForTrucks)) + factoringTotalAmount;
+                    const equipTotalWeekly = totalTruckWeeklyCost + getRowTotal('trailer_weekly', undefined, false, filteredTr) + totalTruckCpmCost;
+                    const opTotalWeekly = getRowTotal('plates', 'plates_custom', false, Math.round(filteredTruckNT)) + factoringTotalAmount;
                     const adminTotalWeekly = adminItems.reduce((sum, item) => sum + item.total, 0);
 
                     return (
@@ -2821,11 +2902,11 @@ const PnLView: React.FC<PnLViewProps> = ({
                                </div>
                                <div className="bg-zinc-950/40 rounded border border-zinc-800/30 divide-y divide-zinc-800/30">
                                    {(() => {
-                                       const tVal = getSidebarVal('truck_weekly');
-                                       const tTotal = tVal * companyMetrics.effNonTeamsForTrucks;
+                                       const tVal = tWeeklyPerUnit;
+                                       const tTotal = totalTruckWeeklyCost;
                                        
                                        const trVal = getSidebarVal('trailer_weekly');
-                                       const trTotal = getRowTotal('trailer_weekly', undefined, false, globalTr);
+                                       const trTotal = getRowTotal('trailer_weekly', undefined, false, filteredTr);
                                        return (
                                            <>
                                                {tVal > 0 && (
@@ -2913,7 +2994,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                                   </div>
                                </div>
                                <div className="bg-zinc-950/40 rounded border border-zinc-800/30 divide-y divide-zinc-800/30">
-                                  {renderRow('Plates', 'plates', 'plates_custom', false, Math.round(companyMetrics.effNonTeamsForTrucks), undefined, 'Without OO drivers')}
+                                  {renderRow('Plates', 'plates', 'plates_custom', false, Math.round(filteredTruckNT), undefined, 'Without OO drivers')}
                                   {renderRow('Factoring', 'factoring', 'factoring_custom', true, 1, '% of Total Gross', '% of Total Gross')}
                                </div>
                              </div>
@@ -2952,7 +3033,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                                   </div>
                                </div>
                                <div className="bg-zinc-950/40 rounded border border-zinc-800/30 divide-y divide-zinc-800/30">
-                                  {adminItems.map(item => renderRow(item.label, item.gk, item.ck))}
+                                  {adminItems.map(item => renderRow(item.label, item.gk, item.ck, false, filteredNT, item.valTooltip, item.totalTooltip, item.val, item.total))}
                                </div>
                              </div>
                         </>
@@ -3040,7 +3121,6 @@ const PnLView: React.FC<PnLViewProps> = ({
                          value={pnlHistoryGroupBy}
                          onChange={(e) => {
                              setPnlHistoryGroupBy(e.target.value as any);
-                             setPnlHistoryFilterValue('');
                          }}
                          className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 font-sans text-xs focus:outline-none focus:border-emerald-500 w-32"
                        >
@@ -3049,23 +3129,17 @@ const PnLView: React.FC<PnLViewProps> = ({
                          <option value="Company">By Company</option>
                          <option value="Team">By Team</option>
                        </select>
-                       {pnlHistoryGroupBy !== 'ALL' && pnlHistoryGroupBy !== 'Contract' && (
-                           <select
-                             value={pnlHistoryFilterValue}
-                             onChange={(e) => setPnlHistoryFilterValue(e.target.value)}
-                             className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 font-sans text-xs focus:outline-none focus:border-emerald-500 w-40 ml-2"
-                           >
-                             <option value="">Select...</option>
-                             {pnlHistoryOptions.map(opt => (
-                                 <option key={opt} value={opt}>{opt}</option>
-                             ))}
-                           </select>
-                       )}
+                       <button
+                         onClick={() => setIsPnlHistoryAverageView(!isPnlHistoryAverageView)}
+                         className={`px-3 py-1 rounded text-[10px] font-bold border transition-colors ${isPnlHistoryAverageView ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
+                       >
+                         AVG / DRV
+                       </button>
                        <button 
                         onClick={() => {
                             setIsPnlHistoryExpanded(false);
                             setPnlHistoryGroupBy('ALL');
-                            setPnlHistoryFilterValue('');
+                            setIsPnlHistoryAverageView(false);
                         }}
                         className="p-1 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors ml-2"
                        >
@@ -3083,12 +3157,9 @@ const PnLView: React.FC<PnLViewProps> = ({
                                  {pnlHistoryGroupBy === 'ALL' && (
                                      <th className="bg-zinc-900 px-2 py-1 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">Total PnL</th>
                                  )}
-                                 {pnlHistoryGroupBy === 'Contract' && pnlHistoryOptions.map(opt => (
+                                 {pnlHistoryGroupBy !== 'ALL' && pnlHistoryOptions.map(opt => (
                                      <th key={opt} className="bg-zinc-900 px-2 py-1 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">{opt}</th>
                                  ))}
-                                 {pnlHistoryGroupBy !== 'ALL' && pnlHistoryGroupBy !== 'Contract' && pnlHistoryFilterValue && (
-                                     <th className="bg-zinc-900 px-2 py-1 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">{pnlHistoryFilterValue}</th>
-                                 )}
                               </tr>
                            </thead>
                            <tbody className="divide-y divide-zinc-800/50">
@@ -3101,25 +3172,21 @@ const PnLView: React.FC<PnLViewProps> = ({
                                        <td className="px-2 py-0.5 font-bold text-zinc-200">{formattedDate}</td>
                                        {pnlHistoryGroupBy === 'ALL' && (
                                            <td className={`px-2 py-0.5 text-right font-mono font-bold ${item.totalAmount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                              {item.totalAmount < 0 ? '-' : ''}{formatCurrency(Math.abs(item.totalAmount))}
+                                              {(() => {
+                                                  const val = isPnlHistoryAverageView ? (item.totalNT > 0 ? item.totalAmount / item.totalNT : 0) : item.totalAmount;
+                                                  return (val < 0 ? '-' : '') + formatCurrency(Math.abs(val));
+                                              })()}
                                            </td>
                                        )}
-                                       {pnlHistoryGroupBy === 'Contract' && pnlHistoryOptions.map(opt => {
-                                           const val = item.entityAmounts[opt] || 0;
+                                       {pnlHistoryGroupBy !== 'ALL' && pnlHistoryOptions.map(opt => {
+                                           const data = item.entityData[opt] || { amount: 0, nt: 0 };
+                                           const val = isPnlHistoryAverageView ? (data.nt > 0 ? data.amount / data.nt : 0) : data.amount;
                                            return (
                                                <td key={opt} className={`px-2 py-0.5 text-right font-mono font-medium ${val >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
                                                   {val < 0 ? '-' : ''}{formatCurrency(Math.abs(val))}
                                                </td>
                                            );
                                        })}
-                                       {pnlHistoryGroupBy !== 'ALL' && pnlHistoryGroupBy !== 'Contract' && pnlHistoryFilterValue && (() => {
-                                           const val = item.entityAmounts[pnlHistoryFilterValue] || 0;
-                                           return (
-                                               <td className={`px-2 py-0.5 text-right font-mono font-medium ${val >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
-                                                  {val < 0 ? '-' : ''}{formatCurrency(Math.abs(val))}
-                                               </td>
-                                           );
-                                       })()}
                                     </tr>
                                  );
                               })}

@@ -56,9 +56,11 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [newFinDates, setNewFinDates] = React.useState<Record<string, string>>({});
   const [newFinToDates, setNewFinToDates] = React.useState<Record<string, string>>({});
   const [expandedMclooRules, setExpandedMclooRules] = React.useState<string[]>([]);
+  const [expandedDphRules, setExpandedDphRules] = React.useState<string[]>([]);
   const [mclooSelectedDates, setMclooSelectedDates] = React.useState<Record<string, string>>({});
   const [hideOverriddenRules, setHideOverriddenRules] = React.useState(true);
   const toggleMclooRule = (id: string) => setExpandedMclooRules(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const toggleDphRule = (id: string) => setExpandedDphRules(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const finImportKeys = [
 { name: 'Liability Insurance (Auto)', key: 'liability_insurance', puKey: 'liability' },
@@ -243,61 +245,93 @@ const fixedExpenseNames = Array.from(new Set([
       }
   };
 
-  const handleFinImportChange = (id: string | number, key: string, val: string) => {
-      const num = parseFloat(val) || 0;
-      setFinImportData(prev => prev.map(d => d.id === id ? { ...d, [key]: num } : d));
+  const handleFinImportChange = (id: string | number, key: string, val: any) => {
+      setFinImportData(prev => prev.map(d => {
+          if (d.id === id) {
+              let finalVal = val;
+              if (key !== 'franchise_charge' && key !== 'shared_insurance') {
+                  finalVal = parseFloat(val) || 0;
+              }
+              return { ...d, [key]: finalVal };
+          }
+          return d;
+      }));
       if (!modifiedFinImportIds.includes(String(id))) {
           setModifiedFinImportIds(prev => [...prev, String(id)]);
       }
   };
 
   const handleAddFinImportDate = async (expName: string) => {
-      const fromDateStr = newFinDates[expName];
-      if (!fromDateStr) return;
+          const fromDateStr = newFinDates[expName];
+          if (!fromDateStr) return;
 
-      const dObj = new Date(fromDateStr);
-      dObj.setUTCDate(dObj.getUTCDate() + 5);
-      const weekEndingStr = dObj.toISOString().split('T')[0];
-      
-      const expKey = finImportKeys.find(k => k.name === expName)?.key;
+          const toDateStr = newFinToDates[expName] || '';
 
-      const exists = finImportData.find(d => d.week_ending === weekEndingStr);
-      if (exists) {
-          if (expKey) {
-              setFinImportData(prev => prev.map(d => d.week_ending === weekEndingStr ? { ...d, [`is_custom_${expKey}`]: true } : d));
-              if (!modifiedFinImportIds.includes(String(exists.id))) setModifiedFinImportIds(prev => [...prev, String(exists.id)]);
+          const dObj = new Date(fromDateStr);
+          dObj.setUTCDate(dObj.getUTCDate() + 5);
+          const weekEndingStr = dObj.toISOString().split('T')[0];
+          
+          const expKey = finImportKeys.find(k => k.name === expName)?.key;
+
+          setLocalFixedExpenses(prev => {
+              const existingIndex = prev.findIndex(e => e.name === expName && e.companyId === 'ALL' && e.valid_from === fromDateStr);
+              if (existingIndex !== -1) {
+                  const next = [...prev];
+                  next[existingIndex] = { ...next[existingIndex], valid_to: toDateStr };
+                  return next;
+              }
+              const newExp: any = {
+                  id: Math.random().toString(36).substring(2, 11),
+                  category: 'Fixed',
+                  name: expName,
+                  companyId: 'ALL',
+                  amount: 0,
+                  frequency: 'Weekly',
+                  allocationType: 'divide',
+                  unit: expName === 'Factoring' ? '%' : '$',
+                  valid_from: fromDateStr,
+                  valid_to: toDateStr,
+                  is_extension: false,
+                  is_standalone: true
+              };
+              return [...prev, newExp];
+          });
+
+          const exists = finImportData.find(d => d.week_ending === weekEndingStr);
+          if (exists) {
+              if (expKey) {
+                  setFinImportData(prev => prev.map(d => d.week_ending === weekEndingStr ? { ...d, [`is_custom_${expKey}`]: true, valid_to: toDateStr } : d));
+                  if (!modifiedFinImportIds.includes(String(exists.id))) setModifiedFinImportIds(prev => [...prev, String(exists.id)]);
+              }
+          } else {
+              const newRecord: any = {
+                  id: `new_${Math.random().toString(36).substring(2, 11)}`,
+                  week_ending: weekEndingStr,
+                  valid_to: toDateStr,
+                  num_of_trucks: 0,
+                  avg_truck_price: 0,
+                  num_of_trailers: 0,
+                  avg_trailer_price: 0,
+                  phone_and_internet: 0,
+                  office_supplies: 0,
+                  telematics: 0,
+                  rent_and_parking: 0,
+                  backup_mcs: 0,
+                  back_office_pay: 0,
+                  tech_pay: 0
+              };
+              
+              if (expKey) {
+                  newRecord[`is_custom_${expKey}`] = true;
+              }
+
+              setFinImportData(prev => [newRecord, ...prev].sort((a,b) => new Date(b.week_ending).getTime() - new Date(a.week_ending).getTime()));
+              setModifiedFinImportIds(prev => [...prev, newRecord.id]);
           }
+
           setNewFinDates(prev => ({ ...prev, [expName]: '' }));
           setNewFinToDates(prev => ({ ...prev, [expName]: '' }));
-          return;
-      }
-
-      const newRecord: any = {
-          id: `new_${Math.random().toString(36).substring(2, 11)}`,
-          week_ending: weekEndingStr,
-          valid_to: newFinToDates[expName] || '',
-          num_of_trucks: 0,
-          avg_truck_price: 0,
-          num_of_trailers: 0,
-          avg_trailer_price: 0,
-          phone_and_internet: 0,
-          office_supplies: 0,
-          telematics: 0,
-          rent_and_parking: 0,
-          backup_mcs: 0,
-          back_office_pay: 0,
-          tech_pay: 0
       };
-      
-      if (expKey) {
-          newRecord[`is_custom_${expKey}`] = true;
-      }
-
-      setFinImportData(prev => [newRecord, ...prev].sort((a,b) => new Date(b.week_ending).getTime() - new Date(a.week_ending).getTime()));
-      setModifiedFinImportIds(prev => [...prev, newRecord.id]);
-      setNewFinDates(prev => ({ ...prev, [expName]: '' }));
-      setNewFinToDates(prev => ({ ...prev, [expName]: '' }));
-  };
 
   const handleSaveAndClose = async () => {
     setIsSaving(true);
@@ -313,9 +347,8 @@ const fixedExpenseNames = Array.from(new Set([
           finImportData.forEach(d => {
               finImportKeys.forEach(fi => {
                   const hasCustomAmount = (d as any)[`is_custom_${fi.key}`] === true;
-                  const hasCustomPercentages = fi.key === 'liability_insurance' && (
-                                   (d as any).shared_insurance !== undefined
-                               );
+                  const hasCustomPercentages = (fi.key === 'liability_insurance' && (d as any).shared_insurance !== undefined) || 
+                                               (fi.key === 'avg_truck_price' && (d as any).franchise_charge !== undefined);
 
                   if (hasCustomAmount || hasCustomPercentages) {
                        const customVal = hasCustomAmount ? (Number((d as any)[`custom_val_${fi.key}`]) || 0) : Number((d as any)[fi.key] || 0);
@@ -325,6 +358,11 @@ const fixedExpenseNames = Array.from(new Set([
                        const vToDate = new Date(dDate); vToDate.setUTCDate(dDate.getUTCDate() + 1);
                        const vFromStr = vFromDate.toISOString().split('T')[0];
                        const vToStr = vToDate.toISOString().split('T')[0];
+                       
+                       if (fi.key === 'avg_truck_price' && (d as any).franchise_charge !== undefined) {
+                           rawFinalExpenses = rawFinalExpenses.filter(e => !(e.name === fi.name && e.valid_from === vFromStr && (e as any).contractType && (e as any).franchise_charge !== undefined && (e as any).franchise_charge !== null && !e.amount && !e.cpm));
+                       }
+
                        const existsIndex = rawFinalExpenses.findIndex(e => e.name === fi.name && e.valid_from === vFromStr && e.companyId === 'ALL');
                        if (existsIndex !== -1) {
                            if (hasCustomAmount) {
@@ -333,6 +371,9 @@ const fixedExpenseNames = Array.from(new Set([
                            }
                            if (fi.key === 'liability_insurance') {
                                if ((d as any).shared_insurance !== undefined) (rawFinalExpenses[existsIndex] as any).shared_insurance = (d as any).shared_insurance;
+                           }
+                           if (fi.key === 'avg_truck_price') {
+                               if ((d as any).franchise_charge !== undefined) (rawFinalExpenses[existsIndex] as any).franchise_charge = (d as any).franchise_charge;
                            }
                      } else {
                            const newExp: any = {
@@ -345,29 +386,71 @@ const fixedExpenseNames = Array.from(new Set([
                                allocationType: 'divide',
                                unit: '$',
                                valid_from: vFromStr,
-                               valid_to: String(d.id).startsWith('new_') ? ((d as any).valid_to || '') : ''
+                               valid_to: String(d.id).startsWith('new_') ? ((d as any).valid_to || '') : vToStr
                            };
                            if (customCpm !== undefined) newExp.cpm = customCpm;
                            if (fi.key === 'liability_insurance') {
                                if ((d as any).shared_insurance !== undefined) newExp.shared_insurance = (d as any).shared_insurance;
                            }
+                           if (fi.key === 'avg_truck_price') {
+                               if ((d as any).franchise_charge !== undefined) newExp.franchise_charge = (d as any).franchise_charge;
+                           }
+                           if (!hasCustomAmount && fi.key === 'avg_truck_price') newExp.is_dummy = true;
                           rawFinalExpenses.push(newExp);
                       }
                   }
               });
           });
 
-      const finalExpenses = rawFinalExpenses.filter(exp => (exp as any).is_custom !== false);
+      const finalExpenses = rawFinalExpenses.filter(exp => {
+          if ((exp as any).contractType && (exp as any).franchise_charge !== undefined && (exp as any).franchise_charge !== null && !exp.amount && !exp.cpm) {
+              const parent = rawFinalExpenses.find(p => p.name === exp.name && p.valid_from === exp.valid_from && p.companyId === exp.companyId && Array.isArray((p as any).franchise_charge));
+              if (parent) return false;
+          }
+          return (exp as any).is_custom !== false;
+      });
+
+      const expandedFinalExpenses: any[] = [];
+      finalExpenses.forEach(exp => {
+          if (Array.isArray((exp as any).franchise_charge)) {
+              const fcArray = (exp as any).franchise_charge;
+              fcArray.forEach((fc: any) => {
+                  if (fc.contract && String(fc.amount).trim() !== '') {
+                      expandedFinalExpenses.push({
+                          id: Math.random().toString(36).substring(2, 11),
+                          category: 'Fixed',
+                          name: exp.name,
+                          companyId: exp.companyId || '',
+                          contractType: fc.contract,
+                          amount: 0,
+                          cpm: null,
+                          franchise_charge: Number(fc.amount),
+                          dph: fc.dph !== undefined && fc.dph !== '' ? Number(fc.dph) : null,
+                          frequency: 'Weekly',
+                          allocationType: 'divide',
+                          unit: '$',
+                          valid_from: exp.valid_from,
+                          valid_to: exp.valid_to
+                      });
+                  }
+              });
+              delete (exp as any).franchise_charge;
+          }
+          if (!(exp as any).is_dummy) {
+              expandedFinalExpenses.push(exp);
+          }
+      
+      });
       
       const deletedIds = fixedExpenses
-        .filter(oe => !finalExpenses.some(fe => String(fe.id) === String(oe.id)))
+        .filter(oe => !expandedFinalExpenses.some(fe => String(fe.id) === String(oe.id)))
         .map(oe => oe.id);
 
       if (deletedIds.length > 0) {
         await supabase.from('fixed_expenses').delete().in('id', deletedIds);
       }
 
-      const expensesToSave = finalExpenses.map(exp => ({
+      const expensesToSave = expandedFinalExpenses.map(exp => ({
            id: String(exp.id),
            name: exp.name,
            amount: Number(exp.amount) || 0,
@@ -377,7 +460,9 @@ const fixedExpenseNames = Array.from(new Set([
           unit: exp.unit || '$',
           valid_from: exp.valid_from && String(exp.valid_from).trim() !== '' ? exp.valid_from : null,
           valid_to: exp.valid_to && String(exp.valid_to).trim() !== '' ? exp.valid_to : null,
-          shared_insurance: ((exp as any).shared_insurance !== undefined && (exp as any).shared_insurance !== null && String((exp as any).shared_insurance).trim() !== '') ? Number((exp as any).shared_insurance) : null
+          shared_insurance: ((exp as any).shared_insurance !== undefined && (exp as any).shared_insurance !== null && String((exp as any).shared_insurance).trim() !== '') ? Number((exp as any).shared_insurance) : null,
+          franchise_charge: (exp as any).franchise_charge !== undefined && (exp as any).franchise_charge !== null ? Number((exp as any).franchise_charge) : null,
+          dph: (exp as any).dph !== undefined && (exp as any).dph !== null ? Number((exp as any).dph) : null
       }));
       if (expensesToSave.length > 0) {
           const { error } = await supabase.from('fixed_expenses').upsert(expensesToSave, { onConflict: 'id' });
@@ -387,7 +472,7 @@ const fixedExpenseNames = Array.from(new Set([
       }
 
       if (onSaveExpenses) {
-        await onSaveExpenses(finalExpenses);
+        await onSaveExpenses(expandedFinalExpenses);
       }
 
       const { saveConfigContracts } = await import('../lib/supabase');
@@ -427,7 +512,7 @@ const fixedExpenseNames = Array.from(new Set([
       }
 
       setSimulationConfig(localSimConfig);
-      setFixedExpenses(finalExpenses);
+      setFixedExpenses(expandedFinalExpenses);
       if (setConfigContracts) {
           setConfigContracts(localConfigContracts);
       }
@@ -493,7 +578,6 @@ const fixedExpenseNames = Array.from(new Set([
                        <thead>
                           <tr className="bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
                              <th className="p-2 font-bold">Contract Type</th>
-                             <th className="p-2 font-bold text-right">Active Rules</th>
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-zinc-800">
@@ -507,13 +591,10 @@ const fixedExpenseNames = Array.from(new Set([
                                          <ChevronDown size={14} className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`} />
                                          {ct as string}
                                       </td>
-                                      <td className="p-3 text-right text-xs text-zinc-500">
-                                         {currentRules.length}
-                                      </td>
                                    </tr>
                                    {isExpanded && (
                                       <tr>
-                                         <td colSpan={2} className="p-0">
+                                         <td colSpan={1} className="p-0">
                                             <div className="p-4 bg-zinc-900/30 border-t border-zinc-800">
                                               {(() => {
                                                    return (
@@ -555,6 +636,36 @@ const fixedExpenseNames = Array.from(new Set([
 
                                                                const renderFormula = () => {
                                                                   if (ct === 'TPOG' || ct === 'TPOG WITH FRANCHISE') {
+                                                                     const mcGrossVal = Number(((conf as any).mc_gross_percent * 100).toFixed(2));
+                                                                     const franchiseVal = Number((100 - mcGrossVal).toFixed(2));
+
+                                                                     const splitBlock = (
+                                                                        <div className="flex flex-col ml-8 pl-6 border-l border-zinc-700/50 justify-center">
+                                                                           <div className="flex items-center justify-center gap-1.5 mb-1.5 -mt-4">
+                                                                              <div className="text-[8px] text-zinc-500 font-bold uppercase tracking-widest">Company/Franchise Split</div>
+                                                                              <div className="relative group/split-tooltip inline-flex items-center justify-center">
+                                                                                 <div className="text-zinc-500 hover:text-emerald-400 cursor-help border border-zinc-600 hover:border-emerald-400 rounded-full w-3 h-3 flex items-center justify-center text-[8px] font-bold transition-colors">?</div>
+                                                                                 <div className="hidden group-hover/split-tooltip:block absolute z-[9999] bg-zinc-800 text-zinc-300 text-[10px] p-2.5 rounded shadow-xl border border-zinc-700 pointer-events-none transform -translate-x-1/2 left-1/2 bottom-full mb-1.5 w-[220px] whitespace-normal normal-case font-sans text-left tracking-normal leading-relaxed">
+                                                                                    The Company percentage multiplies the total Revenue Collected, as well as all expenses such as PO, Tolls, Recruiting, Weekly Expenses...
+                                                                                 </div>
+                                                                              </div>
+                                                                           </div>
+                                                                           <div className="flex items-center gap-2 justify-center">
+                                                                              <div className="relative inline-flex items-center h-6 w-20 mt-3 flex-shrink-0">
+                                                                                 <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[8px] text-zinc-500 font-bold uppercase tracking-tighter">Company</span>
+                                                                                 <input type="number" step="0.1" value={mcGrossVal} onChange={(e: any) => handleUpdate('mc_gross_percent', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0.5 pl-2 pr-4 text-[10px] font-mono text-right outline-none transition-colors focus:border-emerald-500 h-full text-emerald-400" />
+                                                                                 <span className="absolute right-1 text-zinc-500 text-[9px] pointer-events-none">%</span>
+                                                                              </div>
+                                                                              <span className="text-zinc-600 font-bold text-[10px] mt-3">:</span>
+                                                                              <div className="relative inline-flex items-center h-6 w-20 mt-3 flex-shrink-0 opacity-80">
+                                                                                 <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 whitespace-nowrap text-[8px] text-zinc-500 font-bold uppercase tracking-tighter">Franchise</span>
+                                                                                 <input type="number" value={franchiseVal} disabled className="w-full bg-zinc-900 border border-zinc-800 rounded py-0.5 pl-2 pr-4 text-[10px] font-mono text-right outline-none h-full text-amber-400 cursor-not-allowed" />
+                                                                                 <span className="absolute right-1 text-zinc-500 text-[9px] pointer-events-none">%</span>
+                                                                              </div>
+                                                                           </div>
+                                                                        </div>
+                                                                     );
+
                                                                      return (
                                                                         <div className="flex flex-col gap-2 w-full">
                                                                            <select value={calcType} onChange={(e) => { const newConf = [...localConfigContracts]; const targetIndex = localConfigContracts.findIndex(x => x.id === conf.id); if(targetIndex !== -1) { newConf[targetIndex].calculation_type = e.target.value; setLocalConfigContracts(newConf); } }} className="w-max bg-zinc-950 border border-zinc-700 rounded py-1 px-2 text-[10px] text-zinc-300 focus:border-emerald-500 outline-none transition-colors h-7">
@@ -562,11 +673,14 @@ const fixedExpenseNames = Array.from(new Set([
                                                                               <option value="TPOG_FRANCHISE">TPOG With Franchise Formula</option>
                                                                               <option value="NEW_FORMULA">New TPOG Formula</option>
                                                                            </select>
-                                                                           <div className="flex items-center whitespace-nowrap text-[11px] text-zinc-300 font-mono bg-zinc-900/50 px-2 pt-4 pb-1.5 rounded border border-zinc-800 w-max relative z-10">
+                                                                           <div className="flex items-center whitespace-nowrap text-[11px] text-zinc-300 font-mono bg-zinc-900/50 pl-3 pr-6 pt-4 pb-1.5 rounded border border-zinc-800 w-max relative z-10">
                                                                               {calcType === 'NEW_FORMULA' ? (
                                                                                   <>({mcGrossInput} * (Gross + Margin - (Margin * {mcMarginInput}))) - (Drv% * Gross) - (Gross * {dispGrossInput} + Margin * {dispMarginInput})</>
                                                                                ) : calcType === 'TPOG_FRANCHISE' ? (
-                                                                                 <>(Gross * ((1 - Drv%) - {dispGrossInput}) + Margin * {mcMarginInput}) * {mcGrossInput}</>
+                                                                                 <>
+                                                                                    <div className="mt-0.5">(Gross * ((1 - Drv%) - {dispGrossInput}) + Margin * {mcMarginInput})</div>
+                                                                                    {splitBlock}
+                                                                                 </>
                                                                               ) : (
                                                                                  <>Gross * ((1 - Drv%) - {dispGrossInput}) + Margin * {mcMarginInput}</>
                                                                               )}
@@ -829,7 +943,7 @@ const fixedExpenseNames = Array.from(new Set([
                                     </React.Fragment>
                                  );
                              } else {
-                                 const exceptionRules = localFixedExpenses.filter(e => e.name === exp.name);
+                                 const exceptionRules = localFixedExpenses.filter(e => e.name === exp.name && !(e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm));
                                  const globalRules = [...finImportData];
 
                                  const uniqueDates = Array.from(new Set([
@@ -864,7 +978,7 @@ const fixedExpenseNames = Array.from(new Set([
 
                                  const latestGlobalRecord = globalRules.sort((a,b) => new Date(b.week_ending).getTime() - new Date(a.week_ending).getTime()).find(d => d.num_of_trucks > 0) || globalRules[0];
                                  const latestPuRecord = finImportPerUnitData.find(d => d.week_ending === latestGlobalRecord?.week_ending) || finImportPerUnitData[0];
-                                 const globalOverrides = localFixedExpenses.filter(e => e.name === exp.name && e.companyId === 'ALL');
+                                 const globalOverrides = localFixedExpenses.filter(e => e.name === exp.name && e.companyId === 'ALL' && !(e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm));
                                  
                                  const currTime = Date.now();
                                  let matchedExp = globalOverrides.find(e => {
@@ -909,7 +1023,17 @@ const fixedExpenseNames = Array.from(new Set([
                                               <td colSpan={1} className="p-0">
                                                 <div className="p-4 bg-zinc-900/30 border-t border-zinc-800">
                                                    <div className="flex items-center justify-between mb-3">
-                                                      <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Rules History</h4>
+                                                      <div className="flex items-center gap-2">
+                                                         <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Rules History</h4>
+                                                         {exp.key === 'avg_truck_price' && (
+                                                            <div className="relative group/main-tooltip flex items-center justify-center">
+                                                               <Info size={14} className="text-zinc-500 hover:text-emerald-500 transition-colors cursor-help" />
+                                                               <div className="hidden group-hover/main-tooltip:block absolute left-full ml-2 top-1/2 -translate-y-1/2 w-56 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[50] text-left border border-zinc-700 pointer-events-none">
+                                                                  All displayed values are without calculated underutilization.
+                                                               </div>
+                                                            </div>
+                                                         )}
+                                                      </div>
                                                       <div className="flex items-center gap-2">
                                                           <div className="flex items-center gap-1 bg-zinc-950 border border-zinc-700 rounded px-2 py-1">
                                                               <span className="text-[9px] text-zinc-500 uppercase font-bold">From:</span>
@@ -1015,14 +1139,37 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                    </div>
                                                                                 </div>
                                                                                 {exp.key === 'avg_truck_price' && (
-                                                                                   <>
-                                                                                      <span className="text-zinc-500 font-bold text-xs">+</span>
-                                                                                      <div className="relative flex items-center h-7 w-24">
-                                                                                         <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
-                                                                                         <input type="number" step="0.01" value={cRule.cpm ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'cpm', e.target.value)} placeholder="CPM" className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                      </div>
-                                                                                   </>
-                                                                                )}
+                                                                                             <>
+                                                                                                <span className="text-zinc-500 font-bold text-xs mt-1">+</span>
+                                                                                                <div className="relative flex items-center h-7 w-24 mt-1">
+                                                                                                   <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
+                                                                                                   <input type="number" step="0.01" value={cRule.cpm ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'cpm', e.target.value)} placeholder="CPM" className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
+                                                                                                </div>
+                                                                                                <button onClick={() => {
+                                                                                                    if (!expandedDphRules.includes(String(cRule.id))) {
+                                                                                                        let fcArr = (cRule as any).franchise_charge;
+                                                                                                        if (fcArr === undefined) {
+                                                                                                            const separatedRules = localFixedExpenses.filter(e => e.name === exp.name && e.valid_from === cRule.valid_from && e.companyId === cRule.companyId && e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm);
+                                                                                                            if (separatedRules.length > 0) {
+                                                                                                                fcArr = separatedRules.map(e => ({ contract: e.contractType, amount: e.franchise_charge, dph: (e as any).dph }));
+                                                                                                            } else {
+                                                                                                                fcArr = [];
+                                                                                                            }
+                                                                                                        }
+                                                                                                        if (typeof fcArr === 'string') { try { fcArr = JSON.parse(fcArr); } catch(e){ fcArr = []; } }
+                                                                                                        if (!Array.isArray(fcArr)) fcArr = [];
+                                                                                                        if (fcArr.length === 0) {
+                                                                                                            handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, [{ contract: '', amount: '' }]);
+                                                                                                        } else {
+                                                                                                            handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, fcArr);
+                                                                                                        }
+                                                                                                    }
+                                                                                                    toggleDphRule(String(cRule.id));
+                                                                                                }} className="px-2 py-0.5 bg-amber-950 hover:bg-amber-900 text-amber-500/70 text-[10px] rounded border border-amber-900/50 transition-colors h-max whitespace-nowrap mt-1">
+                                                                                                   {expandedDphRules.includes(String(cRule.id)) ? 'Hide dph rule' : 'Edit dph rule'}
+                                                                                                </button>
+                                                                                             </>
+                                                                                          )}
                                                                              </div>
                                                                             {exp.key === 'liability_insurance' && (
                                                                                <div className="flex flex-col items-start gap-1 mt-1">
@@ -1081,6 +1228,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                        return effNT > 0;
                                                                                    });
 
+                                                                                   const seenDates1 = new Set<string>();
                                                                                    const rows = availRecords.map(record => {
                                                                                       const targetDateStr = record.week_ending;
                                                                                       let effNT = 0;
@@ -1108,6 +1256,10 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                           dObj.setUTCDate(dObj.getUTCDate() + 1);
                                                                                       }
                                                                                       const payDateStr = dObj.toISOString().split('T')[0];
+                                                                                      
+                                                                                      if (seenDates1.has(payDateStr)) return null;
+                                                                                      seenDates1.add(payDateStr);
+
                                                                                       const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
                                                                                       const perUnitAmt = effNT > 0 ? (baseAmt / 52) / effNT : 0;
                                                                                       const sharedResp = Number((cRule as any).shared_insurance || 0);
@@ -1123,16 +1275,71 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                    });
                                                                                    const validRows = rows.filter(Boolean);
                                                                                    if (validRows.length === 0) return <div className="text-[10px] text-zinc-500 italic">No valid dates found.</div>;
-                                                                                   return validRows;
-                                                                                })()}
-                                                                             </div>
-                                                                          </div>
-                                                                      </td>
-                                                                  </tr>
-                                                              )}
-                                                          </React.Fragment>
-                                                      ))}
-                                                     {uniqueDates.flatMap(dateStr => {
+                                                                                                                     return validRows;
+                                                                                                                  })()}
+                                                                                                               </div>
+                                                                                                            </div>
+                                                                                                        </td>
+                                                                                                    </tr>
+                                                                                                )}
+                                                                                                {exp.key === 'avg_truck_price' && expandedDphRules.includes(String(cRule.id)) && (
+                                                                                                    <tr className="bg-amber-500/5">
+                                                                                                        <td colSpan={5} className="px-3 pb-3 pt-0 border-t-0">
+                                                                                                            <div className="flex flex-col gap-3 bg-zinc-950/50 p-3 rounded-lg border border-amber-500/20 w-full relative ml-4">
+                                                                                                                <div className="absolute -top-2.5 -left-3 text-amber-500/30">
+                                                                                                                    <CornerDownRight size={16} />
+                                                                                                                </div>
+                                                                                                                {(() => {
+                                                                                                                    let curFc = (cRule as any).franchise_charge;
+                                                                                                                    if (curFc === undefined) {
+                                                                                                                        const separatedRules = localFixedExpenses.filter(e => e.name === exp.name && e.valid_from === cRule.valid_from && e.companyId === cRule.companyId && e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm);
+                                                                                                                        if (separatedRules.length > 0) {
+                                                                                                                            curFc = separatedRules.map(e => ({ contract: e.contractType, amount: e.franchise_charge, dph: (e as any).dph }));
+                                                                                                                        } else {
+                                                                                                                            curFc = [];
+                                                                                                                        }
+                                                                                                                    }
+                                                                                                                    if (typeof curFc === 'string') { try { curFc = JSON.parse(curFc); } catch(e){ curFc = []; } }
+                                                                                                                    if (!Array.isArray(curFc)) curFc = [];
+                                                                                                                    if (curFc.length === 0) curFc = [{ contract: '', amount: '' }];
+                                                                                                                    return (
+                                                                                                                        <>
+                                                                                                                            {curFc.map((fc: any, i: number) => (
+                                                                                                                                <div key={i} className="flex items-center gap-4">
+                                                                                                                                    <div className="flex flex-col gap-1 w-48">
+                                                                                                                                        <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Contract</label>
+                                                                                                                                        <select value={fc.contract} onChange={(e) => { const newFc = curFc.map((item: any, idx: number) => idx === i ? { ...item, contract: e.target.value } : item); handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, newFc); }} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-1 px-2 text-xs text-zinc-200 focus:border-amber-500 outline-none">
+                                                                                                                                            <option value="" disabled>Select Contract</option>
+                                                                                                                                            {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
+                                                                                                                                        </select>
+                                                                                                                                    </div>
+                                                                                                                                   
+                                                                                                                                   <div className="flex flex-col gap-1 w-32">
+                                                                                                                                        <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Charge to franchise</label>
+                                                                                                                                        <div className="relative h-7 w-full">
+                                                                                                                                            <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
+                                                                                                                                            <input type="number" value={fc.amount} onChange={(e) => { const newFc = curFc.map((item: any, idx: number) => idx === i ? { ...item, amount: e.target.value } : item); handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, newFc); }} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
+                                                                                                                                        </div>
+                                                                                                                                    </div>
+                                                                                                                                    <div className="flex flex-col gap-1 mt-4">
+                                                                                                                                        <span className="text-[10px] text-amber-500 font-mono font-bold whitespace-nowrap">
+                                                                                                                                            New Amount: {Number(cRule.amount || cRule.amount_after || 0) - Number(fc.amount || 0)}
+                                                                                                                                        </span>
+                                                                                                                                    </div>
+                                                                                                                                    <button onClick={() => { const newFc = curFc.filter((_: any, idx: number) => idx !== i); handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, newFc); }} className="mt-4 text-zinc-500 hover:text-rose-500"><Trash2 size={14}/></button>
+                                                                                                                                </div>
+                                                                                                                            ))}
+                                                                                                                            <button onClick={() => { const newFc = [...curFc, { contract: '', amount: '' }]; handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, newFc); }} className="text-amber-500 text-[10px] font-bold uppercase w-max hover:text-amber-400 mt-2 flex items-center gap-1"><Plus size={10}/> Add Rule</button>
+                                                                                                                        </>
+                                                                                                                    );
+                                                                                                                })()}
+                                                                                                            </div>
+                                                                                                        </td>
+                                                                                                    </tr>
+                                                                                                )}
+                                                                                          </React.Fragment>
+                                                                                      ))}
+                                                                                     {uniqueDates.flatMap(dateStr => {
                                                         let gRule = globalRules.find(d => d.week_ending === dateStr);
                                                         const dBase = new Date(dateStr);
                                                         const vFromStr = new Date(dBase.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
@@ -1167,7 +1374,8 @@ const fixedExpenseNames = Array.from(new Set([
                                                              const currVf = new Date(d); currVf.setUTCDate(d.getUTCDate() - 5);
                                                              const currVfStr = currVf.toISOString().split('T')[0];
                                                              if (fdVfStr === currVfStr) return false;
-                                                             const fdTo = String(fd.id).startsWith('new_') ? ((fd as any).valid_to || '') : '';
+                                                             const fdToObj = new Date(fdDate); fdToObj.setUTCDate(fdDate.getUTCDate() + 1);
+                                                             const fdTo = String(fd.id).startsWith('new_') ? ((fd as any).valid_to || '') : fdToObj.toISOString().split('T')[0];
                                                              const afterFrom = currVfStr > fdVfStr;
                                                              const beforeTo = !fdTo || currVfStr <= fdTo;
                                                              return afterFrom && beforeTo;
@@ -1186,12 +1394,13 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                  {vFromStr}
                                                                                  {gRule && String(gRule.id).startsWith('new_') && <span className="mt-1 block w-max text-[9px] text-emerald-500 uppercase font-bold px-1.5 py-0.5 bg-emerald-500/10 rounded">New</span>}
                                                                               </td>
-                                                                            <td className="py-2 px-3 text-xs text-zinc-300 font-mono align-top">
+                                                                           <td className="py-2 px-3 text-xs text-zinc-300 font-mono align-top">
                                                                              {(() => { 
                                                                                 if (gRule && String(gRule.id).startsWith('new_')) {
                                                                                     return (gRule as any).valid_to || '';
                                                                                 }
                                                                                 const go = globalOverrides.find(g => g.valid_from === vFromStr); 
+                                                                                if (go && go.valid_to) return go.valid_to;
                                                                                 return go && !go.valid_to ? '' : vToStr; 
                                                                              })()}
                                                                           </td>
@@ -1245,30 +1454,56 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                </div>
                                                                                             </div>
                                                                                             {exp.key === 'avg_truck_price' && (
-                                                                                               <>
-                                                                                                  <span className="text-zinc-500 font-bold text-xs">+</span>
-                                                                                                  <div className="relative flex items-center h-7 w-24">
-                                                                                                     <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
-                                                                                                     {(() => {
-                                                                                                        const dObj = new Date(dateStr);
-                                                                                                        const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
-                                                                                                        const savedOverride = globalOverrides.find(go => go.valid_from === vfObj.toISOString().split('T')[0]);
-                                                                                                        const hasStateCustom = (gRule as any)[`is_custom_${exp.key}`] !== undefined;
-                                                                                                        const isCustom = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
-                                                                                                        const cpmVal = hasStateCustom ? ((gRule as any)[`custom_cpm_${exp.key}`] ?? '') : (savedOverride ? (savedOverride.cpm ?? '') : '');
-                                                                                                      return (
-                                                                                                         <input type="number" step="0.01" value={cpmVal} onChange={(e) => {
-                                                                                                            if (isCustom) {
-                                                                                                               const val = e.target.value;
-                                                                                                               setFinImportData(prev => prev.map(d => d.id === gRule.id ? { ...d, [`is_custom_${exp.key}`]: true, [`custom_cpm_${exp.key}`]: val } : d));
-                                                                                                               if (!modifiedFinImportIds.includes(String(gRule.id))) setModifiedFinImportIds(prev => [...prev, String(gRule.id)]);
-                                                                                                            }
-                                                                                                         }} disabled={!isCustom} placeholder="CPM" className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${!isCustom ? 'opacity-50 cursor-not-allowed' : ''}`} />
-                                                                                                      );
-                                                                                                     })()}
-                                                                                                  </div>
-                                                                                               </>
-                                                                                            )}
+                                                                                                                            <div className="flex items-center gap-2">
+                                                                                                                               <span className="text-zinc-500 font-bold text-xs mt-1">+</span>
+                                                                                                                               <div className="relative flex items-center h-7 w-24 mt-1">
+                                                                                                                                  <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
+                                                                                                                                  {(() => {
+                                                                                                                                     const dObj = new Date(dateStr);
+                                                                                                                                     const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
+                                                                                                                                     const savedOverride = globalOverrides.find(go => go.valid_from === vfObj.toISOString().split('T')[0]);
+                                                                                                                                     const hasStateCustom = (gRule as any)[`is_custom_${exp.key}`] !== undefined;
+                                                                                                                                     const isCustom = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
+                                                                                                                                     const cpmVal = hasStateCustom ? ((gRule as any)[`custom_cpm_${exp.key}`] ?? '') : (savedOverride ? (savedOverride.cpm ?? '') : '');
+                                                                                                                                   return (
+                                                                                                                                      <input type="number" step="0.01" value={cpmVal} onChange={(e) => {
+                                                                                                                                         if (isCustom) {
+                                                                                                                                            const val = e.target.value;
+                                                                                                                                            setFinImportData(prev => prev.map(d => d.id === gRule.id ? { ...d, [`is_custom_${exp.key}`]: true, [`custom_cpm_${exp.key}`]: val } : d));
+                                                                                                                                            if (!modifiedFinImportIds.includes(String(gRule.id))) setModifiedFinImportIds(prev => [...prev, String(gRule.id)]);
+                                                                                                                                         }
+                                                                                                                                      }} disabled={!isCustom} placeholder="CPM" className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${!isCustom ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                                                                                                                                   );
+                                                                                                                                  })()}
+                                                                                                                               </div>
+                                                                                                                               <button onClick={() => {
+                                                                                                                                   if (!expandedDphRules.includes(gRule.id)) {
+                                                                                                                                       let fcArr = (gRule as any).franchise_charge;
+                                                                                                                                       if (fcArr === undefined) {
+                                                                                                                                           const dObj = new Date(dateStr);
+                                                                                                                                           const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
+                                                                                                                                           const vfStr = vfObj.toISOString().split('T')[0];
+                                                                                                                                           const separatedRules = localFixedExpenses.filter(e => e.name === exp.name && e.valid_from === vfStr && e.companyId === 'ALL' && e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm);
+                                                                                                                                           if (separatedRules.length > 0) {
+                                                                                                                                               fcArr = separatedRules.map(e => ({ contract: e.contractType, amount: e.franchise_charge, dph: (e as any).dph }));
+                                                                                                                                           } else {
+                                                                                                                                               fcArr = [];
+                                                                                                                                           }
+                                                                                                                                       }
+                                                                                                                                       if (typeof fcArr === 'string') { try { fcArr = JSON.parse(fcArr); } catch(e){ fcArr = []; } }
+                                                                                                                                       if (!Array.isArray(fcArr)) fcArr = [];
+                                                                                                                                       if (fcArr.length === 0) {
+                                                                                                                                           handleFinImportChange(gRule.id, 'franchise_charge', [{ contract: '', amount: '' }] as any);
+                                                                                                                                       } else {
+                                                                                                                                           handleFinImportChange(gRule.id, 'franchise_charge', fcArr as any);
+                                                                                                                                       }
+                                                                                                                                   }
+                                                                                                                                   toggleDphRule(gRule.id);
+                                                                                                                               }} className="px-2 py-0.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 text-[10px] rounded border border-zinc-700 transition-colors h-max whitespace-nowrap mt-1">
+                                                                                                                                  {expandedDphRules.includes(gRule.id) ? 'Hide dph rule' : 'Edit dph rule'}
+                                                                                                                               </button>
+                                                                                                                            </div>
+                                                                                                                         )}
                                                                                          </div>
                                                                                         {(() => {
                                                                                                                       const dObj = new Date(dateStr);
@@ -1354,6 +1589,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                      e.stopPropagation(); 
                                                                      if (String(gRule.id).startsWith('new_')) {
                                                                          setFinImportData(prev => prev.filter(d => d.id !== gRule.id));
+                                                                         setLocalFixedExpenses(prev => prev.filter(x => !(x.name === exp.name && x.valid_from === vFromStr && x.companyId === 'ALL')));
                                                                      } else if (String(gRule.id).startsWith('dummy_')) {
                                                                          setLocalFixedExpenses(prev => prev.filter(x => !(x.name === exp.name && x.valid_from === vFromStr && x.companyId === 'ALL')));
                                                                      } else {
@@ -1414,13 +1650,24 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                              </div>
                                                                                           </div>
                                                                                           {exp.key === 'avg_truck_price' && (
-                                                                                             <>
+                                                                                             <div className="flex items-center gap-2">
                                                                                                 <span className="text-zinc-500 font-bold text-xs mt-1">+</span>
                                                                                                 <div className="relative flex items-center h-7 w-24 mt-1">
                                                                                                    <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
                                                                                                    <input type="number" step="0.01" value={cRule.cpm ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'cpm', e.target.value)} placeholder="CPM" className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
                                                                                                 </div>
-                                                                                             </>
+                                                                                                <button onClick={() => {
+                                                                                                    if (!expandedDphRules.includes(String(cRule.id))) {
+                                                                                                        let fcArr = (cRule as any).franchise_charge;
+                                                                                                        if (typeof fcArr === 'string') { try { fcArr = JSON.parse(fcArr); } catch(e){ fcArr = []; } }
+                                                                                                        if (!Array.isArray(fcArr)) fcArr = [];
+                                                                                                        if (fcArr.length === 0) handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, [{ contract: '', amount: '' }]);
+                                                                                                    }
+                                                                                                    toggleDphRule(String(cRule.id));
+                                                                                                }} className="px-2 py-0.5 bg-amber-950 hover:bg-amber-900 text-amber-500/70 text-[10px] rounded border border-amber-900/50 transition-colors h-max whitespace-nowrap mt-1">
+                                                                                                   {expandedDphRules.includes(String(cRule.id)) ? 'Hide dph rule' : 'Edit dph rule'}
+                                                                                                </button>
+                                                                                             </div>
                                                                                           )}
                                                                                           {exp.key === 'liability_insurance' && (
                                                                                              <div className="flex flex-col items-start gap-1 mt-1">
@@ -1483,60 +1730,171 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                           return effNT > 0;
                                                                                       });
 
-                                                                                      const rows = availRecords.map((record, index) => {
-                                                                                         const targetDateStr = record.week_ending;
-                                                                                         let effNT = 0;
-                                                                                         const validFcRecords = (fixedCostsData || []).filter(r => (r.week_ending || '').startsWith(targetDateStr));
-                                                                                         if (validFcRecords.length > 0) {
-                                                                                            let nts = validFcRecords[0].company_eff_non_teams;
-                                                                                            if (typeof nts === 'string') { try { nts = JSON.parse(nts); } catch(e){} }
-                                                                                            if (nts) {
-                                                                                               if (Array.isArray(nts)) {
-                                                                                                  const match = nts.find((x:any) => String(x.company_id || x.company || '').trim().toLowerCase() === String(cRule.companyId || '').trim().toLowerCase());
-                                                                                                  if (match) effNT = Number(match.eff_non_teams_total || match.eff_non_teams || match.value || match.amount || 0);
-                                                                                               } else {
-                                                                                                  const companyKey = Object.keys(nts).find(k => String(k).trim().toLowerCase() === String(cRule.companyId || '').trim().toLowerCase());
-                                                                                                  if (companyKey) effNT = Number(nts[companyKey] || 0);
+                                                                                      const seenDates2 = new Set<string>();
+                                                                                         const rows = availRecords.map((record, index) => {
+                                                                                            const targetDateStr = record.week_ending;
+                                                                                            let effNT = 0;
+                                                                                            const validFcRecords = (fixedCostsData || []).filter(r => (r.week_ending || '').startsWith(targetDateStr));
+                                                                                            if (validFcRecords.length > 0) {
+                                                                                               let nts = validFcRecords[0].company_eff_non_teams;
+                                                                                               if (typeof nts === 'string') { try { nts = JSON.parse(nts); } catch(e){} }
+                                                                                               if (nts) {
+                                                                                                  if (Array.isArray(nts)) {
+                                                                                                     const match = nts.find((x:any) => String(x.company_id || x.company || '').trim().toLowerCase() === String(cRule.companyId || '').trim().toLowerCase());
+                                                                                                     if (match) effNT = Number(match.eff_non_teams_total || match.eff_non_teams || match.value || match.amount || 0);
+                                                                                                  } else {
+                                                                                                     const companyKey = Object.keys(nts).find(k => String(k).trim().toLowerCase() === String(cRule.companyId || '').trim().toLowerCase());
+                                                                                                     if (companyKey) effNT = Number(nts[companyKey] || 0);
+                                                                                                  }
                                                                                                }
                                                                                             }
-                                                                                         }
-                                                                                         if (effNT <= 0 && (!cRule.companyId || cRule.companyId === 'ALL')) {
-                                                                                            const puData = finImportPerUnitData.find(d => (d.week_ending || '').startsWith(targetDateStr));
-                                                                                            effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
-                                                                                         }
-                                                                                         if (effNT <= 0) return null;
-                                                                                         const dObj = new Date(targetDateStr);
-                                                                                         while(dObj.getUTCDay() !== 4) {
-                                                                                             dObj.setUTCDate(dObj.getUTCDate() + 1);
-                                                                                         }
-                                                                                         const payDateStr = dObj.toISOString().split('T')[0];
-                                                                                         const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
-                                                                                         const perUnitAmt = effNT > 0 ? (baseAmt / 52) / effNT : 0;
-                                                                                         const sharedResp = Number((cRule as any).shared_insurance || 0);
-                                                                                         const compPay = perUnitAmt - sharedResp;
-                                                                                         const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
-                                                                                         return (
-                                                                                            <div key={`${targetDateStr}_${index}`} className="flex items-center gap-6 py-1 border-b border-amber-900/10 last:border-0">
-                                                                                               <div className="w-24 text-[10px] text-zinc-300 font-mono">{payDateStr}</div>
-                                                                                               <div className="w-32 text-[10px] text-zinc-300 font-mono">Amount (PU): {perUnitAmt.toFixed(2)}</div>
-                                                                                               <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay (PU): {compPay.toFixed(2)}</div>
-                                                                                            </div>
-                                                                                         );
-                                                                                      });
+                                                                                            if (effNT <= 0 && (!cRule.companyId || cRule.companyId === 'ALL')) {
+                                                                                               const puData = finImportPerUnitData.find(d => (d.week_ending || '').startsWith(targetDateStr));
+                                                                                               effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
+                                                                                            }
+                                                                                            if (effNT <= 0) return null;
+                                                                                            const dObj = new Date(targetDateStr);
+                                                                                            while(dObj.getUTCDay() !== 4) {
+                                                                                                dObj.setUTCDate(dObj.getUTCDate() + 1);
+                                                                                            }
+                                                                                            const payDateStr = dObj.toISOString().split('T')[0];
+                                                                                            
+                                                                                            if (seenDates2.has(payDateStr)) return null;
+                                                                                            seenDates2.add(payDateStr);
+
+                                                                                            const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
+                                                                                            const perUnitAmt = effNT > 0 ? (baseAmt / 52) / effNT : 0;
+                                                                                            const sharedResp = Number((cRule as any).shared_insurance || 0);
+                                                                                            const compPay = perUnitAmt - sharedResp;
+                                                                                            const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
+                                                                                            return (
+                                                                                               <div key={`${targetDateStr}_${index}`} className="flex items-center gap-6 py-1 border-b border-amber-900/10 last:border-0">
+                                                                                                  <div className="w-24 text-[10px] text-zinc-300 font-mono">{payDateStr}</div>
+                                                                                                  <div className="w-32 text-[10px] text-zinc-300 font-mono">Amount (PU): {perUnitAmt.toFixed(2)}</div>
+                                                                                                  <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay (PU): {compPay.toFixed(2)}</div>
+                                                                                               </div>
+                                                                                            );
+                                                                                         });
                                                                                       const validRows = rows.filter(Boolean);
                                                                                       if (validRows.length === 0) return <div className="text-[10px] text-zinc-500 italic">No valid dates found.</div>;
-                                                                                      return validRows;
-                                                                                   })()}
-                                                                                </div>
-                                                                             </div>
-                                                                         </td>
-                                                                     </tr>
-                                                                 );
-                                                             }
-                                                         });
+                                                                                                                     return validRows;
+                                                                                                                  })()}
+                                                                                                               </div>
+                                                                                                            </div>
+                                                                                                        </td>
+                                                                                                    </tr>
+                                                                                                );
+                                                                                            }
 
-                                                         return fragmentRows;
-                                                     })}
+                                                                                            if (exp.key === 'avg_truck_price' && expandedDphRules.includes(String(cRule.id))) {
+                                                                                                fragmentRows.push(
+                                                                                                    <tr key={`${cRule.id}_expanded_dph_c`} className="bg-amber-500/5">
+                                                                                                        <td colSpan={5} className="px-3 pb-3 pt-0 border-t-0">
+                                                                                                            <div className="flex flex-col gap-3 bg-zinc-950/50 p-3 rounded-lg border border-amber-500/20 w-full relative ml-4">
+                                                                                                                <div className="absolute -top-2.5 -left-3 text-amber-500/30">
+                                                                                                                    <CornerDownRight size={16} />
+                                                                                                                </div>
+                                                                                                                {(() => {
+                                                                                                                    let curFc = (cRule as any).franchise_charge;
+                                                                                                                    if (typeof curFc === 'string') { try { curFc = JSON.parse(curFc); } catch(e){ curFc = []; } }
+                                                                                                                    if (!Array.isArray(curFc)) curFc = [];
+                                                                                                                    if (curFc.length === 0) curFc = [{ contract: '', amount: '' }];
+                                                                                                                    return (
+                                                                                                                        <>
+                                                                                                                            {curFc.map((fc: any, i: number) => (
+                                                                                                                                <div key={i} className="flex items-center gap-4">
+                                                                                                                                    <div className="flex flex-col gap-1 w-48">
+                                                                                                                                        <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Contract</label>
+                                                                                                                                        <select value={fc.contract} onChange={(e) => { const newFc = curFc.map((item: any, idx: number) => idx === i ? { ...item, contract: e.target.value } : item); handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, newFc); }} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-1 px-2 text-xs text-zinc-200 focus:border-amber-500 outline-none">
+                                                                                                                                            <option value="" disabled>Select Contract</option>
+                                                                                                                                            {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
+                                                                                                                                        </select>
+                                                                                                                                    </div>
+                                                                                                                                   
+                                                                                                                                   
+                                                                                           
+                                                                                                                                    <button onClick={() => { const newFc = curFc.filter((_: any, idx: number) => idx !== i); handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, newFc); }} className="mt-4 text-zinc-500 hover:text-rose-500"><Trash2 size={14}/></button>
+                                                                                                                                </div>
+                                                                                                                            ))}
+                                                                                                                            <button onClick={() => { const newFc = [...curFc, { contract: '', amount: '' }]; handleCompanyExpenseChange(cRule.id, 'franchise_charge' as any, newFc); }} className="text-amber-500 text-[10px] font-bold uppercase w-max hover:text-amber-400 mt-2 flex items-center gap-1"><Plus size={10}/> Add Rule</button>
+                                                                                                                        </>
+                                                                                                                    );
+                                                                                                                })()}
+                                                                                                            </div>
+                                                                                                        </td>
+                                                                                                    </tr>
+                                                                                                );
+                                                                                            }
+                                                                                        });
+
+                                                                                        if (exp.key === 'avg_truck_price' && gRule && expandedDphRules.includes(gRule.id)) {
+                                                                                            const dObj = new Date(dateStr);
+                                                                                            const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
+                                                                                            const vfStr = vfObj.toISOString().split('T')[0];
+                                                                                           const savedOverride = globalOverrides.find(go => go.valid_from === vfStr);
+                                                                                            const separatedRules = localFixedExpenses.filter(e => e.name === exp.name && e.valid_from === vfStr && e.companyId === 'ALL' && e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm);
+                                                                                            let currentFranchiseCharge = (gRule as any).franchise_charge;
+if (currentFranchiseCharge === undefined) {
+    if (separatedRules.length > 0) {
+        currentFranchiseCharge = separatedRules.map(e => ({ contract: e.contractType, amount: e.franchise_charge, dph: (e as any).dph }));
+    } else {
+        currentFranchiseCharge = (savedOverride as any)?.franchise_charge ?? [];
+    }
+}
+                                                                                            if (typeof currentFranchiseCharge === 'string') { try { currentFranchiseCharge = JSON.parse(currentFranchiseCharge); } catch(e) { currentFranchiseCharge = []; } }
+                                                                                            if (!Array.isArray(currentFranchiseCharge)) currentFranchiseCharge = [];
+                                                                                            if (currentFranchiseCharge.length === 0) currentFranchiseCharge = [{ contract: '', amount: '' }];
+
+                                                                                            
+                                                                                            fragmentRows.push(
+                                                                                                <tr key={`${gRule.id}_expanded_dph`} className="bg-zinc-900/50">
+                                                                                                    <td colSpan={5} className="px-3 pb-3 pt-0 border-t-0">
+                                                                                                        <div className="flex flex-col gap-3 bg-zinc-950/50 p-3 rounded-lg border border-zinc-700 w-full relative ml-4 mt-2">
+                                                                                                            <div className="absolute -top-2.5 -left-3 text-zinc-600">
+                                                                                                                <CornerDownRight size={16} />
+                                                                                                            </div>
+                                                                                                            {currentFranchiseCharge.map((fc: any, i: number) => (
+                                                                                                                <div key={i} className="flex items-center gap-4">
+                                                                                                                    <div className="flex flex-col gap-1 w-48">
+                                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase tracking-wider">Contract</label>
+                                                                                                                        <select value={fc.contract} onChange={(e) => { const newFc = currentFranchiseCharge.map((item: any, idx: number) => idx === i ? { ...item, contract: e.target.value } : item); handleFinImportChange(gRule.id, 'franchise_charge', newFc as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 px-2 text-xs text-zinc-200 focus:border-emerald-500 outline-none">
+                                                                                                                            <option value="" disabled>Select Contract</option>
+                                                                                                                            {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
+                                                                                                                        </select>
+                                                                                                                    </div>
+                                                                                                                    
+                                                                                                                           <div className="flex flex-col gap-1 w-32">
+                                                                                                                                <label className="text-[8px] text-zinc-400 font-bold uppercase tracking-wider">Charge to franchise</label>
+                                                                                                                                <div className="relative h-7 w-full">
+                                                                                                                                    <span className="absolute left-2 top-1.5 text-zinc-500 text-[10px] pointer-events-none">$</span>
+                                                                                                                                    <input type="number" value={fc.amount} onChange={(e) => { const newFc = currentFranchiseCharge.map((item: any, idx: number) => idx === i ? { ...item, amount: e.target.value } : item); handleFinImportChange(gRule.id, 'franchise_charge', newFc as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-emerald-500 outline-none h-full" />
+                                                                                                                                </div>
+                                                                                                                            </div>
+                                                                                                                            <div className="flex flex-col gap-1 mt-4">
+                                                                                                                                <span className="text-[10px] text-emerald-500 font-mono font-bold whitespace-nowrap">
+                                                                                                                                    New Amount: {(() => {
+                                                                                                                                        const puData = finImportPerUnitData.find(d => d.week_ending === dateStr);
+                                                                                                                                        const puVal = puData ? Math.abs(puData[(exp as any).puKey] || 0) : 0;
+                                                                                                                                        const hasStateCustom = (gRule as any)[`is_custom_${exp.key}`] !== undefined;
+                                                                                                                                        const isCustom = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
+                                                                                                                                        const customVal = hasStateCustom ? ((gRule as any)[`custom_val_${exp.key}`] || '') : (savedOverride ? savedOverride.amount : '');
+                                                                                                                                        const mainAmount = Number(isCustom ? customVal : puVal) || 0;
+                                                                                                                                        return mainAmount - Number(fc.amount || 0);
+                                                                                                                                    })()}
+                                                                                                                                </span>
+                                                                                                                            </div>
+                                                                                                                    <button onClick={() => { const newFc = currentFranchiseCharge.filter((_: any, idx: number) => idx !== i); handleFinImportChange(gRule.id, 'franchise_charge', newFc as any); }} className="mt-4 text-zinc-500 hover:text-rose-500"><Trash2 size={14}/></button>
+                                                                                                                </div>
+                                                                                                            ))}
+                                                                                                            <button onClick={() => { const newFc = [...currentFranchiseCharge, { contract: '', amount: '' }]; handleFinImportChange(gRule.id, 'franchise_charge', newFc as any); }} className="text-zinc-400 text-[10px] font-bold uppercase w-max hover:text-white mt-2 flex items-center gap-1"><Plus size={10}/> Add Rule</button>
+                                                                                                        </div>
+                                                                                                    </td>
+                                                                                                </tr>
+                                                                                            );
+                                                                                        }
+
+                                                                                        return fragmentRows;
+                                                                                    })}
                                                   </tbody>
                                                        </table>
                                                    </div>
