@@ -687,6 +687,22 @@ const fixedExpenseNames = Array.from(new Set([
                                                                            </div>
                                                                         </div>
                                                                      );
+                                                                  } else if (ct === 'CPM') {
+                                                                     return (
+                                                                        <div className="flex flex-col gap-2 w-full">
+                                                                           <select value={calcType} onChange={(e) => { const newConf = [...localConfigContracts]; const targetIndex = localConfigContracts.findIndex(x => x.id === conf.id); if(targetIndex !== -1) { newConf[targetIndex].calculation_type = e.target.value; setLocalConfigContracts(newConf); } }} className="w-max bg-zinc-950 border border-zinc-700 rounded py-1 px-2 text-[10px] text-zinc-300 focus:border-emerald-500 outline-none transition-colors h-7">
+                                                                              <option value="CPM_STYLE">Classic CPM</option>
+                                                                              <option value="NEW_CPM_FORMULA">New CPM Formula</option>
+                                                                           </select>
+                                                                           <div className="flex items-center whitespace-nowrap text-[11px] text-zinc-300 font-mono bg-zinc-900/50 px-2 pt-4 pb-1.5 rounded border border-zinc-800 w-max relative z-10">
+                                                                              {calcType === 'NEW_CPM_FORMULA' ? (
+                                                                                 <>Gross - Gross Pay - (Gross * {mcGrossInput})</>
+                                                                              ) : (
+                                                                                 <>(Gross + Margin * {mcMarginInput}) - Net Pay</>
+                                                                              )}
+                                                                           </div>
+                                                                        </div>
+                                                                     );
                                                                   }
                                                                   
                                                                   let content = null;
@@ -727,8 +743,8 @@ const fixedExpenseNames = Array.from(new Set([
                                                 })()}
                                                <button onClick={() => {
                                                    const lastRule = currentRules[currentRules.length - 1];
-                                                   const defaultCalcType = lastRule ? lastRule.calculation_type : (ct === 'TPOG' ? 'TPOG_NONF' : (ct === 'TPOG WITH FRANCHISE' ? 'TPOG_FRANCHISE' : 'MCLOO_STYLE'));
-                                                   setLocalConfigContracts([...localConfigContracts, { 
+                                                               const defaultCalcType = lastRule ? lastRule.calculation_type : (ct === 'TPOG' ? 'TPOG_NONF' : (ct === 'TPOG WITH FRANCHISE' ? 'TPOG_FRANCHISE' : (ct === 'CPM' ? 'CPM_STYLE' : 'MCLOO_STYLE')));
+                                                               setLocalConfigContracts([...localConfigContracts, {
                                                       id: Math.random().toString(36).substring(7), 
                                                       contract_type: ct as string, 
                                                       calculation_type: defaultCalcType, 
