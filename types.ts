@@ -53,10 +53,13 @@ export interface ExpenseItem {
   valid_to?: string;
   amount_before?: number;
   amount_after?: number;
-  eff_count?: number;
-  per_count_before?: number;
-  per_count_after?: number;
-  unit?: '$' | '%';
+      eff_count?: number;
+      per_count_before?: number;
+      per_count_after?: number;
+      unit?: '$' | '%';
+      shared_insurance?: number;
+      company_base_for_mcloo?: number;
+      mcloo_base_mode?: boolean;
 }
 
 
