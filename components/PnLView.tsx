@@ -75,8 +75,9 @@ const MasterTable: React.FC<{
   selectedDate?: string,
   groupBy: 'Contract' | 'Company' | 'Franchise' | 'Team' | 'Driver',
   chartData?: any[],
-  isAverageView?: boolean
-}> = ({ companyMetrics, drivers, calculateMetrics, totalActiveCount, selectedDate, groupBy, chartData = [], isAverageView = false }) => {
+  isAverageView?: boolean,
+  searchQuery?: string
+}> = ({ companyMetrics, drivers, calculateMetrics, totalActiveCount, selectedDate, groupBy, chartData = [], isAverageView = false, searchQuery = '' }) => {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'name', direction: 'asc' });
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'desc';
@@ -87,12 +88,12 @@ const MasterTable: React.FC<{
   };
 
   const val = (amount: number, divisor: number) => isAverageView ? (divisor > 0 ? amount / divisor : 0) : amount;
-  const uniqueContracts = Array.from(new Set(drivers.map(d => d.contractType || 'Unassigned'))).sort();
-  const uniqueCompanies = Array.from(new Set(drivers.map(d => d.companyId || 'Unassigned'))).filter(c => c !== 'Unassigned' && !/^Company\s*\d*$/i.test(String(c))).sort();
-  const uniqueFranchises = Array.from(new Set(drivers.map(d => d.franchiseId || 'Unassigned'))).sort();
-  const uniqueTeams = Array.from(new Set(drivers.map(d => d.teamId || 'Unassigned'))).sort();
-  const uniqueDrivers = Array.from(new Set(drivers.map(d => d.name || 'Unassigned'))).sort();
-  const driverRows = [...drivers].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const uniqueContracts = Array.from(new Set(drivers.map(d => d.contractType || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueCompanies = Array.from(new Set(drivers.map(d => d.companyId || 'Unassigned'))).filter(c => c !== 'Unassigned' && !/^Company\s*\d*$/i.test(String(c))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueFranchises = Array.from(new Set(drivers.map(d => d.franchiseId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueTeams = Array.from(new Set(drivers.map(d => d.teamId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueDrivers = Array.from(new Set(drivers.map(d => d.name || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const driverRows = [...drivers].sort((a, b) => (a.name || '').localeCompare(b.name || '')).filter(d => !searchQuery || String(d.name || 'Unassigned').toLowerCase().startsWith(searchQuery.toLowerCase()));
 
       const getAggregatedMetrics = (groupDrivers: DriverPerformance[]) => {
           const driversByName = new Map<string, DriverPerformance[]>();
@@ -188,7 +189,8 @@ const MasterTable: React.FC<{
         } else if (groupBy === 'Driver') {
           rows = driverRows.map(d => ({ name: d.name, drivers: [d] }));
         }
-        const t = getAggregatedMetrics(drivers);
+        const activeDrivers = rows.flatMap(r => r.drivers);
+        const t = getAggregatedMetrics(activeDrivers);
         const overallW4 = get4wMetrics('COMPANY');
         return { ...t, w4Sum: overallW4.sum, w4Avg: overallW4.avg };
       })();
@@ -747,6 +749,7 @@ const PnLView: React.FC<PnLViewProps> = ({
   const [isExpandedTableFilterOpen, setIsExpandedTableFilterOpen] = useState(false);
   const expandedTableFilterRef = useRef<HTMLDivElement>(null);
   const [selectedEntities, setSelectedEntities] = useState<string[]>(['COMPANY']);
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['netIncome']);
 
   const uniqueDates = useMemo(() => {
@@ -2079,11 +2082,20 @@ const PnLView: React.FC<PnLViewProps> = ({
       {isTableExpanded && (
         <div className="fixed inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-8">
            <div className="bg-zinc-950 border border-zinc-800 rounded-lg w-full h-full max-w-7xl flex flex-col shadow-2xl">
-              <div className="flex justify-between items-center p-3 border-b border-zinc-800 bg-zinc-900/50">
-                 <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                    <LayoutList size={16} className="text-emerald-500" />
-                    Master Operating Statement
-                 </h2>
+             <div className="flex justify-between items-center p-3 border-b border-zinc-800 bg-zinc-900/50">
+                 <div className="flex items-center gap-4">
+                    <h2 className="text-sm font-bold text-white flex items-center gap-2">
+                       <LayoutList size={16} className="text-emerald-500" />
+                       Master Operating Statement
+                    </h2>
+                    <input
+                       type="text"
+                       placeholder="Search..."
+                       value={searchQuery}
+                       onChange={(e) => setSearchQuery(e.target.value)}
+                       className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 font-sans text-xs focus:outline-none focus:border-emerald-500 w-48 placeholder:text-zinc-600"
+                    />
+                 </div>
                  <div className="flex items-center gap-3">
                    {currentRole === 'Company Admin' && setGlobalFilter && (
                      <div className="relative" ref={expandedTableFilterRef}>
@@ -2147,6 +2159,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                     groupBy={groupBy}
                     chartData={chartData}
                     isAverageView={isAverageView}
+                    searchQuery={searchQuery}
                  />
               </div>
            </div>
@@ -2197,7 +2210,15 @@ const PnLView: React.FC<PnLViewProps> = ({
         <div className="flex-1 flex flex-col gap-2 min-w-0">
           <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col min-h-0 relative z-20">
             <div className="p-2 border-b border-zinc-800 bg-zinc-950/30 flex justify-between items-center">
-              <div className="flex items-center gap-3 text-[10px] font-mono"></div>
+              <div className="flex items-center gap-3 text-[10px] font-mono">
+                 <input
+                   type="text"
+                   placeholder="Search..."
+                   value={searchQuery}
+                   onChange={(e) => setSearchQuery(e.target.value)}
+                   className="bg-zinc-950 border border-zinc-800 rounded px-2 py-0.5 text-zinc-300 font-sans text-[10px] focus:outline-none focus:border-emerald-500 w-40 placeholder:text-zinc-600"
+                 />
+              </div>
                <div className="flex items-center gap-2">
                    {currentRole === 'Company Admin' && setGlobalFilter && (
                      <div className="relative" ref={mainTableFilterRef}>
@@ -2261,6 +2282,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                 groupBy={groupBy}
                 chartData={chartData}
                 isAverageView={isAverageView}
+                searchQuery={searchQuery}
             />
           </div>
           <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col min-h-0 overflow-hidden">
