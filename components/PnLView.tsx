@@ -262,10 +262,10 @@ const MasterTable: React.FC<{
       <td className="px-1 py-0.5 text-right text-purple-400">-{formatCurrency(Math.abs(val(metrics.dispatcherPay, div)))}</td>
       <td className="group/ins relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help">
         -{formatCurrency(Math.abs(val(metrics.insuranceExp, div)))}
-        <div className="absolute hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left top-1/2 -translate-y-1/2 right-[105%] mr-2 w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words">
+        <div className="fixed hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left top-48 left-[65%] -translate-x-1/2 w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words">
           <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Insurance Breakdown:</div>
           <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabAuto, div)))}</span></div>
-          <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabGen, div)))}</span></div>
+          <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabGen, div)), 2)}</span></div>
           <div className="flex justify-between gap-4"><span>Cargo:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insCargo, div)))}</span></div>
           <div className="flex justify-between gap-4"><span>PhD Truck:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTruck, div)))}</span></div>
           <div className="flex justify-between gap-4"><span>PhD Trailer:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTrailer, div)))}</span></div>
@@ -626,7 +626,7 @@ const MasterTable: React.FC<{
                     <td className="px-1 py-1 text-right text-purple-400 font-medium">-{formatCurrency(Math.abs(val(dynamicTotals.dispatcherPay, div)))}</td>
                     <td className="group/ins relative hover:z-[99999] px-1 py-1 text-right text-purple-400 !overflow-visible cursor-help">
                       -{formatCurrency(Math.abs(val(dynamicTotals.insuranceExp, div)))}
-                      <div className="absolute hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left bottom-0 right-[105%] mb-2 mr-2 w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words">
+                      <div className="fixed hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left top-48 left-[65%] -translate-x-1/2 w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words">
                         <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Insurance Breakdown:</div>
                         <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabAuto, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabGen, div)))}</span></div>
@@ -759,7 +759,7 @@ const PnLView: React.FC<PnLViewProps> = ({
        const dateB = new Date(b as string).getTime();
        return dateB - dateA;
     });
-    return sortedDates.length > 1 ? sortedDates.slice(0, -1) : sortedDates;
+    return sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates;
   }, [drivers]);
 
   const [selectedDate, setSelectedDate] = useState<string>('LATEST');
@@ -1261,18 +1261,19 @@ const PnLView: React.FC<PnLViewProps> = ({
             }
 
             if (matchedExp) {
-                 const baseVal = (matchedExp as any).company_base_for_mcloo;
-                 if (baseVal !== undefined && baseVal !== null && String(baseVal).trim() !== '') {
-                     liabilityAuto = Number(baseVal) || 0;
-                     liabilityGeneral = 0;
-                     liabilityGlobal = 0;
-                     sharedLiabilityValue = 0;
-                 } else {
-                     sharedLiabilityValue = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
+                         const totalAmount = liabilityAuto + liabilityGeneral + liabilityGlobal;
+                         const baseLimit = (matchedExp as any).company_base_for_mcloo;
+                         if (baseLimit !== undefined && baseLimit !== null && String(baseLimit).trim() !== '') {
+                             const limit = Number(baseLimit) || 0;
+                             liability = Math.min(totalAmount, limit);
+                         } else {
+                             const sharedVal = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
+                             liability = totalAmount <= sharedVal ? totalAmount : totalAmount - sharedVal;
+                         }
+                     } else {
+                         liability = liabilityAuto + liabilityGeneral + liabilityGlobal;
+                     }
                  }
-             }
-             liability = liabilityAuto + liabilityGeneral + liabilityGlobal - sharedLiabilityValue;
-         }
 
          if (d.name === 'Angela Sega' && effContractType === 'MCLOO' && String(d.payDate).includes('04-09')) {
              console.log('--- DEBUG LIABILITY: Angela Sega | Pay Date:', d.payDate, '---');
@@ -1337,9 +1338,9 @@ const PnLView: React.FC<PnLViewProps> = ({
          let ins_phd_trailer = (phd / 4.0) * effTr;
          let insurance_costs_calc = ins_liab_auto + ins_liab_gen + ins_cargo + ins_phd_truck + ins_phd_trailer;
          
-      if (d.name === 'Darryl Cook' && String(d.payDate).includes('04-30') && !loggedTpogDrivers.has('Darryl Cook')) {
-           loggedTpogDrivers.add('Darryl Cook');
-           console.log('--- CPM DEBUG | DRIVER:', d.name, ' | TYPE:', effContractType, ' | COMPANY:', d.companyId, ' | PAY DATE:', d.payDate, '---');
+      if (d.name === 'Dorsey Frank' && String(d.payDate).includes('05-07') && !loggedTpogDrivers.has('Dorsey Frank')) {
+           loggedTpogDrivers.add('Dorsey Frank');
+           console.log('--- WEEKLY EXPENSES DEBUG | DRIVER:', d.name, ' | TYPE:', effContractType, ' | COMPANY:', d.companyId, ' | PAY DATE:', d.payDate, '---');
            console.log('FIXED TOTAL:', fixed_costs_calc);
            console.log('effNT:', effNT);
            console.log('effTr:', effTr);
@@ -1733,7 +1734,11 @@ const PnLView: React.FC<PnLViewProps> = ({
       if (pnlHistoryGroupBy === 'Franchise' && d.franchiseId) options.add(d.franchiseId);
       if (pnlHistoryGroupBy === 'Team' && d.teamId) options.add(d.teamId);
     });
-    return Array.from(options).filter(opt => opt !== 'UNRECONCILED' && opt !== 'Unassigned').sort();
+    return Array.from(options).filter(opt => {
+   if (opt === 'UNRECONCILED' || opt === 'Unassigned') return false;
+   if (pnlHistoryGroupBy === 'Contract' && ['TCPML', 'MCLPOO', 'CPML'].includes(opt)) return false;
+   return true;
+}).sort();
   }, [enrichedDrivers, pnlHistoryGroupBy]);
 
   const resolvedPnlFilter = useMemo(() => {
@@ -1804,7 +1809,7 @@ const PnLView: React.FC<PnLViewProps> = ({
     });
 
     const sortedHistory = history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-    return sortedHistory.length > 1 ? sortedHistory.slice(0, -1) : sortedHistory;
+return sortedHistory.length > 6 ? sortedHistory.slice(0, -6) : sortedHistory;
   }, [enrichedDrivers, calculateMetrics, pnlHistoryGroupBy, pnlHistoryOptions]);
 
 
@@ -1819,7 +1824,7 @@ const PnLView: React.FC<PnLViewProps> = ({
     });
 
     let allDates = Object.keys(driversByDate).sort((a, b) => new Date(a).getTime() - new Date(b).getTime());
-    allDates = allDates.length > 1 ? allDates.slice(1) : allDates;
+allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
 
     if (selectedDate !== 'ALL' && selectedDate !== 'LATEST') {
       const targetTime = new Date(selectedDate).getTime();
@@ -2623,7 +2628,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                           : `${isProfit ? '+' : '-'}${label.includes('General') ? `$${Math.abs(val).toFixed(2)}` : formatCurrency(Math.abs(val))}`}
                     </span>
                     {valTooltip && (
-                       <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none transform -translate-x-[105%] -translate-y-1/2">
+                       <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none right-[340px] top-[40%] -translate-y-1/2 w-max">
                           {valTooltip}
                        </div>
                     )}
@@ -2635,7 +2640,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                       {isTotalProfit ? `+${formatCurrency(Math.abs(total))}` : `-${formatCurrency(Math.abs(total))}`}
                     </span>
                     {totalTooltip && (
-                   <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none transform -translate-x-[105%] -translate-y-1/2">
+                   <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none right-[340px] top-[40%] -translate-y-1/2 w-max">
                       {totalTooltip}
                    </div>
                 )}
@@ -2712,19 +2717,22 @@ const PnLView: React.FC<PnLViewProps> = ({
                         const averagePerUnit = activeCompsInWeek.length > 0 ? sumPerUnit / activeCompsInWeek.length : 0;
                         return { averagePerUnit, breakdown };
                     };
-                    const buildPerUnitTooltip = (title: string, breakdown: any[], showDecimals: boolean = false) => {
+                    const buildPerUnitTooltip = (title: string, rawBreakdown: any[], showDecimals: boolean = false) => {
+    const breakdown = rawBreakdown.filter(b => b.company && b.company !== 'Unassigned' && b.company !== 'UNRECONCILED');
     if (breakdown.length === 0) return null;
     const hasUnit = breakdown.some(b => b.nt !== undefined || b.tr !== undefined);
-    const unitName = breakdown.some(b => b.tr !== undefined) ? 'Effective Trailers' : 'Effective Non-Teams';
+    const hasGross = breakdown.some(b => b.gross !== undefined);
+    const unitName = breakdown.some(b => b.tr !== undefined) ? 'Eff Trailers' : 'Eff Non-Teams';
     return (
-        <div className="flex flex-col w-full text-left min-w-[340px]">
+        <div className="flex flex-col w-max min-w-[290px] text-left">
             <div className="text-emerald-400 font-bold mb-1 border-b border-zinc-700 pb-0.5">{title}</div>
-            <div className="text-[9px] text-zinc-400 mb-2 leading-tight">This value represents the Average. Below are the exact amounts per company:</div>
+            <div className="text-[9px] text-zinc-400 mb-2 leading-tight">Average amounts:</div>
             
-            {hasUnit && (
-                <div className="grid grid-cols-[1fr_120px_80px] gap-2 items-center mb-1 border-b border-zinc-700/50 pb-1">
-                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Company</span>
-                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider text-right">{unitName}</span>
+            {(hasUnit || hasGross) && (
+                <div className={`grid ${hasGross ? 'grid-cols-[1fr_70px_70px_70px]' : (hasUnit ? 'grid-cols-[1fr_70px_70px]' : 'grid-cols-[1fr_70px]')} gap-2 items-center mb-1 border-b border-zinc-700/50 pb-1`}>
+                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Name</span>
+                    {hasGross && <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider text-right">Total Gross</span>}
+                    {hasUnit && <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider text-right">{unitName}</span>}
                     <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider text-right">Amount</span>
                 </div>
             )}
@@ -2732,8 +2740,9 @@ const PnLView: React.FC<PnLViewProps> = ({
                 {breakdown.map((b: any, i: number) => {
                     const unitVal = b.tr !== undefined ? b.tr : b.nt;
                     return (
-                        <div key={i} className={`grid ${hasUnit ? 'grid-cols-[1fr_120px_80px]' : 'grid-cols-[1fr_80px]'} gap-2 items-center`}>
+                        <div key={i} className={`grid ${hasGross ? 'grid-cols-[1fr_70px_70px_70px]' : (hasUnit ? 'grid-cols-[1fr_70px_70px]' : 'grid-cols-[1fr_70px]')} gap-2 items-center`}>
                             <span className="text-[10px] text-zinc-300 truncate">{b.company}</span>
+                            {hasGross && <span className="text-[10px] text-zinc-400 font-mono tabular-nums text-right">{formatCurrency(b.gross)}</span>}
                             {hasUnit && <span className="text-[10px] text-zinc-400 font-mono tabular-nums text-right">{unitVal !== undefined ? unitVal.toFixed(1) : ''}</span>}
                             <span className="text-[10px] text-zinc-200 font-bold font-mono tabular-nums text-right">
                                 {b.perUnit < 0 ? '+' : '-'}{showDecimals ? `$${Math.abs(b.perUnit).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : formatCurrency(Math.abs(b.perUnit))}
@@ -2746,29 +2755,24 @@ const PnLView: React.FC<PnLViewProps> = ({
     );
 };
 
-const buildTotalTooltip = (title: string, breakdown: any[]) => {
+const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
+    const breakdown = rawBreakdown.filter(b => b.company && b.company !== 'Unassigned' && b.company !== 'UNRECONCILED');
     if (breakdown.length === 0) return null;
-    const hasUnit = breakdown.some(b => b.nt !== undefined || b.tr !== undefined);
-    const unitName = breakdown.some(b => b.tr !== undefined) ? 'Effective Trailers' : 'Effective Non-Teams';
     return (
-        <div className="flex flex-col w-full text-left min-w-[340px]">
+        <div className="flex flex-col w-max min-w-[160px] text-left">
             <div className="text-sky-400 font-bold mb-1 border-b border-zinc-700 pb-0.5">{title}</div>
-            <div className="text-[9px] text-zinc-400 mb-2 leading-tight">This value represents the Total sum of all companies. Below are the weekly expenses per company:</div>
+            <div className="text-[9px] text-zinc-400 mb-2 leading-tight">Total weekly expenses:</div>
             
-            {hasUnit && (
-                <div className="grid grid-cols-[1fr_120px_80px] gap-2 items-center mb-1 border-b border-zinc-700/50 pb-1">
-                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Company</span>
-                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider text-right">{unitName}</span>
-                    <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider text-right">Total</span>
-                </div>
-            )}
+            <div className="grid grid-cols-[1fr_70px] gap-2 items-center mb-1 border-b border-zinc-700/50 pb-1">
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider">Name</span>
+                <span className="text-[9px] text-zinc-500 font-bold uppercase tracking-wider text-right">Total</span>
+            </div>
+            
             <div className="flex flex-col gap-1">
                 {breakdown.map((b: any, i: number) => {
-                    const unitVal = b.tr !== undefined ? b.tr : b.nt;
                     return (
-                        <div key={i} className={`grid ${hasUnit ? 'grid-cols-[1fr_120px_80px]' : 'grid-cols-[1fr_80px]'} gap-2 items-center`}>
+                        <div key={i} className="grid grid-cols-[1fr_70px] gap-2 items-center">
                             <span className="text-[10px] text-zinc-300 truncate">{b.company}</span>
-                            {hasUnit && <span className="text-[10px] text-zinc-400 font-mono tabular-nums text-right">{unitVal !== undefined ? unitVal.toFixed(1) : ''}</span>}
                             <span className="text-[10px] text-zinc-200 font-bold font-mono tabular-nums text-right">
                                 {b.weekly < 0 ? '+' : '-'}{formatCurrency(Math.abs(b.weekly))}
                             </span>
@@ -2779,7 +2783,6 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
         </div>
     );
 };
-
 
                     const getLiabilityAutoBreakdown = () => {
                                                   const puBreakdown: { company: string, perUnit: number }[] = [];
@@ -2857,19 +2860,19 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
                                          const pdPU = getDetailedExpensePerUnit('Physical Damage', getSidebarVal('physical_damage', 'physical_damage_custom'));
 
                                          let finalLiabAutoTotal = companyMetrics.insLiabAuto;
-                                         let finalLiabAutoPerUnit = filteredNT > 0 ? finalLiabAutoTotal / filteredNT : getSidebarVal('liability_insurance', 'liability_insurance_custom');
+let finalLiabAutoPerUnit = liabAutoPU.averagePerUnit;
 
-                    const finalLiabGenTotal = companyMetrics.insLiabGen;
-                    const finalLiabGenPerUnit = filteredNT > 0 ? finalLiabGenTotal / filteredNT : 0;
+const finalLiabGenTotal = companyMetrics.insLiabGen;
+const finalLiabGenPerUnit = liabGenPU.averagePerUnit;
 
-                    const finalCargoTotal = companyMetrics.insCargo;
-                    const finalCargoPerUnit = filteredNT > 0 ? finalCargoTotal / filteredNT : getSidebarVal('cargo_insurance', 'cargo_insurance_custom');
+const finalCargoTotal = companyMetrics.insCargo;
+const finalCargoPerUnit = cargoPU.averagePerUnit;
 
-                    const finalPdTruckTotal = companyMetrics.insPhdTruck;
-                    const finalPdTruckPerUnit = filteredTruckNT > 0 ? finalPdTruckTotal / filteredTruckNT : getSidebarVal('physical_damage', 'physical_damage_custom');
-                    
-                    const finalPdTrailerTotal = companyMetrics.insPhdTrailer;
-                    const finalPdTrailerPerUnit = filteredTr > 0 ? finalPdTrailerTotal / filteredTr : getSidebarVal('physical_damage', 'physical_damage_custom') / 4;
+const finalPdTruckTotal = companyMetrics.insPhdTruck;
+const finalPdTruckPerUnit = pdPU.averagePerUnit;
+
+const finalPdTrailerTotal = companyMetrics.insPhdTrailer;
+const finalPdTrailerPerUnit = pdPU.averagePerUnit / 4;
 
                     const insPerUnitTotal = finalLiabAutoPerUnit + finalLiabGenPerUnit + finalCargoPerUnit + finalPdTruckPerUnit + finalPdTrailerPerUnit;
                     const insTotal = finalLiabAutoTotal + finalLiabGenTotal + finalCargoTotal + finalPdTruckTotal + finalPdTrailerTotal;
@@ -2917,7 +2920,7 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
                        const val = detailedPU.averagePerUnit;
                        const total = val * filteredNT;
                        
-                       const tooltipBreakdown = detailedPU.breakdown;
+                       const tooltipBreakdown = detailedPU.breakdown.map(b => ({ ...b, nt: getCompNT(b.company) }));
                        let valTooltip = null;
                        let totalTooltip = null;
                        
@@ -2939,7 +2942,20 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
                     const adminTotal = adminItems.reduce((sum, item) => sum + item.val, 0);
                                          
                                          let totalTruckCpmCost = 0;
-                                         let totalTruckWeeklyCost = 0;
+                                         let totalTruckWeeklyCost = 0;
+                                         const truckWeeklyBreakdown: { company: string, perUnit: number, weekly: number, nt: number }[] = [];
+                                         
+                                         const currTime = companyMetrics.currentPayDate ? new Date(companyMetrics.currentPayDate).getTime() : Date.now();
+                                         const validTruckRules = fixedExpenses.filter(e => {
+                                             if (e.name !== 'Truck Price') return false;
+                                             const fromTime = e.valid_from ? new Date(e.valid_from).getTime() : -Infinity;
+                                             const toTime = e.valid_to ? new Date(e.valid_to).getTime() : Infinity;
+                                             return currTime >= fromTime && currTime <= toTime;
+                                         });
+
+                                         // 1. Grupisanje NT i milja isključivo po ugovoru (OO se preskače u potpunosti)
+                                         const contractStats: Record<string, { nt: number, miles: number }> = {};
+                                         
                                          filteredWeekDrivers.forEach(d => {
                                              let effContractType = d.contractType || '';
                                              if (d.contractType === 'TPOG' && d.franchiseId) {
@@ -2948,65 +2964,103 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
                                                  effContractType = 'OO WITH FRANCHISE';
                                              }
 
-                                             let cpm: number | null = null;
-                                             let amount: number | null = null;
-                                             let cCosts = fcSidebar.contract_specific_costs;
-                                             if (typeof cCosts === 'string') {
-                                                 try { cCosts = JSON.parse(cCosts); } catch(e) {}
+                                             if (effContractType === 'OO' || effContractType === 'OO WITH FRANCHISE') return; // Preskačemo OO za Truck Price
+
+                                             if (!contractStats[effContractType]) {
+                                                 contractStats[effContractType] = { nt: 0, miles: 0 };
                                              }
-                                             if (cCosts && Array.isArray(cCosts)) {
-                                                 const contractRule = cCosts.find((el: any) =>
-                                                     (el.contract_type || '').trim().toLowerCase() === effContractType.trim().toLowerCase() &&
-                                                     (el.expense_name || '').toLowerCase().includes('truck price')
+                                             contractStats[effContractType].nt += (d.effectiveNonTeams || 0);
+                                             contractStats[effContractType].miles += (Number(d.milesDriven) || 0);
+                                         });
+
+                                         // 2. Kalkulacija totala (Broj NT za taj ugovor pomnožen sa cenom tog ugovora)
+                                         let totalTruckCpmNT = 0;
+                                         const truckCpmBreakdown: { company: string, perUnit: number, weekly: number, nt: number }[] = [];
+
+                                         Object.entries(contractStats).forEach(([cType, stats]) => {
+                                             let amount: number | null = null;
+                                             let cpm: number | null = null;
+if (cType.replace(/\s+/g, '').toUpperCase() === 'TPOGWITHFRANCHISE') {
+                                                 // A) Proveri nova pravila (Structural Settings)
+                                                 const newRule = validTruckRules.find(e => 
+                                                     (e.contractType || '').trim().toLowerCase() === cType.trim().toLowerCase() && 
+                                                     (!e.companyId || e.companyId === 'ALL')
                                                  );
-                                                 if (contractRule) {
-                                                     if (contractRule.cpm !== undefined && contractRule.cpm !== null) {
-                                                         cpm = Math.abs(Number(contractRule.cpm));
-                                                     }
-                                                     if (contractRule.amount !== undefined && contractRule.amount !== null) {
-                                                         amount = Math.abs(Number(contractRule.amount));
+                                                 if (newRule) {
+                                                     if (newRule.amount !== undefined && newRule.amount !== null && String(newRule.amount).trim() !== '') amount = Math.abs(Number(newRule.amount));
+                                                     if (newRule.cpm !== undefined && newRule.cpm !== null && String(newRule.cpm).trim() !== '') cpm = Math.abs(Number(newRule.cpm));
+                                                 }
+
+                                                 // B) Proveri stara pravila (Fin Import -> contract_specific_costs)
+                                                 if (amount === null || cpm === null) {
+                                                     let cCosts = fcSidebar.contract_specific_costs;
+                                                     if (typeof cCosts === 'string') { try { cCosts = JSON.parse(cCosts); } catch(e) {} }
+                                                     if (cCosts && Array.isArray(cCosts)) {
+                                                         const legacyRule = cCosts.find((el: any) =>
+                                                             (el.contract_type || '').trim().toLowerCase() === cType.trim().toLowerCase() &&
+                                                             (el.expense_name || '').toLowerCase().includes('truck price')
+                                                         );
+                                                         if (legacyRule) {
+                                                             if (amount === null && legacyRule.amount !== undefined && legacyRule.amount !== null && String(legacyRule.amount).trim() !== '') amount = Math.abs(Number(legacyRule.amount));
+                                                             if (cpm === null && legacyRule.cpm !== undefined && legacyRule.cpm !== null && String(legacyRule.cpm).trim() !== '') cpm = Math.abs(Number(legacyRule.cpm));
+                                                         }
                                                      }
                                                  }
                                              }
 
-                                             if (cpm === null || amount === null) {
-                                                 let sCosts = fcSidebar.company_specific_costs;
-                                                 if (typeof sCosts === 'string') {
-                                                     try { sCosts = JSON.parse(sCosts); } catch(e) {}
-                                                 }
-                                                 if (sCosts && Array.isArray(sCosts)) {
-                                                     const compRule = sCosts.find((el: any) =>
-                                                         (el.company_id || '').trim().toLowerCase() === (d.companyId || '').trim().toLowerCase() &&
-                                                         (el.expense_name || '').toLowerCase().includes('truck price')
-                                                     );
-                                                     if (compRule) {
-                                                         if (cpm === null && compRule.cpm !== undefined && compRule.cpm !== null) {
-                                                             cpm = Math.abs(Number(compRule.cpm));
-                                                         }
-                                                         if (amount === null && compRule.amount !== undefined && compRule.amount !== null) {
-                                                             amount = Math.abs(Number(compRule.amount));
-                                                         }
-                                                     }
+                                             if (amount === null || cpm === null) {
+                                                 const globalRule = validTruckRules.find(e => e.companyId === 'ALL' && (!e.contractType || e.contractType === ''));
+                                                 if (globalRule) {
+                                                     if (amount === null && globalRule.amount !== undefined && globalRule.amount !== null && String(globalRule.amount).trim() !== '') amount = Math.abs(Number(globalRule.amount));
+                                                     if (cpm === null && globalRule.cpm !== undefined && globalRule.cpm !== null && String(globalRule.cpm).trim() !== '') cpm = Math.abs(Number(globalRule.cpm));
                                                  }
                                              }
 
                                              if (cpm === null && fcSidebar['truck_price_cpm'] !== undefined && fcSidebar['truck_price_cpm'] !== null) {
                                                  cpm = Math.abs(Number(fcSidebar['truck_price_cpm']));
                                              }
-                                             if (amount === null && fcSidebar['truck_weekly_custom'] !== undefined && fcSidebar['truck_weekly_custom'] !== null && fcSidebar['truck_weekly_custom'] !== '') {
+                                             if (amount === null && fcSidebar['truck_weekly_custom'] !== undefined && fcSidebar['truck_weekly_custom'] !== null && String(fcSidebar['truck_weekly_custom']).trim() !== '') {
                                                  amount = Math.abs(Number(fcSidebar['truck_weekly_custom']));
                                              }
-                                             if (amount === null && fcSidebar['truck_weekly'] !== undefined && fcSidebar['truck_weekly'] !== null && fcSidebar['truck_weekly'] !== '') {
+                                             if (amount === null && fcSidebar['truck_weekly'] !== undefined && fcSidebar['truck_weekly'] !== null && String(fcSidebar['truck_weekly']).trim() !== '') {
                                                  amount = Math.abs(Number(fcSidebar['truck_weekly']));
                                              }
 
-                                             totalTruckCpmCost += (cpm || 0) * (Number(d.milesDriven) || 0);
-                                             if (d.contractType !== 'OO') {
-                                                 totalTruckWeeklyCost += (amount || 0) * (d.effectiveNonTeams || 0);
-                                             }
+                                             totalTruckWeeklyCost += (amount || 0) * stats.nt;
+                                             truckWeeklyBreakdown.push({
+                                                 company: cType,
+                                                 perUnit: amount || 0,
+                                                 weekly: (amount || 0) * stats.nt,
+                                                 nt: stats.nt
+                                             });
+                                             
+                                             const currentCpmCost = (cpm || 0) * stats.miles;
+                                             totalTruckCpmCost += currentCpmCost;
+                                             totalTruckCpmNT += stats.nt;
+
+                                             const currentPerUnit = stats.nt > 0 ? currentCpmCost / stats.nt : 0;
+                                             truckCpmBreakdown.push({
+                                                 company: cType,
+                                                 perUnit: currentPerUnit,
+                                                 weekly: currentCpmCost,
+                                                 nt: stats.nt
+                                             });
                                          });
-                                         const tCpmPerUnit = filteredNT > 0 ? totalTruckCpmCost / filteredNT : 0;
+
+                                         const truckCpmPUTooltip = buildPerUnitTooltip('Truck CPM', truckCpmBreakdown);
+                                         const truckCpmTotalTooltip = buildTotalTooltip('Truck CPM', truckCpmBreakdown);
+
+                                         const truckWeeklyPUTooltip = buildPerUnitTooltip('Truck Price', truckWeeklyBreakdown);
+                                         const truckWeeklyTotalTooltip = buildTotalTooltip('Truck Price Total', truckWeeklyBreakdown);
+
+                                         const tCpmPerUnit = totalTruckCpmNT > 0 ? totalTruckCpmCost / totalTruckCpmNT : 0;
                                          const tWeeklyPerUnit = filteredTruckNT > 0 ? totalTruckWeeklyCost / filteredTruckNT : 0;
+
+                                         const trPU = getDetailedExpensePerUnit('Trailer Price', getSidebarVal('trailer_weekly', 'trailer_weekly_custom'));
+                                         const trPUBreakdown = trPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, tr: getCompTr(b.company) }));
+                                         const trPUTooltip = buildPerUnitTooltip('Avg Trailer Price', trPUBreakdown);
+                                         const trTotalBreakdown = trPUBreakdown.map(b => ({ company: b.company, weekly: b.perUnit * getCompTr(b.company), tr: getCompTr(b.company) }));
+                                         const trTotalTooltip = buildTotalTooltip('Avg Trailer Price Total', trTotalBreakdown);
 
                                          const equipTotal = tWeeklyPerUnit + getSidebarVal('trailer_weekly') + tCpmPerUnit;
                                          
@@ -3046,15 +3100,23 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
                                                     <span className="text-[10px] text-zinc-300 block truncate">Avg Truck Price</span>
                                                   </div>
                                                   <div className="w-[25%] text-center">
-                                                    <span className="text-[10px] font-mono font-bold text-sky-400/80">-{formatCurrency(tVal)}</span>
+                                                     <div className="relative group/tooltip inline-block">
+                                                        <span className="text-[10px] font-mono font-bold transition-colors duration-200 cursor-help text-sky-400/80 hover:text-sky-300">
+                                                          -{formatCurrency(tVal)}
+                                                        </span>
+                                                        <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none right-[340px] top-[40%] -translate-y-1/2 w-max">
+                                                           {truckWeeklyPUTooltip}
+                                                        </div>
+                                                     </div>
                                                   </div>
                                                   <div className="w-[25%] text-right">
                                                      <div className="relative group/tooltip inline-block">
                                                         <span className="text-[10px] font-mono font-bold transition-colors duration-200 cursor-help text-zinc-400 hover:text-zinc-300">
                                                           -{formatCurrency(tTotal)}
                                                         </span>
-                                                        <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none transform -translate-x-[105%] -translate-y-1/2">
-                                                           Without OO drivers
+                                                        <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none right-[340px] top-[40%] -translate-y-1/2 w-max">
+                                                           <div className="mb-1">{truckWeeklyTotalTooltip}</div>
+                                                           <div className="text-[9px] text-zinc-500 border-t border-zinc-700 pt-1 mt-1">Without OO drivers</div>
                                                         </div>
                                                      </div>
                                                   </div>
@@ -3066,13 +3128,23 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
                                                      <span className="text-[10px] text-zinc-300 block truncate">Avg Trailer Price</span>
                                                    </div>
                                                    <div className="w-[25%] text-center">
-                                                     <span className="text-[10px] font-mono font-bold text-sky-400/80">-{formatCurrency(trVal)}</span>
+                                                      <div className="relative group/tooltip inline-block">
+                                                         <span className="text-[10px] font-mono font-bold transition-colors duration-200 cursor-help text-sky-400/80 hover:text-sky-300">
+                                                           -{formatCurrency(trVal)}
+                                                         </span>
+                                                         <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none right-[340px] top-[40%] -translate-y-1/2 w-max">
+                                                            {trPUTooltip}
+                                                         </div>
+                                                      </div>
                                                    </div>
                                                    <div className="w-[25%] text-right">
                                                       <div className="relative group/tooltip inline-block">
-                                                         <span className="text-[10px] font-mono font-bold transition-colors duration-200 text-zinc-400 hover:text-zinc-300">
+                                                         <span className="text-[10px] font-mono font-bold transition-colors duration-200 cursor-help text-zinc-400 hover:text-zinc-300">
                                                            -{formatCurrency(trTotal)}
                                                          </span>
+                                                         <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none right-[340px] top-[40%] -translate-y-1/2 w-max">
+                                                            {trTotalTooltip}
+                                                         </div>
                                                       </div>
                                                    </div>
                                                 </div>
@@ -3087,16 +3159,19 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
                                                          <span className="text-[10px] font-mono font-bold transition-colors duration-200 cursor-help text-sky-400/80 hover:text-sky-300">
                                                            -{formatCurrency(tCpmPerUnit)}
                                                          </span>
-                                                         <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none transform -translate-x-[105%] -translate-y-1/2">
-                                                            Average per truck
+                                                         <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none right-[340px] top-[40%] -translate-y-1/2 w-max">
+                                                            {truckCpmPUTooltip}
                                                          </div>
                                                       </div>
                                                    </div>
                                                    <div className="w-[25%] text-right">
                                                       <div className="relative group/tooltip inline-block">
-                                                         <span className="text-[10px] font-mono font-bold transition-colors duration-200 text-zinc-400 hover:text-zinc-300">
+                                                         <span className="text-[10px] font-mono font-bold transition-colors duration-200 cursor-help text-zinc-400 hover:text-zinc-300">
                                                            -{formatCurrency(totalTruckCpmCost)}
                                                          </span>
+                                                         <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none right-[340px] top-[40%] -translate-y-1/2 w-max">
+                                                            {truckCpmTotalTooltip}
+                                                         </div>
                                                       </div>
                                                    </div>
                                                 </div>
@@ -3125,8 +3200,34 @@ const buildTotalTooltip = (title: string, breakdown: any[]) => {
                                   </div>
                                </div>
                                <div className="bg-zinc-950/40 rounded border border-zinc-800/30 divide-y divide-zinc-800/30">
-                                  {renderRow('Plates', 'plates', 'plates_custom', false, Math.round(filteredTruckNT), undefined, 'Without OO drivers')}
-                                  {renderRow('Factoring', 'factoring', 'factoring_custom', true, 1, '% of Total Gross', '% of Total Gross')}
+                                  {(() => {
+                                      const platesPU = getDetailedExpensePerUnit('Plates', getSidebarVal('plates', 'plates_custom'));
+                                      const platesPUBreakdown = platesPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompTruckNT(b.company) })).filter(b => b.nt > 0);
+                                      const platesTotalBreakdown = platesPU.breakdown.map(b => ({ company: b.company, weekly: b.perUnit * getCompTruckNT(b.company), nt: getCompTruckNT(b.company) })).filter(b => b.nt > 0);
+                                      const platesTotalSum = platesTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
+                                      return renderRow('Plates', 'plates', 'plates_custom', false, Math.round(filteredTruckNT), buildPerUnitTooltip('Plates', platesPUBreakdown), buildTotalTooltip('Plates Total', platesTotalBreakdown), platesPU.averagePerUnit, platesTotalSum);
+                                  })()}
+                                  {(() => {
+                                      const factBreakdown = activeCompsInWeek.map(compId => {
+                                          const compDrivers = filteredWeekDrivers.filter(d => d.companyId === compId);
+                                          const gross = compDrivers.reduce((sum, d) => sum + (d.grossRevenue || 0) + (d.marginAmount || 0), 0);
+                                          const nt = getCompNT(compId);
+                                          let val = getSidebarVal('factoring', 'factoring_custom');
+                                          if (specCosts && Array.isArray(specCosts)) {
+                                              const compRule = specCosts.find((el: any) =>
+                                                  (el.company_id || '').replace(/\s+/g, '').toLowerCase() === compId.replace(/\s+/g, '').toLowerCase() &&
+                                                  (el.expense_name || '').toLowerCase().includes('factoring')
+                                              );
+                                              if (compRule && compRule.amount !== undefined && compRule.amount !== null && String(compRule.amount).trim() !== '') {
+                                                  val = Math.abs(Number(compRule.amount));
+                                              }
+                                          }
+                                          const weekly = gross * (val / 100);
+                                          const perUnit = nt > 0 ? weekly / nt : 0;
+                                          return { company: compId, gross, nt, perUnit, weekly };
+                                      });
+                                      return renderRow('Factoring', 'factoring', 'factoring_custom', true, 1, buildPerUnitTooltip('Factoring', factBreakdown), buildTotalTooltip('Factoring Total', factBreakdown));
+                                  })()}
                                </div>
                              </div>
 

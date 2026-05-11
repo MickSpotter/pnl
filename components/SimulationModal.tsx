@@ -159,9 +159,9 @@ const fixedExpenseNames = Array.from(new Set([
         amount_after: 0,
         frequency: 'Weekly' as const,
         allocationType: 'divide' as const,
-        unit: '$' as const,
-        valid_from: new Date().toISOString().split('T')[0]
-     };
+                unit: expName === 'Factoring' ? '%' : '$',
+                valid_from: new Date().toISOString().split('T')[0]
+             };
      setLocalFixedExpenses(prev => [...prev, newExp]);
   };
 
@@ -177,9 +177,9 @@ const fixedExpenseNames = Array.from(new Set([
         amount_after: 0,
         frequency: 'Weekly',
         allocationType: 'divide',
-        unit: '$',
-        valid_from: new Date().toISOString().split('T')[0]
-     };
+                unit: expName === 'Factoring' ? '%' : '$',
+                valid_from: new Date().toISOString().split('T')[0]
+             };
      setLocalFixedExpenses(prev => [...prev, newExp]);
   };
 
@@ -946,9 +946,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                               <td className="py-1.5 pr-2">
                                                                    {expObj.companyId === 'ALL' ? (
                                                                   <div className="text-xs font-bold text-emerald-500 uppercase tracking-wider h-7 flex items-center">Global (ALL)</div>
-                                                               ) : (expObj as any).contractType ? (
-                                                                  <select
-                                                                      value={(expObj as any).contractType}
+                                                               ) : (expObj as any).contractType !== undefined ? (
+                                                              <select
+                                                                  value={(expObj as any).contractType}
                                                                      onChange={(e) => handleCompanyExpenseChange(expObj.id, 'contractType' as any, e.target.value)}
                                                                      className="w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold focus:border-purple-500 outline-none transition-colors h-7"
                                                                   >
@@ -1309,7 +1309,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                               </div>
                                                                                            </div>
                                                                                         <div className="flex flex-col gap-1 w-64">
-                                                                                           <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Base Amount (Company Pay)' : 'Shared Insurance Resp. (Per Unit)'}</label>
+                                                                                           <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
                                                                                            <div className="relative h-7 w-32">
                                                                                               <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
                                                                                               {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? (
@@ -1384,23 +1384,22 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                       let sharedResp = 0;
                                                                                       let compPay = 0;
                                                                                       if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
-                                                                                          compPay = Number((cRule as any).company_base_for_mcloo || 0);
-                                                                                          sharedResp = perUnitAmt - compPay;
+                                                                                          const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
+                                                                                          compPay = Math.min(perUnitAmt, baseLimit);
+                                                                                          sharedResp = Math.max(0, perUnitAmt - baseLimit);
                                                                                       } else {
-                                                                                          sharedResp = Number((cRule as any).shared_insurance || 0);
-                                                                                          compPay = perUnitAmt - sharedResp;
+                                                                                          const sharedVal = Number((cRule as any).shared_insurance || 0);
+                                                                                          compPay = perUnitAmt <= sharedVal ? perUnitAmt : perUnitAmt - sharedVal;
+                                                                                          sharedResp = perUnitAmt <= sharedVal ? 0 : sharedVal;
                                                                                       }
                                                                                       const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
                                                                                             const sharedRespColor = 'text-amber-500';
                                                                                       return (
                                                                                          <div key={targetDateStr} className="flex items-center gap-6 py-1 border-b border-amber-900/10 last:border-0">
                                                                                             <div className="w-24 text-[10px] text-zinc-300 font-mono">{payDateStr}</div>
-                                                                                            <div className="w-32 text-[10px] text-zinc-300 font-mono">Amount (PU): {perUnitAmt.toFixed(2)}</div>
-                                                                                            {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? (
-                                                                                                <div className={`w-48 text-[10px] font-mono font-bold ${sharedRespColor}`}>Shared Insurance Resp. (PU): {sharedResp.toFixed(2)}</div>
-                                                                                            ) : (
-                                                                                                <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay (PU): {compPay.toFixed(2)}</div>
-                                                                                            )}
+                                                                                            <div className="w-24 text-[10px] text-zinc-300 font-mono">Total (PU): {perUnitAmt.toFixed(2)}</div>
+                                                                                            <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay: {compPay.toFixed(2)}</div>
+                                                                                            <div className={`w-40 text-[10px] font-mono font-bold ${sharedRespColor}`}>Shared Resp: {sharedResp.toFixed(2)}</div>
                                                                                          </div>
                                                                                       );
                                                                                    });
@@ -1689,11 +1688,13 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                let sharedResp = 0;
                                                                                                let compPay = 0;
                                                                                                if ((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) {
-                                                                                                   compPay = Number((gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? 0);
-                                                                                                   sharedResp = perUnitAmt - compPay;
+                                                                                                   const baseLimit = Number((gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? 0);
+                                                                                                   compPay = Math.min(perUnitAmt, baseLimit);
+                                                                                                   sharedResp = Math.max(0, perUnitAmt - baseLimit);
                                                                                                } else {
-                                                                                                   sharedResp = Number((gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? 0);
-                                                                                                   compPay = perUnitAmt - sharedResp;
+                                                                                                   const sharedVal = Number((gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? 0);
+                                                                                                   compPay = perUnitAmt <= sharedVal ? perUnitAmt : perUnitAmt - sharedVal;
+                                                                                                   sharedResp = perUnitAmt <= sharedVal ? 0 : sharedVal;
                                                                                                }
                                                                                                const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
                                                                                                const sharedRespColor = 'text-amber-500';
@@ -1717,7 +1718,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                         <div className="text-[10px] text-zinc-300 font-mono font-bold h-5 flex items-center">{perUnitAmt.toFixed(2)}</div>
                                                                                                      </div>
                                                                                                      <div className="flex flex-col gap-0.5 border-l border-zinc-800 pl-4">
-                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">{((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? 'Base Amount (Company Pay)' : 'Shared Insurance Resp. (Per Unit)'}</label>
+                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">{((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
                                                                                                         <div className="relative h-5 w-24">
                                                                                                            <span className="absolute left-1.5 top-0.5 text-zinc-500 text-[9px] pointer-events-none">$</span>
                                                                                                            {((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? (
@@ -1728,12 +1729,12 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                         </div>
                                                                                                      </div>
                                                                                                      <div className="flex flex-col gap-0.5 border-l border-zinc-800 pl-4">
-                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">{((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? 'Shared Insurance Resp. (Per Unit)' : 'Company Pay (Per Unit)'}</label>
-                                                                                                        {((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? (
-                                                                                                            <div className={`text-[10px] font-mono font-bold h-5 flex items-center ${sharedRespColor}`}>{sharedResp.toFixed(2)}</div>
-                                                                                                        ) : (
-                                                                                                            <div className={`text-[10px] font-mono font-bold h-5 flex items-center ${compPayColor}`}>{compPay.toFixed(2)}</div>
-                                                                                                        )}
+                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">Comp Pay (PU)</label>
+                                                                                                        <div className={`text-[10px] font-mono font-bold h-5 flex items-center ${compPayColor}`}>{compPay.toFixed(2)}</div>
+                                                                                                     </div>
+                                                                                                     <div className="flex flex-col gap-0.5 border-l border-zinc-800 pl-4">
+                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">Shared Resp (PU)</label>
+                                                                                                        <div className={`text-[10px] font-mono font-bold h-5 flex items-center ${sharedRespColor}`}>{sharedResp.toFixed(2)}</div>
                                                                                                      </div>
                                                                                                   </div>
                                                                                                );
@@ -1862,17 +1863,17 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                               <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Edit Mode</label>
                                                                                               <div className="flex items-center gap-2 h-5">
                                                                                                            <label className="flex items-center gap-1 cursor-pointer">
-                                                                                                              <input type="checkbox" checked={mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'shared' : !((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '')} onChange={() => { setMclooEditModes({...mclooEditModes, [gRule.id]: 'shared'}); handleFinImportChange(gRule.id, 'company_base_for_mcloo', null as any); }} className="w-2.5 h-2.5 accent-emerald-500" />
-                                                                                                              <span className="text-[9px] text-zinc-300">Shared</span>
-                                                                                                           </label>
-                                                                                                           <label className="flex items-center gap-1 cursor-pointer">
-                                                                                                              <input type="checkbox" checked={mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : ((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '')} onChange={() => setMclooEditModes({...mclooEditModes, [gRule.id]: 'base'})} className="w-2.5 h-2.5 accent-emerald-500" />
-                                                                                                              <span className="text-[9px] text-zinc-300">Base</span>
-                                                                                                           </label>
+   <input type="checkbox" checked={mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'shared' : !((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')} onChange={() => { setMclooEditModes({...mclooEditModes, [cRule.id]: 'shared'}); handleCompanyExpenseChange(cRule.id, 'company_base_for_mcloo' as any, null); }} className="w-2.5 h-2.5 accent-emerald-500" />
+   <span className="text-[9px] text-zinc-300">Shared</span>
+</label>
+<label className="flex items-center gap-1 cursor-pointer">
+   <input type="checkbox" checked={mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')} onChange={() => setMclooEditModes({...mclooEditModes, [cRule.id]: 'base'})} className="w-2.5 h-2.5 accent-emerald-500" />
+   <span className="text-[9px] text-zinc-300">Base</span>
+</label>
                                                                                                         </div>
                                                                                            </div>
                                                                                         <div className="flex flex-col gap-1 w-64">
-                                                                                           <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Base Amount (Company Pay)' : 'Shared Insurance Resp. (Per Unit)'}</label>
+                                                                                           <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
                                                                                            <div className="relative h-7 w-32">
                                                                                               <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
                                                                                               {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? (
@@ -1947,24 +1948,23 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                             let sharedResp = 0;
                                                                                             let compPay = 0;
                                                                                             if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
-                                                                                                compPay = Number((cRule as any).company_base_for_mcloo || 0);
-                                                                                                sharedResp = perUnitAmt - compPay;
+                                                                                                const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
+                                                                                                compPay = Math.min(perUnitAmt, baseLimit);
+                                                                                                sharedResp = Math.max(0, perUnitAmt - baseLimit);
                                                                                             } else {
-                                                                                                sharedResp = Number((cRule as any).shared_insurance || 0);
-                                                                                                compPay = perUnitAmt - sharedResp;
+                                                                                                const sharedVal = Number((cRule as any).shared_insurance || 0);
+                                                                                                compPay = perUnitAmt <= sharedVal ? perUnitAmt : perUnitAmt - sharedVal;
+                                                                                                sharedResp = perUnitAmt <= sharedVal ? 0 : sharedVal;
                                                                                             }
                                                                                             const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
                                                                                       const sharedRespColor = 'text-amber-500';
                                                                                             return (
                                                                                                <div key={`${targetDateStr}_${index}`} className="flex items-center gap-6 py-1 border-b border-amber-900/10 last:border-0">
-                                                                                                  <div className="w-24 text-[10px] text-zinc-300 font-mono">{payDateStr}</div>
-                                                                                                  <div className="w-32 text-[10px] text-zinc-300 font-mono">Amount (PU): {perUnitAmt.toFixed(2)}</div>
-                                                                                                  {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? (
-                                                                                                      <div className={`w-48 text-[10px] font-mono font-bold ${sharedRespColor}`}>Shared Insurance Resp. (PU): {sharedResp.toFixed(2)}</div>
-                                                                                                  ) : (
-                                                                                                      <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay (PU): {compPay.toFixed(2)}</div>
-                                                                                                  )}
-                                                                                               </div>
+                                                                                                <div className="w-24 text-[10px] text-zinc-300 font-mono">{payDateStr}</div>
+                                                                                                <div className="w-24 text-[10px] text-zinc-300 font-mono">Total (PU): {perUnitAmt.toFixed(2)}</div>
+                                                                                                <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay: {compPay.toFixed(2)}</div>
+                                                                                                <div className={`w-40 text-[10px] font-mono font-bold ${sharedRespColor}`}>Shared Resp: {sharedResp.toFixed(2)}</div>
+                                                                                             </div>
                                                                                             );
                                                                                          });
                                                                                       const validRows = rows.filter(Boolean);

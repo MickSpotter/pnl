@@ -59,21 +59,17 @@ const Simulator: React.FC<SimulatorProps> = ({
   const [simDispatcherTake, setSimDispatcherTake] = useState<number>(0);
   const [simDispatcherMarginTake, setSimDispatcherMarginTake] = useState<number>(0);
   const [simCalcType, setSimCalcType] = useState<string>('MCLOO_STYLE');
+
+  const [simCompanyTakeFran, setSimCompanyTakeFran] = useState<number>(0);
+  const [simMarginTakeFran, setSimMarginTakeFran] = useState<number>(0);
+  const [simDispatcherTakeFran, setSimDispatcherTakeFran] = useState<number>(0);
+  const [simDispatcherMarginTakeFran, setSimDispatcherMarginTakeFran] = useState<number>(0);
+  const [simCalcTypeFran, setSimCalcTypeFran] = useState<string>('TPOG_FRANCHISE');
   
   const availableContracts = useMemo(() => {
     let baseContracts = Array.from(new Set(driverWithEffectiveContracts.map(d => d.contractType))).filter(Boolean) as string[];
     if (configContracts) {
-      const tpogRule = [...configContracts].filter(c => c.contract_type === 'TPOG').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-      const tpogFranRule = [...configContracts].filter(c => c.contract_type === 'TPOG WITH FRANCHISE').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-      const areTpogRulesSame = tpogRule && tpogFranRule && 
-                           tpogRule.calculation_type === tpogFranRule.calculation_type &&
-                           tpogRule.mc_gross_percent === tpogFranRule.mc_gross_percent &&
-                           tpogRule.mc_margin_percent === tpogFranRule.mc_margin_percent &&
-                           tpogRule.dispatcher_gross_percent === tpogFranRule.dispatcher_gross_percent &&
-                           (tpogRule as any).dispatcher_margin_percent === (tpogFranRule as any).dispatcher_margin_percent;
-      if (areTpogRulesSame) {
-        baseContracts = baseContracts.filter(c => c !== 'TPOG WITH FRANCHISE');
-      }
+      baseContracts = baseContracts.filter(c => c !== 'TPOG WITH FRANCHISE');
       
       const ooRule = [...configContracts].filter(c => c.contract_type === 'OO').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
       const ooFranRule = [...configContracts].filter(c => c.contract_type === 'OO WITH FRANCHISE').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
@@ -117,6 +113,17 @@ const Simulator: React.FC<SimulatorProps> = ({
         setSimMarginTake(0);
         setSimDispatcherTake(0);
         setSimDispatcherMarginTake(0);
+      }
+
+      const latestFran = [...configContracts]
+        .filter(c => c.contract_type === 'TPOG WITH FRANCHISE')
+        .sort((a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
+      if (latestFran) {
+        setSimCalcTypeFran(latestFran.calculation_type || 'TPOG_FRANCHISE');
+        setSimCompanyTakeFran(Number(((latestFran.mc_gross_percent || 0) * 100).toFixed(2)));
+        setSimMarginTakeFran(Number(((latestFran.mc_margin_percent || 0) * 100).toFixed(2)));
+        setSimDispatcherTakeFran(Number(((latestFran.dispatcher_gross_percent || 0) * 100).toFixed(2)));
+        setSimDispatcherMarginTakeFran(Number((((latestFran as any).dispatcher_margin_percent || 0) * 100).toFixed(2)));
       }
     }
   }, [selectedContractSim, configContracts]);
@@ -231,10 +238,7 @@ const Simulator: React.FC<SimulatorProps> = ({
     if (typeof value === 'boolean') {
       setter(value);
     } else {
-      const numValue = value === '' ? 0 : parseFloat(value);
-      if (!isNaN(numValue)) {
-        setter(numValue);
-      }
+      setter(value === '' ? '' : value);
     }
   };
 
@@ -245,14 +249,11 @@ const Simulator: React.FC<SimulatorProps> = ({
 
   const handleUpdateTier = (setter: any, index: number, field: string, value: string) => {
     setHasModified(true);
-    const numValue = value === '' ? 0 : parseFloat(value);
-    if (!isNaN(numValue)) {
-      setter((prev: any[]) => {
-        const next = [...prev];
-        next[index] = { ...next[index], [field]: numValue };
-        return next;
-      });
-    }
+    setter((prev: any[]) => {
+      const next = [...prev];
+      next[index] = { ...next[index], [field]: value === '' ? '' : value };
+      return next;
+    });
   };
 
   const uniqueDates = useMemo(() => {
@@ -260,7 +261,8 @@ const Simulator: React.FC<SimulatorProps> = ({
       ...lockedDataRecords.map(r => String(r.pay_date).split('T')[0]),
       ...drivers.map(d => String(d.payDate || '').split('T')[0])
     ].filter(Boolean));
-    return Array.from(dates).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    const sortedDates = Array.from(dates).sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
+    return sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates;
   }, [lockedDataRecords, drivers]);
 
   const targetDate = (selectedDate === 'ALL' || selectedDate === 'LATEST') && uniqueDates.length > 0 ? uniqueDates[0] : selectedDate;
@@ -269,18 +271,8 @@ const Simulator: React.FC<SimulatorProps> = ({
     const dateFiltered = driverWithEffectiveContracts.filter(d => String(d.payDate || '').startsWith(String(targetDate).split('T')[0]));
     if (tableContractFilter === 'ALL') return dateFiltered;
     
-    if (tableContractFilter === 'TPOG' && configContracts) {
-         const tpogRule = [...configContracts].filter(c => c.contract_type === 'TPOG').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-         const franRule = [...configContracts].filter(c => c.contract_type === 'TPOG WITH FRANCHISE').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-         const areRulesSame = tpogRule && franRule && 
-                              tpogRule.calculation_type === franRule.calculation_type &&
-                              tpogRule.mc_gross_percent === franRule.mc_gross_percent &&
-                              tpogRule.mc_margin_percent === franRule.mc_margin_percent &&
-                              tpogRule.dispatcher_gross_percent === franRule.dispatcher_gross_percent &&
-                              (tpogRule as any).dispatcher_margin_percent === (franRule as any).dispatcher_margin_percent;
-         if (areRulesSame || !franRule) {
-             return dateFiltered.filter(d => d.contractType === 'TPOG' || d.contractType === 'TPOG WITH FRANCHISE');
-         }
+    if (tableContractFilter === 'TPOG') {
+         return dateFiltered.filter(d => d.contractType === 'TPOG' || d.contractType === 'TPOG WITH FRANCHISE');
     }
     if (tableContractFilter === 'OO' && configContracts) {
          const ooRule = [...configContracts].filter(c => c.contract_type === 'OO').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
@@ -363,25 +355,21 @@ const Simulator: React.FC<SimulatorProps> = ({
       
     const calcType = currentConfig?.calculation_type || 'MCLOO_STYLE';
     const oldCompTake = currentConfig && currentConfig.mc_gross_percent != null ? currentConfig.mc_gross_percent * 100 : null;
-const oldMargTake = currentConfig && currentConfig.mc_margin_percent != null ? currentConfig.mc_margin_percent * 100 : null;
-const oldDispTake = currentConfig && currentConfig.dispatcher_gross_percent != null ? currentConfig.dispatcher_gross_percent * 100 : null;
-const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent != null ? currentConfig.dispatcher_margin_percent * 100 : null;
+    const oldMargTake = currentConfig && currentConfig.mc_margin_percent != null ? currentConfig.mc_margin_percent * 100 : null;
+    const oldDispTake = currentConfig && currentConfig.dispatcher_gross_percent != null ? currentConfig.dispatcher_gross_percent * 100 : null;
+    const oldDispMargTake = currentConfig && (currentConfig as any).dispatcher_margin_percent != null ? (currentConfig as any).dispatcher_margin_percent * 100 : null;
+
+    const currentConfigFran = [...(configContracts || [])].filter(c => c.contract_type === 'TPOG WITH FRANCHISE').sort((a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
+    const calcTypeFran = currentConfigFran?.calculation_type || 'TPOG_FRANCHISE';
+    const oldCompTakeFran = currentConfigFran && currentConfigFran.mc_gross_percent != null ? currentConfigFran.mc_gross_percent * 100 : null;
+    const oldMargTakeFran = currentConfigFran && currentConfigFran.mc_margin_percent != null ? currentConfigFran.mc_margin_percent * 100 : null;
+    const oldDispTakeFran = currentConfigFran && currentConfigFran.dispatcher_gross_percent != null ? currentConfigFran.dispatcher_gross_percent * 100 : null;
+    const oldDispMargTakeFran = currentConfigFran && (currentConfigFran as any).dispatcher_margin_percent != null ? (currentConfigFran as any).dispatcher_margin_percent * 100 : null;
 
     return activeDrivers.map(driver => {
         let isTarget = driver.contractType === selectedContractSim;
-        if (selectedContractSim === 'TPOG' || selectedContractSim === 'TPOG WITH FRANCHISE') {
-             const tpogRule = currentConfig;
-             const otherContract = selectedContractSim === 'TPOG' ? 'TPOG WITH FRANCHISE' : 'TPOG';
-             const otherRule = [...(configContracts || [])].filter(c => c.contract_type === otherContract).sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-             const areRulesSame = tpogRule && otherRule && 
-                                  tpogRule.calculation_type === otherRule.calculation_type &&
-                                  tpogRule.mc_gross_percent === otherRule.mc_gross_percent &&
-                                  tpogRule.mc_margin_percent === otherRule.mc_margin_percent &&
-                                  tpogRule.dispatcher_gross_percent === otherRule.dispatcher_gross_percent &&
-                                  (tpogRule as any).dispatcher_margin_percent === (otherRule as any).dispatcher_margin_percent;
-             if (areRulesSame || !otherRule) {
-                 isTarget = driver.contractType === 'TPOG' || driver.contractType === 'TPOG WITH FRANCHISE';
-             }
+        if (selectedContractSim === 'TPOG') {
+             isTarget = driver.contractType === 'TPOG' || driver.contractType === 'TPOG WITH FRANCHISE';
         }
         if (selectedContractSim === 'OO' || selectedContractSim === 'OO WITH FRANCHISE') {
              const ooRule = currentConfig;
@@ -415,11 +403,17 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
       let activePnlImpact = 0;
       
       if (activeSimulator === 'revenueSplits') {
-        const newC = hasModified ? simCompanyTake : oldCompTake;
-        const newM = hasModified ? simMarginTake : oldMargTake;
-        const newD = hasModified ? simDispatcherTake : oldDispTake;
-        const newDM = hasModified ? simDispatcherMarginTake : oldDispMargTake;
-        const activeSimCalcType = hasModified ? simCalcType : calcType;
+        const isFran = driver.contractType === 'TPOG WITH FRANCHISE';
+        const newC = isFran ? (hasModified ? simCompanyTakeFran : oldCompTakeFran) : (hasModified ? simCompanyTake : oldCompTake);
+        const newM = isFran ? (hasModified ? simMarginTakeFran : oldMargTakeFran) : (hasModified ? simMarginTake : oldMargTake);
+        const newD = isFran ? (hasModified ? simDispatcherTakeFran : oldDispTakeFran) : (hasModified ? simDispatcherTake : oldDispTake);
+        const newDM = isFran ? (hasModified ? simDispatcherMarginTakeFran : oldDispMargTakeFran) : (hasModified ? simDispatcherMarginTake : oldDispMargTake);
+        const activeSimCalcType = isFran ? (hasModified ? simCalcTypeFran : calcTypeFran) : (hasModified ? simCalcType : calcType);
+        const usedOldCompTake = isFran ? oldCompTakeFran : oldCompTake;
+        const usedOldMargTake = isFran ? oldMargTakeFran : oldMargTake;
+        const usedOldDispTake = isFran ? oldDispTakeFran : oldDispTake;
+        const usedOldDispMargTake = isFran ? oldDispMargTakeFran : oldDispMargTake;
+        const usedCalcType = isFran ? calcTypeFran : calcType;
 
         const needsComp = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_FRANCHISE', 'NEW_FORMULA'].includes(calcType);
         const needsMarg = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_NONF', 'TPOG_FRANCHISE', 'CPM_STYLE', 'POG_STYLE', 'NEW_FORMULA'].includes(calcType);
@@ -462,17 +456,15 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
         case 'POG_STYLE': 
             return ((g * ((1 - safeDp) - (dispP != null ? dispDec : 0.025))) + (m * (mP != null ? mpDec : 0.70))); 
         case 'TPOG_FRANCHISE': 
-            return ((g * ((1 - safeDp) - (dispP != null ? dispDec : 0.025))) + (m * (mP != null ? mpDec : 0.70))) * (cP != null ? cpDec : 0.50);
-        case 'CPM_STYLE': 
-            return (g + (m * (mP != null ? mpDec : 0.70))) - nP;
+            return cpDec * (g * (1 - safeDp - dispDec) + m * mpDec);
         case 'NEW_FORMULA': 
-            return (cpDec * (g + m - (m * mpDec))) - (safeDp * g) - ((dispDec * g) + (m * dispMargDec));
+            return cpDec * ((g + m - (m * mpDec)) - (safeDp * g) - (dispDec * g + m * dispMargDec));
         default: 
             return (g * cpDec) + (m * mpDec);
     }
 };
 
-        activeOldDollars = calculateFormula(calcType, gross, margin, netPay, driverPct, oldCompTake, oldMargTake, oldDispTake, oldDispMargTake);
+        activeOldDollars = calculateFormula(usedCalcType, gross, margin, netPay, driverPct, usedOldCompTake, usedOldMargTake, usedOldDispTake, usedOldDispMargTake);
         activeNewDollars = calculateFormula(activeSimCalcType, gross, margin, netPay, driverPct, newC, newM, newD, newDM);
         
         activePnlImpact = activeNewDollars - activeOldDollars;
@@ -646,7 +638,7 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
           hasImpact: Math.abs(activeOldDollars - activeNewDollars) > 0.001 
       };
     });
-  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, configContracts]);
+  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, simCompanyTakeFran, simMarginTakeFran, simDispatcherTakeFran, simDispatcherMarginTakeFran, simCalcTypeFran, configContracts]);
 
   const processedData = useMemo(() => {
     const rawData = rowLevelData.filter(d => d.isTarget);
@@ -833,52 +825,114 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
                 const needsDispMarg = ['NEW_FORMULA'].includes(activeSimCalcType);
 
                 return (
-                  <div className="bg-zinc-950 border border-zinc-800 rounded p-3 space-y-2">
-                    <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800 pb-1.5 flex items-center gap-1.5">
-                      <span>Revenue Splits</span>
-                      <div className="group relative cursor-help flex items-center">
-                        <Info size={12} className="text-zinc-500 hover:text-purple-400 transition-colors" />
-                        <div className="hidden group-hover:block absolute left-8 mt-12 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[9999] pointer-events-none text-left border border-zinc-600 whitespace-pre-wrap">
-                          Adjust parameters to simulate how revenue rules affect PnL. Only variables applicable to the current contract's formula will be shown.
+                  <div className="space-y-3">
+                    <div className="bg-zinc-950 border border-zinc-800 rounded p-3 space-y-2">
+                      <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800 pb-1.5 flex items-center gap-1.5">
+                        <span>{selectedContractSim === 'TPOG' ? 'TPOG Revenue Splits' : 'Revenue Splits'}</span>
+                        <div className="group relative cursor-help flex items-center">
+                          <Info size={12} className="text-zinc-500 hover:text-purple-400 transition-colors" />
+                          <div className="hidden group-hover:block absolute left-8 mt-12 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[9999] pointer-events-none text-left border border-zinc-600 whitespace-pre-wrap">
+                            Adjust parameters to simulate how revenue rules affect PnL. Only variables applicable to the current contract's formula will be shown.
+                          </div>
                         </div>
-                      </div>
-                    </h4>
+                      </h4>
 
-                    {selectedContractSim.startsWith('TPOG') && (
-                      <div className="flex items-center gap-4 pt-1">
-                        <label className="text-xs text-zinc-400 flex-1">Formula</label>
-                        <select value={activeSimCalcType} onChange={e => handleStringChange(setSimCalcType, e.target.value)} className="w-max max-w-[150px] bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500">
-                          <option value="TPOG_NONF">Classic TPOG</option>
-                          <option value="TPOG_FRANCHISE">TPOG With Franchise Formula</option>
-                          <option value="NEW_FORMULA">New TPOG Formula</option>
-                        </select>
-                      </div>
-                    )}
-                    
-                    {needsComp && (
-                      <div className="flex items-center gap-4 pt-1">
-                        <label className="text-xs text-zinc-400 flex-1">{activeSimCalcType === 'TPOG_FRANCHISE' ? 'Company Take %' : 'Company Gross %'}</label>
-                        <input type="number" step="0.1" value={simCompanyTake} onChange={e => handleChange(setSimCompanyTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
+                      {selectedContractSim === 'TPOG' && (
+                        <div className="flex items-center gap-4 pt-1">
+                          <label className="text-xs text-zinc-400 flex-1">Formula</label>
+                          <select value={activeSimCalcType} onChange={e => handleStringChange(setSimCalcType, e.target.value)} className="w-max max-w-[150px] bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500">
+                            <option value="TPOG_NONF">Classic TPOG</option>
+                            <option value="NEW_FORMULA">New TPOG Formula</option>
+                          </select>
+                        </div>
+                      )}
+
+                      <div className="flex items-center text-[9px] text-zinc-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-800 break-words leading-relaxed whitespace-normal overflow-hidden">
+                        {activeSimCalcType === 'NEW_FORMULA' ? 'CompTake% * ((Gross + Margin - (Margin * CompMargin%)) - (Drv% * Gross) - (Gross * DispGross% + Margin * DispMargin%))' :
+                         activeSimCalcType === 'TPOG_NONF' || activeSimCalcType === 'POG_STYLE' ? 'Gross * ((1 - Drv%) - DispGross%) + Margin * CompMargin%' :
+                         activeSimCalcType === 'CPM_STYLE' ? '(Gross + Margin * CompMargin%) - Net Pay' :
+                         'Gross * CompGross% + Margin * CompMargin%'}
                       </div>
-                    )}
-                    {needsMarg && (
-                      <div className="flex items-center gap-4 pt-1">
-                        <label className="text-xs text-zinc-400 flex-1">Company Margin %</label>
-                        <input type="number" step="0.1" value={simMarginTake} onChange={e => handleChange(setSimMarginTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-amber-500 text-right" />
-                      </div>
-                    )}
-                    {needsDisp && (
-                      <div className="flex items-center gap-4 pt-1">
-                        <label className="text-xs text-zinc-400 flex-1">Dispatcher Gross %</label>
-                        <input type="number" step="0.1" value={simDispatcherTake} onChange={e => handleChange(setSimDispatcherTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-rose-500 text-right" />
-                      </div>
-                    )}
-                    {needsDispMarg && (
-                      <div className="flex items-center gap-4 pt-1">
-                        <label className="text-xs text-zinc-400 flex-1">Dispatcher Margin %</label>
-                        <input type="number" step="0.1" value={simDispatcherMarginTake} onChange={e => handleChange(setSimDispatcherMarginTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-sky-500 text-right" />
-                      </div>
-                    )}
+                      
+                      {needsComp && (
+                        <div className="flex items-center gap-4 pt-1">
+                          <label className="text-xs text-zinc-400 flex-1">Company Gross %</label>
+                          <input type="number" step="0.1" value={simCompanyTake} onChange={e => handleChange(setSimCompanyTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
+                        </div>
+                      )}
+                      {needsMarg && (
+                        <div className="flex items-center gap-4 pt-1">
+                          <label className="text-xs text-zinc-400 flex-1">Company Margin %</label>
+                          <input type="number" step="0.1" value={simMarginTake} onChange={e => handleChange(setSimMarginTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-amber-500 text-right" />
+                        </div>
+                      )}
+                      {needsDisp && (
+                        <div className="flex items-center gap-4 pt-1">
+                          <label className="text-xs text-zinc-400 flex-1">Dispatcher Gross %</label>
+                          <input type="number" step="0.1" value={simDispatcherTake} onChange={e => handleChange(setSimDispatcherTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-rose-500 text-right" />
+                        </div>
+                      )}
+                      {needsDispMarg && (
+                        <div className="flex items-center gap-4 pt-1">
+                          <label className="text-xs text-zinc-400 flex-1">Dispatcher Margin %</label>
+                          <input type="number" step="0.1" value={simDispatcherMarginTake} onChange={e => handleChange(setSimDispatcherMarginTake, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-sky-500 text-right" />
+                        </div>
+                      )}
+                    </div>
+
+                    {selectedContractSim === 'TPOG' && (() => {
+                        const activeSimCalcTypeFran = hasModified ? simCalcTypeFran : ((configContracts || []).find(r => r.contract_type === 'TPOG WITH FRANCHISE')?.calculation_type || 'TPOG_FRANCHISE');
+                        const needsCompF = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_FRANCHISE', 'NEW_FORMULA'].includes(activeSimCalcTypeFran);
+                        const needsMargF = ['MCLOO_STYLE', 'OO_NONF', 'OO_FRANCHISE', 'TPOG_NONF', 'TPOG_FRANCHISE', 'CPM_STYLE', 'POG_STYLE', 'NEW_FORMULA'].includes(activeSimCalcTypeFran);
+                        const needsDispF = ['TPOG_NONF', 'TPOG_FRANCHISE', 'POG_STYLE', 'NEW_FORMULA'].includes(activeSimCalcTypeFran);
+                        const needsDispMargF = ['NEW_FORMULA'].includes(activeSimCalcTypeFran);
+                        
+                        return (
+                          <div className="bg-zinc-950 border border-zinc-800 rounded p-3 space-y-2">
+                            <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800 pb-1.5 flex items-center gap-1.5">
+                              <span>TPOG WITH FRANCHISE Revenue Splits</span>
+                            </h4>
+
+                            <div className="flex items-center gap-4 pt-1">
+                              <label className="text-xs text-zinc-400 flex-1">Formula</label>
+                              <select value={activeSimCalcTypeFran} onChange={e => handleStringChange(setSimCalcTypeFran, e.target.value)} className="w-max max-w-[150px] bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500">
+                                <option value="TPOG_FRANCHISE">TPOG With Franchise Formula</option>
+                                <option value="NEW_FORMULA">New TPOG Formula</option>
+                                <option value="TPOG_NONF">Classic TPOG</option>
+                              </select>
+                            </div>
+
+                            <div className="flex items-center text-[9px] text-zinc-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-800 break-words leading-relaxed whitespace-normal overflow-hidden">
+                               {activeSimCalcTypeFran === 'NEW_FORMULA' ? 'CompTake% * ((Gross + Margin - (Margin * CompMargin%)) - (Drv% * Gross) - (Gross * DispGross% + Margin * DispMargin%))' : 'CompTake% * (Gross * (1 - Drv% - DispGross%) + Margin * CompMargin%)'}
+                            </div>
+                            
+                            {needsCompF && (
+                              <div className="flex items-center gap-4 pt-1">
+                                <label className="text-xs text-zinc-400 flex-1">{activeSimCalcTypeFran === 'TPOG_FRANCHISE' ? 'Company Take %' : 'Company Gross %'}</label>
+                                <input type="number" step="0.1" value={simCompanyTakeFran} onChange={e => handleChange(setSimCompanyTakeFran, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
+                              </div>
+                            )}
+                            {needsMargF && (
+                              <div className="flex items-center gap-4 pt-1">
+                                <label className="text-xs text-zinc-400 flex-1">Company Margin %</label>
+                                <input type="number" step="0.1" value={simMarginTakeFran} onChange={e => handleChange(setSimMarginTakeFran, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-amber-500 text-right" />
+                              </div>
+                            )}
+                            {needsDispF && (
+                              <div className="flex items-center gap-4 pt-1">
+                                <label className="text-xs text-zinc-400 flex-1">Dispatcher Gross %</label>
+                                <input type="number" step="0.1" value={simDispatcherTakeFran} onChange={e => handleChange(setSimDispatcherTakeFran, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-rose-500 text-right" />
+                              </div>
+                            )}
+                            {needsDispMargF && (
+                              <div className="flex items-center gap-4 pt-1">
+                                <label className="text-xs text-zinc-400 flex-1">Dispatcher Margin %</label>
+                                <input type="number" step="0.1" value={simDispatcherMarginTakeFran} onChange={e => handleChange(setSimDispatcherMarginTakeFran, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-sky-500 text-right" />
+                              </div>
+                            )}
+                          </div>
+                        );
+                    })()}
                   </div>
                 );
             })()}
@@ -919,7 +973,7 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
                   <div className={`transition-opacity ${enableWeeksOut ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                     <div className="flex items-center gap-4 pt-1">
                       <label className="text-xs text-zinc-400 flex-1">Min. Weekly Mileage for Bonus</label>
-                      <input type="number" value={weeksOutWeeklyMileage} onChange={e => handleChange(setWeeksOutWeeklyMileage, Number(e.target.value))} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
+                      <input type="number" value={weeksOutWeeklyMileage} onChange={e => handleChange(setWeeksOutWeeklyMileage, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
                     </div>
                   </div>
                 </div>
@@ -959,15 +1013,15 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
                 <div className={`space-y-2 pt-1 transition-opacity ${enableSafety ? 'opacity-100' : 'opacity-40 pointer-events-none'}`}>
                   <div className="flex items-center gap-4">
                     <label className="text-xs text-zinc-400 flex-1">Min. Score</label>
-                    <input type="number" value={safetyScoreThreshold} onChange={e => handleChange(setSafetyScoreThreshold, Number(e.target.value))} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
+                    <input type="number" value={safetyScoreThreshold} onChange={e => handleChange(setSafetyScoreThreshold, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
                   </div>
                   <div className="flex items-center gap-4">
                     <label className="text-xs text-zinc-400 flex-1">Min. Weekly Mileage</label>
-                    <input type="number" value={safetyScoreMileageThreshold} onChange={e => handleChange(setSafetyScoreMileageThreshold, Number(e.target.value))} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
+                    <input type="number" value={safetyScoreMileageThreshold} onChange={e => handleChange(setSafetyScoreMileageThreshold, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
                   </div>
                   <div className="flex items-center gap-4">
                     <label className="text-xs text-zinc-400 flex-1">Bonus %</label>
-                    <input type="number" step="0.1" value={safetyScoreBonus} onChange={e => handleChange(setSafetyScoreBonus, Number(e.target.value))} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
+                    <input type="number" step="0.1" value={safetyScoreBonus} onChange={e => handleChange(setSafetyScoreBonus, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
                   </div>
                   <div className="flex items-center justify-between border-t border-zinc-800 pt-2 mt-1">
                     <span className="text-xs text-zinc-400">Forfeit Bonus if Speeding Ticket?</span>
@@ -1003,9 +1057,9 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
                   </div>
                   {speedingRangeTiers.map((tier, i) => (
                     <div key={i} className="flex gap-2">
-                      <input type="number" value={tier.from} onChange={e => handleUpdateTier(setSpeedingRangeTiers, i, 'from', Number(e.target.value))} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
-                      <input type="text" value={tier.to === null ? '' : tier.to} onChange={e => handleUpdateTier(setSpeedingRangeTiers, i, 'to', e.target.value === '' ? null : Number(e.target.value))} placeholder="Any" className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
-                      <input type="number" step="0.1" value={tier.penalty} onChange={e => handleUpdateTier(setSpeedingRangeTiers, i, 'penalty', Number(e.target.value))} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
+                      <input type="number" value={tier.from} onChange={e => handleUpdateTier(setSpeedingRangeTiers, i, 'from', e.target.value)} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
+                      <input type="text" value={tier.to === null || tier.to === '' ? '' : tier.to} onChange={e => handleUpdateTier(setSpeedingRangeTiers, i, 'to', e.target.value)} placeholder="Any" className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
+                      <input type="number" step="0.1" value={tier.penalty} onChange={e => handleUpdateTier(setSpeedingRangeTiers, i, 'penalty', e.target.value)} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
                       <button onClick={() => { setHasModified(true); setSpeedingRangeTiers(speedingRangeTiers.filter((_, idx) => idx !== i)); }} className="text-zinc-600 hover:text-rose-500 w-5 flex justify-center items-center"><X size={12}/></button>
                     </div>
                   ))}
@@ -1040,9 +1094,9 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
                     </div>
                     {grossTargetTiers.map((tier, i) => (
                       <div key={i} className="flex gap-2">
-                        <input type="number" value={tier.from} onChange={e => handleUpdateTier(setGrossTargetTiers, i, 'from', Number(e.target.value))} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
-                        <input type="text" value={tier.to === null ? '' : tier.to} onChange={e => handleUpdateTier(setGrossTargetTiers, i, 'to', e.target.value === '' ? null : Number(e.target.value))} placeholder="Any" className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
-                        <input type="number" step="0.1" value={tier.bonus} onChange={e => handleUpdateTier(setGrossTargetTiers, i, 'bonus', Number(e.target.value))} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
+                        <input type="number" value={tier.from} onChange={e => handleUpdateTier(setGrossTargetTiers, i, 'from', e.target.value)} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
+                        <input type="text" value={tier.to === null || tier.to === '' ? '' : tier.to} onChange={e => handleUpdateTier(setGrossTargetTiers, i, 'to', e.target.value)} placeholder="Any" className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
+                        <input type="number" step="0.1" value={tier.bonus} onChange={e => handleUpdateTier(setGrossTargetTiers, i, 'bonus', e.target.value)} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
                         <button onClick={() => { setHasModified(true); setGrossTargetTiers(grossTargetTiers.filter((_, idx) => idx !== i)); }} className="text-zinc-600 hover:text-rose-500 w-5 flex justify-center items-center"><X size={12}/></button>
                       </div>
                     ))}
@@ -1076,8 +1130,8 @@ const oldDispMargTake = currentConfig && currentConfig.dispatcher_margin_percent
                   </div>
                   {tenureMilestones.map((tier, i) => (
                     <div key={i} className="flex gap-2">
-                      <input type="number" value={tier.threshold} onChange={e => handleUpdateTier(setTenureMilestones, i, 'threshold', Number(e.target.value))} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
-                      <input type="number" step="0.1" value={tier.bonus} onChange={e => handleUpdateTier(setTenureMilestones, i, 'bonus', Number(e.target.value))} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
+                      <input type="number" value={tier.threshold} onChange={e => handleUpdateTier(setTenureMilestones, i, 'threshold', e.target.value)} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
+                      <input type="number" step="0.1" value={tier.bonus} onChange={e => handleUpdateTier(setTenureMilestones, i, 'bonus', e.target.value)} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
                       <button onClick={() => { setHasModified(true); setTenureMilestones(tenureMilestones.filter((_, idx) => idx !== i)); }} className="text-zinc-600 hover:text-rose-500 w-5 flex justify-center items-center"><X size={12}/></button>
                     </div>
                   ))}
