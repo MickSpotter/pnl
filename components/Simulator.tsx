@@ -464,11 +464,59 @@ const Simulator: React.FC<SimulatorProps> = ({
     }
 };
 
-        activeOldDollars = calculateFormula(usedCalcType, gross, margin, netPay, driverPct, usedOldCompTake, usedOldMargTake, usedOldDispTake, usedOldDispMargTake);
-        activeNewDollars = calculateFormula(activeSimCalcType, gross, margin, netPay, driverPct, newC, newM, newD, newDM);
+        const calcOld = calculateFormula(usedCalcType, gross, margin, netPay, driverPct, usedOldCompTake, usedOldMargTake, usedOldDispTake, usedOldDispMargTake);
+        const calcNew = calculateFormula(activeSimCalcType, gross, margin, netPay, driverPct, newC, newM, newD, newDM);
         
-        activePnlImpact = activeNewDollars - activeOldDollars;
-        totalDiffDollars = -activePnlImpact;
+        if (isFran) {
+            const oldTake = usedOldCompTake != null && usedOldCompTake > 0 ? usedOldCompTake : 50;
+            const newTake = activeSimCalcType === 'TPOG_NONF' ? 100 : (newC !== '' && newC !== null ? Number(newC) : oldTake);
+            
+            const ratio = oldTake > 0 ? (newTake / oldTake) : 1;
+            
+            const oldBase = calculateFormula(usedCalcType, gross, margin, netPay, driverPct, 100, usedOldMargTake, usedOldDispTake, usedOldDispMargTake);
+            const newBase = calculateFormula(activeSimCalcType, gross, margin, netPay, driverPct, 100, newM, newD, newDM);
+            
+            const realOldBase = driver.companyPay / (oldTake / 100);
+            const baseImpact = newBase - oldBase;
+            const idealNewCompanyPay = (realOldBase + baseImpact) * (newTake / 100);
+            
+            const deltaRevenue = idealNewCompanyPay - driver.companyPay;
+
+            let scalableOldExpenses = 0;
+            Object.keys(driver).forEach(key => {
+                const val = driver[key];
+                if (typeof val === 'number') {
+                    const k = key.toLowerCase();
+                    const isExpense = 
+                        k.includes('fuel') ||
+                        k.includes('insur') || k.includes('insexp') || k.includes('liability') || k.includes('cargo') || k.includes('physical') ||
+                        (k.includes('disp') && !k.includes('perc') && !k.includes('margin') && !k.includes('gross')) ||
+                        k.includes('wkly') || k.includes('weekly') ||
+                        k.includes('toll') ||
+                        k === 'po' || k.includes('poamount') || k.includes('po_amount') || k.includes('purchase') ||
+                        k.includes('recruit') ||
+                        k.includes('factor') ||
+                        k.includes('plate') ||
+                        (k.includes('other') && k.includes('exp'));
+                    
+                    if (isExpense) {
+                        scalableOldExpenses += val;
+                    }
+                }
+            });
+
+            const deltaExpenses = scalableOldExpenses * (ratio - 1);
+            
+            activePnlImpact = deltaRevenue - deltaExpenses;
+            activeOldDollars = driver.companyPay - scalableOldExpenses;
+            activeNewDollars = idealNewCompanyPay - (scalableOldExpenses * ratio);
+            totalDiffDollars = 0;
+        } else {
+            activeOldDollars = calcOld;
+            activeNewDollars = calcNew;
+            activePnlImpact = activeNewDollars - activeOldDollars;
+            totalDiffDollars = -activePnlImpact;
+        }
         
       } else if (selectedContractSim === 'TPOG') {
         const record = targetDateRecords.find(r => (r.json?.name || r.driver_name) === driver.name);
@@ -621,9 +669,21 @@ const Simulator: React.FC<SimulatorProps> = ({
         activeNewDollars = gross * (Number(activeNewPercent) / 100);
         activePnlImpact = activeOldDollars - activeNewDollars;
       }
-      const currentRevenue = driver.companyPay || 0;
+      let currentRevenue = driver.companyPay || 0;
+      if (driver.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits') {
+          currentRevenue = activeOldDollars; // Postavljamo da prikazuje stvarni PnL (Revenue - Expenses) umesto samo Revenue-a
+      }
       const potentialRevenue = currentRevenue + activePnlImpact;
-      return { 
+      
+      let oldTakeRatio = 1;
+      let newTakeRatio = 1;
+      if (driver.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits') {
+          oldTakeRatio = oldCompTakeFran != null && oldCompTakeFran > 0 ? oldCompTakeFran : 50;
+          const currentCalcType = hasModified ? simCalcTypeFran : calcTypeFran;
+          newTakeRatio = currentCalcType === 'TPOG_NONF' ? 100 : (hasModified ? (simCompanyTakeFran !== '' && simCompanyTakeFran !== null ? Number(simCompanyTakeFran) : oldTakeRatio) : oldTakeRatio);
+      }
+
+      return {
           driver, 
           isTarget: true, 
           driverName: driver.name, 
@@ -635,7 +695,9 @@ const Simulator: React.FC<SimulatorProps> = ({
           activeOldDollars, 
           activeNewDollars, 
           activePnlImpact, 
-          hasImpact: Math.abs(activeOldDollars - activeNewDollars) > 0.001 
+          hasImpact: Math.abs(activeOldDollars - activeNewDollars) > 0.001,
+          oldTakeRatio,
+          newTakeRatio
       };
     });
   }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, simCompanyTakeFran, simMarginTakeFran, simDispatcherTakeFran, simDispatcherMarginTakeFran, simCalcTypeFran, configContracts]);
@@ -665,13 +727,45 @@ const Simulator: React.FC<SimulatorProps> = ({
   const simulatedDrivers = useMemo(() => {
     return rowLevelData.map(d => {
       if (!d.isTarget) return d.driver;
+      
+      const drv = { ...d.driver };
+      
+      if (drv.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits') {
+         const ratio = d.oldTakeRatio > 0 ? (d.newTakeRatio / d.oldTakeRatio) : 1;
+         
+         if (ratio !== 1) {
+            Object.keys(drv).forEach(key => {
+               const val = drv[key];
+               if (typeof val === 'number') {
+                  const k = key.toLowerCase();
+                  const isExpense = 
+                      k.includes('fuel') ||
+                      k.includes('insur') || k.includes('insexp') || k.includes('liability') || k.includes('cargo') || k.includes('physical') ||
+                      (k.includes('disp') && !k.includes('perc') && !k.includes('margin') && !k.includes('gross')) ||
+                      k.includes('wkly') || k.includes('weekly') ||
+                      k.includes('toll') ||
+                      k === 'po' || k.includes('poamount') || k.includes('po_amount') || k.includes('purchase') ||
+                      k.includes('recruit') ||
+                      k.includes('factor') ||
+                      k.includes('plate') ||
+                      (k.includes('other') && k.includes('exp'));
+                  
+                  if (isExpense) {
+                     drv[key] = val * ratio;
+                  }
+               }
+            });
+            drv.companyPay = (drv.companyPay || 0) * ratio;
+         }
+      }
+
       return {
-        ...d.driver,
-        netPay: d.driver.netPay + d.totalDiffDollars,
-        companyPay: d.driver.companyPay - d.totalDiffDollars
+        ...drv,
+        netPay: drv.netPay + d.totalDiffDollars,
+        companyPay: (drv.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits') ? drv.companyPay : drv.companyPay - d.totalDiffDollars
       };
     });
-  }, [rowLevelData]);
+  }, [rowLevelData, activeSimulator]);
 
   const totalModuleImpact = useMemo(() => processedData.reduce((sum, d) => sum + d.activePnlImpact, 0), [processedData]);
 
@@ -907,9 +1001,18 @@ const Simulator: React.FC<SimulatorProps> = ({
                             </div>
                             
                             {needsCompF && (
-                              <div className="flex items-center gap-4 pt-1">
-                                <label className="text-xs text-zinc-400 flex-1">{activeSimCalcTypeFran === 'TPOG_FRANCHISE' ? 'Company Take %' : 'Company Gross %'}</label>
-                                <input type="number" step="0.1" value={simCompanyTakeFran} onChange={e => handleChange(setSimCompanyTakeFran, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 text-right" />
+                              <div className="flex flex-col gap-2 pt-1 mt-1">
+                                <label className="text-xs text-zinc-400">{activeSimCalcTypeFran === 'TPOG_FRANCHISE' ? 'Company/Franchise split (%)' : 'Company Gross %'}</label>
+                                <div className="flex items-center gap-2">
+                                  <div className="flex-1 flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded px-2 py-1">
+                                    <span className="text-[10px] text-zinc-500">Comp:</span>
+                                    <input type="number" step="0.1" value={simCompanyTakeFran} onChange={e => handleChange(setSimCompanyTakeFran, e.target.value)} className="w-full bg-transparent text-xs text-white outline-none text-right" />
+                                  </div>
+                                  <div className="flex-1 flex items-center gap-2 bg-zinc-800/50 border border-zinc-700 rounded px-2 py-1">
+                                    <span className="text-[10px] text-zinc-500">Fran:</span>
+                                    <input type="number" value={100 - (Number(simCompanyTakeFran) || 0)} disabled className="w-full bg-transparent text-xs text-zinc-500 outline-none text-right cursor-not-allowed" />
+                                  </div>
+                                </div>
                               </div>
                             )}
                             {needsMargF && (
@@ -1190,10 +1293,10 @@ const Simulator: React.FC<SimulatorProps> = ({
                     {activeSimulator === 'revenueSplits' ? (
                       <>
                         <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('currentRevenue')}>
-                          Current Rev. {sortConfig.key === 'currentRevenue' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                          {selectedContractSim === 'TPOG WITH FRANCHISE' ? 'Current PnL' : 'Current Rev.'} {sortConfig.key === 'currentRevenue' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </th>
                         <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('potentialRevenue')}>
-                          Potential Rev. {sortConfig.key === 'potentialRevenue' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                          {selectedContractSim === 'TPOG WITH FRANCHISE' ? 'Potential PnL' : 'Potential Rev.'} {sortConfig.key === 'potentialRevenue' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </th>
                       </>
                     ) : (

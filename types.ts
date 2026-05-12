@@ -30,17 +30,20 @@ export interface FinImportRecord {
   rent_and_parking?: number;
   backup_mcs?: number;
   back_office_pay?: number;
-  tech_pay?: number;
-  liability_insurance?: number;
-  cargo_insurance?: number;
+      tech_pay?: number;
+      liability_insurance?: number;
+      cargo_insurance?: number;
+      trailer_interchange?: number;
+      lago?: number;
+  physical_damage_premium?: number;
   physical_damage?: number;
 }
-
 
 
 export interface ExpenseItem {
   id: string;
   category: 'Fixed' | 'Variable' | 'OneTime';
+  revenue_cpm?: number;
   name: string;
   companyId?: string;
   amount: number;
@@ -177,4 +180,10 @@ export interface ConfigGlobalRule {
   franchise_split_percent: number;
   valid_from: string;
   valid_to?: string;
+}
+
+export interface PnlConfig {
+  id?: string;
+  contract_type: string;
+  toggled_items: string[];
 }

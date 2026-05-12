@@ -146,4 +146,42 @@ export const saveConfigContracts = async (configs: any[]) => {
   }
 };
 
+export const fetchPnlConfigs = async () => {
+  const { data } = await supabase.from('pnl_editor').select('*');
+  return data || [];
+};
+
+export const savePnlConfigs = async (configs: any[]) => {
+  const { data: currentData } = await supabase.from('pnl_editor').select('id');
+  const currentIds = currentData?.map(c => String(c.id)) || [];
+  
+  const validIdsToKeep = configs.map(c => String(c.id)).filter(id => currentIds.includes(id));
+  const idsToDelete = currentIds.filter(id => !validIdsToKeep.includes(id));
+
+  if (idsToDelete.length > 0) {
+    await supabase.from('pnl_editor').delete().in('id', idsToDelete);
+  }
+
+  const toUpdate: any[] = [];
+  const toInsert: any[] = [];
+
+  configs.forEach(c => {
+     const { id, ...rest } = c;
+     const out: any = { ...rest };
+     if (id && currentIds.includes(String(id))) {
+         out.id = id;
+         toUpdate.push(out);
+     } else {
+         toInsert.push(out);
+     }
+  });
+
+  if (toUpdate.length > 0) {
+      await supabase.from('pnl_editor').upsert(toUpdate);
+  }
+  if (toInsert.length > 0) {
+      await supabase.from('pnl_editor').insert(toInsert);
+  }
+};
+
 

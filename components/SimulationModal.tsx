@@ -2,7 +2,9 @@ import React from 'react';
 import { X, Save, Sliders, Plus, Trash2, ChevronDown, Settings, Edit2, Info, CornerDownRight, Eye, EyeOff } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import { supabase } from '../lib/supabase';
-import { SimulationConfig, ExpenseItem, ConfigContract } from '../types';
+import RevenueCpm from './RevenueCpm';
+import PnlEditor from './PnlEditor';
+import { SimulationConfig, ExpenseItem, ConfigContract, PnlConfig } from '../types';
 
 interface SimulationModalProps {
   isOpen: boolean;
@@ -39,9 +41,10 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [localFixedExpenses, setLocalFixedExpenses] = React.useState<ExpenseItem[]>(fixedExpenses);
   const [localConfigContracts, setLocalConfigContracts] = React.useState<ConfigContract[]>(configContracts || []);
   const [isSaving, setIsSaving] = React.useState(false);
-  const [loadingMessage, setLoadingMessage] = React.useState('Saving...');
-  const [activeTab, setActiveTab] = React.useState<'fixed' | 'contracts' | 'dispatcher'>('fixed');
-  const [selectedContractType, setSelectedContractType] = React.useState('');
+  const [loadingMessage, setLoadingMessage] = React.useState('Saving...');
+  const [activeTab, setActiveTab] = React.useState<'fixed' | 'contracts' | 'dispatcher' | 'cpm' | 'pnl'>('fixed');
+  const [selectedContractType, setSelectedContractType] = React.useState('');
+  const [pnlConfigs, setPnlConfigs] = React.useState<PnlConfig[]>([]);
   const [selectedExpenseName, setSelectedExpenseName] = React.useState('');
   const [expenseColumns, setExpenseColumns] = React.useState<Record<string, string[]>>({});
   const [isExpenseManagerOpen, setIsExpenseManagerOpen] = React.useState(false);
@@ -49,6 +52,14 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [managerNewExpense, setManagerNewExpense] = React.useState('');
   const [editingExpense, setEditingExpense] = React.useState<string | null>(null);
   const [editingExpenseValue, setEditingExpenseValue] = React.useState('');
+  const [companyPrompt, setCompanyPrompt] = React.useState<{ isOpen: boolean, callback: (name: string) => void } | null>(null);
+  const [companyPromptValue, setCompanyPromptValue] = React.useState('');
+  const [customCompanies, setCustomCompanies] = React.useState<string[]>([]);
+  const allCompanies = Array.from(new Set([
+      ...companies, 
+      ...customCompanies, 
+      ...localFixedExpenses.map(e => e.companyId)
+  ])).filter(c => c && !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED', 'ALL', 'NEW_COMPANY'].includes(String(c).toUpperCase()));
 
   const [finImportData, setFinImportData] = React.useState<any[]>([]);
   const [finImportPerUnitData, setFinImportPerUnitData] = React.useState<any[]>([]);
@@ -60,6 +71,7 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [expandedDphRules, setExpandedDphRules] = React.useState<string[]>([]);
   const [mclooSelectedDates, setMclooSelectedDates] = React.useState<Record<string, string>>({});
   const [hideOverriddenRules, setHideOverriddenRules] = React.useState(true);
+  const [customAlert, setCustomAlert] = React.useState<{ isOpen: boolean, message: string, title: string } | null>(null);
   const toggleMclooRule = (id: string) => setExpandedMclooRules(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const toggleDphRule = (id: string) => setExpandedDphRules(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
@@ -67,6 +79,9 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
 { name: 'Liability Insurance (Auto)', key: 'liability_insurance', puKey: 'liability' },
 { name: 'Liability Insurance (General)', key: 'liability_insurance_general', puKey: 'liability_general' },
 { name: 'Cargo Insurance', key: 'cargo_insurance', puKey: 'cargo_w_per_unit' },
+{ name: 'Trailer Interchange', key: 'trailer_interchange', puKey: 'trailer_interchange_w_per_unit' },
+{ name: 'LAGO', key: 'lago', puKey: 'lago_w_per_unit' },
+{ name: 'PD Premium', key: 'physical_damage_premium', puKey: 'phd_premium_w_per_unit' },
 { name: 'Physical Damage', key: 'physical_damage', puKey: 'phd_w_per_unit' },
 { name: 'Truck Price', key: 'avg_truck_price', puKey: 'truck_price' },
 { name: 'Trailer Price', key: 'avg_trailer_price', puKey: 'trailer_price' },
@@ -87,7 +102,7 @@ const fixedExpenseNames = Array.from(new Set([
 ...customExpenseNames
 ])).filter(Boolean);
 
-  const filteredFixedNames = fixedExpenseNames.filter(name => !finImportKeys.some(fi => fi.name === name) && name !== 'Liability Insurance (Global)' && name !== 'Dispatcher Pay');
+  const filteredFixedNames = fixedExpenseNames.filter(name => !finImportKeys.some(fi => fi.name === name) && name !== 'Liability Insurance (Global)' && name !== 'Dispatcher Pay' && name !== 'Revenue CPM');
 
   const unifiedExpenses = [
     ...filteredFixedNames.map(name => ({ type: 'FIXED', name, key: '', puKey: '' })),
@@ -97,13 +112,19 @@ const fixedExpenseNames = Array.from(new Set([
   React.useEffect(() => {
         if (isOpen) {
           setLocalSimConfig(simulationConfig);
-          setLocalFixedExpenses(fixedExpenses.map(e => {
-              const mapped: any = { ...e };
+          setLocalFixedExpenses([...fixedExpenses].map(e => {
+              const mapped: any = { ...e, original_valid_from: e.valid_from };
               if (mapped.name === 'Liability Insurance') mapped.name = 'Liability Insurance (Auto)';
               if (mapped.contract_type) {
                   mapped.contractType = mapped.contract_type;
               }
               return mapped;
+          }).sort((a, b) => {
+              if (a.companyId === 'ALL' && b.companyId !== 'ALL') return -1;
+              if (a.companyId !== 'ALL' && b.companyId === 'ALL') return 1;
+              const dateA = a.valid_from ? new Date(a.valid_from).getTime() : 0;
+              const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0;
+              return dateB - dateA;
           }));
           setLocalConfigContracts(configContracts || []);
 
@@ -117,6 +138,10 @@ const fixedExpenseNames = Array.from(new Set([
              if (perUnitData) {
                 setFinImportPerUnitData(perUnitData);
              }
+             
+             const { fetchPnlConfigs } = await import('../lib/supabase');
+             const loadedPnlConfigs = await fetchPnlConfigs();
+             setPnlConfigs(loadedPnlConfigs);
           };
           fetchFinData();
     }
@@ -160,10 +185,11 @@ const fixedExpenseNames = Array.from(new Set([
         frequency: 'Weekly' as const,
         allocationType: 'divide' as const,
                 unit: expName === 'Factoring' ? '%' : '$',
-                valid_from: new Date().toISOString().split('T')[0]
-             };
-     setLocalFixedExpenses(prev => [...prev, newExp]);
-  };
+                   valid_from: new Date().toISOString().split('T')[0],
+                   is_standalone: true
+                } as any;
+        setLocalFixedExpenses(prev => [newExp, ...prev]);
+     };
 
   const handleAddContractExpense = (expName: string) => {
      const newExp: any = {
@@ -178,10 +204,11 @@ const fixedExpenseNames = Array.from(new Set([
         frequency: 'Weekly',
         allocationType: 'divide',
                 unit: expName === 'Factoring' ? '%' : '$',
-                valid_from: new Date().toISOString().split('T')[0]
-             };
-     setLocalFixedExpenses(prev => [...prev, newExp]);
-  };
+                   valid_from: new Date().toISOString().split('T')[0],
+                   is_standalone: true
+                };
+        setLocalFixedExpenses(prev => [newExp, ...prev]);
+     };
 
   const handleAddFinImportException = (expName: string, companyId: string, dateFrom: string, dateTo: string, defaultAmount: number = 0, isExtension: boolean = false) => {
      const newExp: any = {
@@ -197,11 +224,11 @@ const fixedExpenseNames = Array.from(new Set([
          unit: expName === 'Factoring' ? '%' : '$',
          valid_from: dateFrom || '',
          valid_to: dateTo || '',
-         is_extension: isExtension,
-         is_standalone: !isExtension
+            is_extension: isExtension,
+            is_standalone: !isExtension
+        };
+        setLocalFixedExpenses(prev => [newExp, ...prev]);
      };
-     setLocalFixedExpenses(prev => [...prev, newExp]);
-  };
 
   const handleAddFinImportContractException = (expName: string, dateFrom: string, dateTo: string, defaultAmount: number = 0, isExtension: boolean = false) => {
      const newExp: any = {
@@ -218,11 +245,11 @@ const fixedExpenseNames = Array.from(new Set([
          unit: expName === 'Factoring' ? '%' : '$',
          valid_from: dateFrom || '',
          valid_to: dateTo || '',
-         is_extension: isExtension,
-         is_standalone: !isExtension
+            is_extension: isExtension,
+            is_standalone: !isExtension
+        };
+        setLocalFixedExpenses(prev => [newExp, ...prev]);
      };
-     setLocalFixedExpenses(prev => [...prev, newExp]);
-  };
 
   const handleDeleteCompanyExpense = (id: string) => {
      setLocalFixedExpenses(prev => prev.filter(e => String(e.id) !== String(id)));
@@ -264,9 +291,38 @@ const fixedExpenseNames = Array.from(new Set([
 
   const handleAddFinImportDate = async (expName: string) => {
           const fromDateStr = newFinDates[expName];
-          if (!fromDateStr) return;
+          if (!fromDateStr) {
+              setCustomAlert({
+                  isOpen: true,
+                  title: 'Missing Date',
+                  message: 'Please select a "Valid From" date before adding a rule.'
+              });
+              return;
+          }
 
           const toDateStr = newFinToDates[expName] || '';
+
+          const fromTime = new Date(fromDateStr).getTime();
+          const toTime = toDateStr ? new Date(toDateStr).getTime() : Infinity;
+          
+          const hasOverlap = localFixedExpenses.some(e => {
+              if (e.name !== expName || e.companyId !== 'ALL') return false;
+              const eFrom = e.valid_from ? new Date(e.valid_from).getTime() : -Infinity;
+              const eTo = e.valid_to ? new Date(e.valid_to).getTime() : Infinity;
+              
+              return Math.max(fromTime, eFrom) <= Math.min(toTime, eTo);
+          });
+
+          if (hasOverlap) {
+              setCustomAlert({
+                  isOpen: true,
+                  title: 'Warning',
+                  message: `A global expense for "${expName}" covering the selected dates already exists. Please modify the existing one or choose different dates.`
+              });
+              setNewFinDates(prev => ({ ...prev, [expName]: '' }));
+              setNewFinToDates(prev => ({ ...prev, [expName]: '' }));
+              return;
+          }
 
           const dObj = new Date(fromDateStr);
           dObj.setUTCDate(dObj.getUTCDate() + 5);
@@ -454,23 +510,23 @@ const fixedExpenseNames = Array.from(new Set([
       }
 
       const expensesToSave = expandedFinalExpenses.map(exp => ({
-           id: String(exp.id),
-           name: exp.name,
-           amount: Number(exp.amount) || 0,
-           cpm: exp.cpm !== undefined ? Number(exp.cpm) : null,
-           company_id: exp.companyId === 'ALL' ? 'ALL' : (exp.companyId || null),
-           contract_type: (exp as any).contractType || null,
-          unit: exp.unit || '$',
-          valid_from: exp.valid_from && String(exp.valid_from).trim() !== '' ? exp.valid_from : null,
-          valid_to: exp.valid_to && String(exp.valid_to).trim() !== '' ? exp.valid_to : null,
-          disp_gross_perc: (exp as any).disp_gross_perc !== undefined && (exp as any).disp_gross_perc !== null && String((exp as any).disp_gross_perc).trim() !== '' ? Number((exp as any).disp_gross_perc) : null,
-          disp_margin_perc: (exp as any).disp_margin_perc !== undefined && (exp as any).disp_margin_perc !== null && String((exp as any).disp_margin_perc).trim() !== '' ? Number((exp as any).disp_margin_perc) : null,
-          shared_insurance: ((exp as any).shared_insurance !== undefined && (exp as any).shared_insurance !== null && String((exp as any).shared_insurance).trim() !== '') ? Number((exp as any).shared_insurance) : null,
-          company_base_for_mcloo: ((exp as any).company_base_for_mcloo !== undefined && (exp as any).company_base_for_mcloo !== null && String((exp as any).company_base_for_mcloo).trim() !== '') ? Number((exp as any).company_base_for_mcloo) : null,
-          franchise_charge: (exp as any).franchise_charge !== undefined && (exp as any).franchise_charge !== null ? Number((exp as any).franchise_charge) : null,
-          dph: (exp as any).dph !== undefined && (exp as any).dph !== null ? Number((exp as any).dph) : null
-      }));
-      if (expensesToSave.length > 0) {
+               id: String(exp.id),
+               name: exp.name,
+               amount: Number(exp.amount) || 0,
+               cpm: exp.cpm !== undefined ? Number(exp.cpm) : null,
+               company_id: exp.companyId === 'ALL' ? 'ALL' : (exp.companyId || null),
+               contract_type: (exp as any).contractType ? (exp as any).contractType : (exp.companyId === 'ALL' ? 'ALL' : null),
+              unit: exp.unit || '$',
+              valid_from: exp.valid_from && String(exp.valid_from).trim() !== '' ? exp.valid_from : null,
+              valid_to: exp.valid_to && String(exp.valid_to).trim() !== '' ? exp.valid_to : null,
+              disp_gross_perc: (exp as any).disp_gross_perc !== undefined && (exp as any).disp_gross_perc !== null && String((exp as any).disp_gross_perc).trim() !== '' ? Number((exp as any).disp_gross_perc) : null,
+              disp_margin_perc: (exp as any).disp_margin_perc !== undefined && (exp as any).disp_margin_perc !== null && String((exp as any).disp_margin_perc).trim() !== '' ? Number((exp as any).disp_margin_perc) : null,
+              shared_insurance: ((exp as any).shared_insurance !== undefined && (exp as any).shared_insurance !== null && String((exp as any).shared_insurance).trim() !== '') ? Number((exp as any).shared_insurance) : null,
+              company_base_for_mcloo: ((exp as any).company_base_for_mcloo !== undefined && (exp as any).company_base_for_mcloo !== null && String((exp as any).company_base_for_mcloo).trim() !== '') ? Number((exp as any).company_base_for_mcloo) : null,
+              franchise_charge: (exp as any).franchise_charge !== undefined && (exp as any).franchise_charge !== null ? Number((exp as any).franchise_charge) : null,
+              revenue_cpm: (exp as any).revenue_cpm !== undefined && (exp as any).revenue_cpm !== null && String((exp as any).revenue_cpm).trim() !== '' ? Number((exp as any).revenue_cpm) : null
+          }));
+      if (expensesToSave.length > 0) {
           const { error } = await supabase.from('fixed_expenses').upsert(expensesToSave, { onConflict: 'id' });
           if (error) {
               console.error("Error saving fixed expenses:", error);
@@ -481,13 +537,14 @@ const fixedExpenseNames = Array.from(new Set([
         await onSaveExpenses(expandedFinalExpenses);
       }
 
-      const { saveConfigContracts } = await import('../lib/supabase');
+      const { saveConfigContracts, savePnlConfigs } = await import('../lib/supabase');
       const cleanContracts = localConfigContracts.map(c => ({
           ...c,
           valid_from: c.valid_from && String(c.valid_from).trim() !== '' ? c.valid_from : null,
           valid_to: c.valid_to && String(c.valid_to).trim() !== '' ? c.valid_to : null
       }));
       await saveConfigContracts(cleanContracts);
+      await savePnlConfigs(pnlConfigs);
 
       if (modifiedFinImportIds.length > 0) {
           const cleanData = (dataArray: any[]) => dataArray.map(item => {
@@ -563,9 +620,11 @@ const fixedExpenseNames = Array.from(new Set([
         </div>
 
         <div className="flex px-6 pt-2 border-b border-zinc-800 gap-2 bg-zinc-950 overflow-x-auto flex-shrink-0">
-            <button onClick={() => setActiveTab('fixed')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fixed' ? 'border-blue-500 text-blue-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Expenses</button>
-            <button onClick={() => setActiveTab('contracts')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'contracts' ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Contract Rules</button>
-            <button onClick={() => setActiveTab('dispatcher')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'dispatcher' ? 'border-purple-500 text-purple-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Dispatcher Pay</button>
+            <button onClick={() => setActiveTab('fixed')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fixed' ? 'border-blue-500 text-blue-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Expenses</button>
+            <button onClick={() => setActiveTab('contracts')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'contracts' ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Contract Rules</button>
+            <button onClick={() => setActiveTab('dispatcher')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'dispatcher' ? 'border-purple-500 text-purple-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Dispatcher Pay</button>
+            <button onClick={() => setActiveTab('cpm')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'cpm' ? 'border-pink-500 text-pink-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>CPM REVENUE</button>
+            <button onClick={() => setActiveTab('pnl')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'pnl' ? 'border-cyan-500 text-cyan-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>PNL CALCULATION</button>
         </div>
 
         <div className="h-[600px] overflow-y-auto p-6 bg-zinc-950/30">
@@ -847,12 +906,31 @@ const fixedExpenseNames = Array.from(new Set([
                           valid_from: new Date().toISOString().split('T')[0]
                        };
                        setLocalFixedExpenses(prev => [...prev, newExp as any]);
-                    }} className="w-max px-4 py-1.5 border border-dashed border-purple-500/30 bg-purple-500/5 rounded hover:bg-purple-500/10 text-purple-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all mt-3"><Plus size={12} /> ADD RULE</button>
-                 </div>
-              </div>
+                    }} className="w-max px-4 py-1.5 border border-dashed border-purple-500/30 bg-purple-500/5 rounded hover:bg-purple-500/10 text-purple-500 text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all mt-3"><Plus size={12} /> ADD RULE</button>
+                 </div>
+              </div>
+           </div>
+
+           <div className={activeTab === 'cpm' ? 'block' : 'hidden'}>
+              <RevenueCpm 
+                localFixedExpenses={localFixedExpenses}
+                handleCompanyExpenseChange={handleCompanyExpenseChange}
+                handleDeleteCompanyExpense={handleDeleteCompanyExpense}
+                availableContractTypes={availableContractTypes}
+                companies={allCompanies}
+                setLocalFixedExpenses={setLocalFixedExpenses}
+              />
            </div>
 
-           <div className={activeTab === 'fixed' ? 'block' : 'hidden'}>
+           <div className={activeTab === 'pnl' ? 'block' : 'hidden'}>
+              <PnlEditor 
+                 pnlConfigs={pnlConfigs} 
+                 setPnlConfigs={setPnlConfigs} 
+                 availableContractTypes={availableContractTypes} 
+              />
+           </div>
+
+           <div className={activeTab === 'fixed' ? 'block' : 'hidden'}>
            <div className="max-w-6xl mx-auto -mt-4">
               <div className="flex justify-end mb-2">
                  <button onClick={() => setHideOverriddenRules(!hideOverriddenRules)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-bold uppercase transition-colors" title={hideOverriddenRules ? "View default overrides" : "Hide default overrides"}>
@@ -933,20 +1011,14 @@ const fixedExpenseNames = Array.from(new Set([
                                                          </tr>
                                                       </thead>
                                                       <tbody className="divide-y divide-zinc-800/30">
-                                                         {rules.sort((a, b) => {
-                                                            if (a.companyId === 'ALL' && b.companyId !== 'ALL') return -1;
-                                                            if (a.companyId !== 'ALL' && b.companyId === 'ALL') return 1;
-                                                            const dateA = a.valid_from ? new Date(a.valid_from).getTime() : 0;
-                                                            const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0;
-                                                            return dateB - dateA;
-                                                         }).map(expObj => {
+                                                         {rules.map(expObj => {
                                                             const isPast = expObj.companyId === 'ALL' && expObj.valid_to && new Date(expObj.valid_to).getTime() < Date.now();
                                                             return (
                                                             <tr key={expObj.id} className={`transition-colors group/row ${isPast ? 'opacity-40 bg-zinc-900/50' : 'hover:bg-zinc-800/30'}`}>
                                                               <td className="py-1.5 pr-2">
                                                                    {expObj.companyId === 'ALL' ? (
                                                                   <div className="text-xs font-bold text-emerald-500 uppercase tracking-wider h-7 flex items-center">Global (ALL)</div>
-                                                               ) : (expObj as any).contractType !== undefined ? (
+                                                               ) : ((expObj as any).contractType !== undefined && (expObj as any).contractType !== null) ? (
                                                               <select
                                                                   value={(expObj as any).contractType}
                                                                      onChange={(e) => handleCompanyExpenseChange(expObj.id, 'contractType' as any, e.target.value)}
@@ -957,12 +1029,28 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   </select>
                                                                ) : (
                                                                   <select
-                                                                      value={expObj.companyId}
-                                                                     onChange={(e) => handleCompanyExpenseChange(expObj.id, 'companyId', e.target.value)}
+                                                                     value={expObj.companyId}
+                                                                     onChange={(e) => {
+                                                                        if (e.target.value === 'NEW_COMPANY') {
+                                                                           setCompanyPromptValue('');
+                                                                           setCompanyPrompt({
+                                                                               isOpen: true,
+                                                                               callback: (newComp) => {
+                                                                                   if (newComp && newComp.trim() !== '') {
+                                                                                       setCustomCompanies(prev => [...prev, newComp.trim()]);
+                                                                                       handleCompanyExpenseChange(expObj.id, 'companyId', newComp.trim());
+                                                                                   }
+                                                                               }
+                                                                           });
+                                                                        } else {
+                                                                           handleCompanyExpenseChange(expObj.id, 'companyId', e.target.value);
+                                                                        }
+                                                                     }}
                                                                      className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none transition-colors h-7"
                                                                   >
                                                                      <option value="" disabled>Select Company</option>
-                                                                     {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                     <option value="NEW_COMPANY" className="text-emerald-500 font-bold">+ Add new company</option>
+                                                                     {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                                                   </select>
                                                                )}
                                                                 </td>
@@ -980,7 +1068,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7">
                                                                         <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
-                                                                        <input type="number" value={expObj.amount_before === 0 ? '' : expObj.amount_before} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_before', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
+                                                                        <input type="number" value={(expObj.amount_before !== undefined && expObj.amount_before !== null && expObj.amount_before !== '') ? Number(expObj.amount_before) : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_before', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
@@ -988,7 +1076,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7">
                                                                         <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
-                                                                        <input type="number" value={expObj.amount_after === 0 ? '' : expObj.amount_after} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_after', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
+                                                                        <input type="number" value={(expObj.amount_after !== undefined && expObj.amount_after !== null && expObj.amount_after !== '') ? Number(expObj.amount_after) : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_after', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
@@ -997,7 +1085,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7 w-32">
                                                                         <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
-                                                                        <input type="number" value={expObj.amount === 0 ? '' : expObj.amount} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
+                                                                        <input type="number" value={(expObj.amount !== undefined && expObj.amount !== null && expObj.amount !== '') ? Number(expObj.amount) : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
@@ -1051,10 +1139,11 @@ const fixedExpenseNames = Array.from(new Set([
                                      ...exceptionRules.filter(e => e.companyId === 'ALL' && !globalRules.some(gr => {
                                          const d = new Date(gr.week_ending);
                                          const vf = new Date(d); vf.setUTCDate(d.getUTCDate() - 5);
-                                         return e.valid_from === vf.toISOString().split('T')[0];
+                                         return (e.original_valid_from || e.valid_from) === vf.toISOString().split('T')[0];
                                      })).map(e => {
-                                         if (!e.valid_from) return null;
-                                         const d = new Date(e.valid_from);
+                                         const targetDate = e.original_valid_from || e.valid_from;
+                                         if (!targetDate) return null;
+                                         const d = new Date(targetDate);
                                          d.setUTCDate(d.getUTCDate() + 5);
                                          return d.toISOString().split('T')[0];
                                      }).filter(Boolean)
@@ -1067,12 +1156,12 @@ const fixedExpenseNames = Array.from(new Set([
                                      const dBase = new Date(dateStr);
                                      const vfObj = new Date(dBase); vfObj.setUTCDate(dBase.getUTCDate() - 5);
                                      const vfStr = vfObj.toISOString().split('T')[0];
-                                     const hasException = exceptionRules.some(e => e.valid_from === vfStr);
+                                     const hasException = exceptionRules.some(e => (e.original_valid_from || e.valid_from) === vfStr);
                                      if (hasException) return true;
-                                     const hasOverride = localFixedExpenses.some(e => e.name === exp.name && e.valid_from === vfStr && e.companyId === 'ALL');
+                                     const hasOverride = localFixedExpenses.some(e => e.name === exp.name && (e.original_valid_from || e.valid_from) === vfStr && e.companyId === 'ALL');
                                      if (hasOverride) return true;
                                      if (gRule && (gRule as any)[`is_custom_${exp.key}`]) return true;
-                                     if (gRule && String(gRule.id).startsWith('new_')) return true;
+                                     if (gRule && String(gRule.id).startsWith('new_') && (gRule as any)[`is_custom_${exp.key}`]) return true;
                                      return false;
                                  });
 
@@ -1099,8 +1188,8 @@ const fixedExpenseNames = Array.from(new Set([
                                            activeAmount = matchedExp.amount_after !== undefined ? matchedExp.amount_after : (matchedExp.amount || 0);
                                        }
                                     } else {
-                                        const isComplex = ['Liability Insurance (Auto)', 'Liability Insurance (General)', 'Liability Insurance (Global)', 'Cargo Insurance', 'Physical Damage'].includes(matchedExp.name);
-                                        if (isComplex && matchedExp.amount_before !== undefined) {
+                                         const isComplex = ['Liability Insurance (Auto)', 'Liability Insurance (General)', 'Liability Insurance (Global)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].includes(matchedExp.name);
+                                         if (isComplex && matchedExp.amount_before !== undefined) {
                                             activeAmount = matchedExp.amount_before;
                                         } else {
                                             activeAmount = matchedExp.amount || 0;
@@ -1195,7 +1284,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                      {exceptionRules.filter(e => e.companyId !== 'ALL' && (e.is_standalone || !uniqueDates.some(ds => {
                                                          const dBase = new Date(ds);
                                                          const vfStr = new Date(dBase.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                                                         return e.valid_from === vfStr;
+                                                         return (e.original_valid_from || e.valid_from) === vfStr;
                                                      }))).map(cRule => (
                                                           <React.Fragment key={`standalone_${cRule.id}`}>
                                                               <tr className="bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
@@ -1206,15 +1295,31 @@ const fixedExpenseNames = Array.from(new Set([
                                                                      <input type="date" value={cRule.valid_to || ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'valid_to', e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:border-emerald-500 outline-none transition-colors h-7" />
                                                                   </td>
                                                                   <td className="py-1.5 px-3 flex items-center gap-2">
-                                                                     {cRule.contractType !== undefined ? (
+                                                                     {cRule.contractType !== undefined && cRule.contractType !== null ? (
                                                                         <select value={cRule.contractType} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'contractType' as any, e.target.value)} className="w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold focus:border-purple-500 outline-none h-7">
                                                                            <option value="" disabled>Select Contract</option>
                                                                            {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
                                                                         </select>
                                                                      ) : (
-                                                                        <select value={cRule.companyId} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)} className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7">
+                                                                        <select value={cRule.companyId} onChange={(e) => {
+                                                                           if (e.target.value === 'NEW_COMPANY') {
+                                                                              setCompanyPromptValue('');
+                                                                              setCompanyPrompt({
+                                                                                  isOpen: true,
+                                                                                  callback: (newComp) => {
+                                                                                      if (newComp && newComp.trim() !== '') {
+                                                                                          setCustomCompanies(prev => [...prev, newComp.trim()]);
+                                                                                          handleCompanyExpenseChange(cRule.id, 'companyId', newComp.trim());
+                                                                                      }
+                                                                                  }
+                                                                              });
+                                                                           } else {
+                                                                           handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value);
+                                                                           }
+                                                                        }} className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7">
                                                                            <option value="" disabled>Select Company</option>
-                                                                           {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                           <option value="NEW_COMPANY" className="text-emerald-500 font-bold">+ Add new company</option>
+                                                                           {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                                                         </select>
                                                                      )}
                                                                   </td>
@@ -1225,8 +1330,8 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                 <div className="flex flex-col gap-1 w-32">
                                                                                    <div className="relative flex items-center h-7">
                                                                                       <span className="absolute left-2 text-amber-500/50 text-xs pointer-events-none">$</span>
-                                                                                      <input type="number" value={cRule.amount || cRule.amount_after ? Math.round(Number(cRule.amount || cRule.amount_after)) : ''} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                      {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'physical_damage'].includes(exp.key) ? (
+                                                                                      <input type="number" value={(cRule.amount !== undefined && cRule.amount !== null && cRule.amount !== '') ? Math.round(Number(cRule.amount)) : ((cRule.amount_after !== undefined && cRule.amount_after !== null && cRule.amount_after !== '') ? Math.round(Number(cRule.amount_after)) : '')} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
+                                                                                      {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
                                                                                          <span className="absolute right-2 text-amber-500/50 text-[9px] pointer-events-none">/ pu</span>
                                                                                       ) : (
                                                                                          <div className="absolute right-2 group/tooltip flex items-center justify-center">
@@ -1344,7 +1449,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                           const puData = finImportPerUnitData.find(d => (d.week_ending || '').startsWith(targetDateStr));
                                                                                           effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
                                                                                        }
-                                                                                       return effNT > 0;
+                                                                                       return true;
                                                                                    });
 
                                                                                    const seenDates1 = new Set<string>();
@@ -1369,7 +1474,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                          const puData = finImportPerUnitData.find(d => (d.week_ending || '').startsWith(targetDateStr));
                                                                                          effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
                                                                                       }
-                                                                                      if (effNT <= 0) return null;
+                                                                                      
                                                                                       const dObj = new Date(targetDateStr);
                                                                                       while(dObj.getUTCDay() !== 4) {
                                                                                           dObj.setUTCDate(dObj.getUTCDate() + 1);
@@ -1379,11 +1484,27 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                       if (seenDates1.has(payDateStr)) return null;
                                                                                       seenDates1.add(payDateStr);
 
+                                                                                      if (payDateStr < '2026-02-19') return null;
+
+                                                                                      let weeksDivider = 52;
+                                                                                      if (cRule.valid_from && cRule.valid_to) {
+                                                                                         const dFrom = new Date(cRule.valid_from);
+                                                                                         const dTo = new Date(cRule.valid_to);
+                                                                                         if (!isNaN(dFrom.getTime()) && !isNaN(dTo.getTime())) {
+                                                                                            const daysDiff = (dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24);
+                                                                                            if (daysDiff > 0) weeksDivider = daysDiff / 7;
+                                                                                         }
+                                                                                      }
+
                                                                                       const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
-                                                                                      const perUnitAmt = effNT > 0 ? (baseAmt / 52) / effNT : 0;
+                                                                                      const weeklyAmt = baseAmt / weeksDivider;
+                                                                                      const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : 0;
                                                                                       let sharedResp = 0;
                                                                                       let compPay = 0;
-                                                                                      if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
+                                                                                      if (effNT <= 0) {
+                                                                                          compPay = weeklyAmt;
+                                                                                          sharedResp = 0;
+                                                                                      } else if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
                                                                                           const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
                                                                                           compPay = Math.min(perUnitAmt, baseLimit);
                                                                                           sharedResp = Math.max(0, perUnitAmt - baseLimit);
@@ -1393,11 +1514,11 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                           sharedResp = perUnitAmt <= sharedVal ? 0 : sharedVal;
                                                                                       }
                                                                                       const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
-                                                                                            const sharedRespColor = 'text-amber-500';
+                                                                                      const sharedRespColor = 'text-amber-500';
                                                                                       return (
                                                                                          <div key={targetDateStr} className="flex items-center gap-6 py-1 border-b border-amber-900/10 last:border-0">
                                                                                             <div className="w-24 text-[10px] text-zinc-300 font-mono">{payDateStr}</div>
-                                                                                            <div className="w-24 text-[10px] text-zinc-300 font-mono">Total (PU): {perUnitAmt.toFixed(2)}</div>
+                                                                                            <div className="w-28 text-[10px] text-zinc-300 font-mono">{effNT > 0 ? `Total (PU): ${perUnitAmt.toFixed(2)}` : `Weekly: ${weeklyAmt.toFixed(2)}`}</div>
                                                                                             <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay: {compPay.toFixed(2)}</div>
                                                                                             <div className={`w-40 text-[10px] font-mono font-bold ${sharedRespColor}`}>Shared Resp: {sharedResp.toFixed(2)}</div>
                                                                                          </div>
@@ -1480,7 +1601,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                         }
 
                                                         const cRules = exceptionRules.filter(e => {
-                                                            return e.companyId !== 'ALL' && !e.is_standalone && e.valid_from === vFromStr;
+                                                            return e.companyId !== 'ALL' && !e.is_standalone && (e.original_valid_from || e.valid_from) === vFromStr;
                                                         });
 
                                                         if (!gRule && cRules.length === 0) return null;
@@ -1495,7 +1616,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                              const beforeTo = !go.valid_to || currVfStr <= go.valid_to;
                                                              return afterFrom && beforeTo;
                                                          }) || finImportData.some(fd => {
-                                                             const isCustom = (fd as any)[`is_custom_${exp.key}`] || String(fd.id).startsWith('new_');
+                                                             const isCustom = (fd as any)[`is_custom_${exp.key}`];
                                                              if (!isCustom) return false;
                                                              const fdDate = new Date(fd.week_ending);
                                                              const fdVf = new Date(fdDate); fdVf.setUTCDate(fdDate.getUTCDate() - 5);
@@ -1514,7 +1635,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                          const puDataTemp = finImportPerUnitData.find(d => d.week_ending === dateStr);
                                                          const puValTemp = puDataTemp && (exp as any).puKey ? Math.abs(puDataTemp[(exp as any).puKey] || 0) : 0;
                                                          const gValTemp = gRule && exp.key ? Math.abs((gRule as any)[exp.key] || 0) : 0;
-                                                         const hasCustomOverrideTemp = gRule && ((gRule as any)[`is_custom_${exp.key}`] || String(gRule.id).startsWith('new_') || globalOverrides.some(go => go.valid_from === vFromStr));
+                                                         const hasCustomOverrideTemp = gRule && ((gRule as any)[`is_custom_${exp.key}`] || globalOverrides.some(go => go.valid_from === vFromStr));
                                                          const showGRule = gRule && (puValTemp > 0 || gValTemp > 0 || hasCustomOverrideTemp);
                                                       const fragmentRows = [];
                                                       if (showGRule && !(isOverridden && hideOverriddenRules)) {
@@ -1544,34 +1665,49 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                             <div className="flex flex-col gap-1 w-32">
                                                                                                <div className="relative flex items-center h-7">
                                                                                                   <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">$</span>
-                                                                                                  {(() => {
-                                                                                                     const puData = finImportPerUnitData.find(d => d.week_ending === dateStr);
-                                                                                                     const puVal = puData ? Math.abs(puData[(exp as any).puKey] || 0) : 0;
-                                                                                                    const dObj = new Date(dateStr);
-                                                                                                                         const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
-                                                                                                                         const savedOverride = globalOverrides.find(go => go.valid_from === vfObj.toISOString().split('T')[0]);
-                                                                                                                         const hasStateCustom = (gRule as any)[`is_custom_${exp.key}`] !== undefined;
-                                                                                                                         const isCustom = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
-                                                                                                                         const customVal = hasStateCustom ? ((gRule as any)[`custom_val_${exp.key}`] || '') : (savedOverride ? savedOverride.amount : '');
-                                                                                                                         const displayVal = isCustom ? customVal : puVal;
-                                                                                                     let multiplier = 0;
-                                                                                                     if (puData) {
-                                                                                                        if (exp.key === 'avg_trailer_price') multiplier = puData.eff_trailers_total || 0;
-                                                                                                        else if (exp.key === 'avg_truck_price') multiplier = puData.total_neff_teams_w_oo || 0;
-                                                                                                        else multiplier = puData.eff_non_teams_total || 0;
-                                                                                                     }
-                                                                                                     return (
-                                                                                                        <input type="number" value={displayVal === 0 && !isCustom ? '' : Math.round(Number(displayVal))} onChange={(e) => {
-                                                                                                           if (isCustom) {
-                                                                                                              const val = e.target.value;
-                                                                                                              const total = (Number(val) || 0) * multiplier;
-                                                                                                              setFinImportData(prev => prev.map(d => d.id === gRule.id ? { ...d, [`is_custom_${exp.key}`]: true, [`custom_val_${exp.key}`]: val, [exp.key]: total } : d));
-                                                                                                              if (!modifiedFinImportIds.includes(String(gRule.id))) setModifiedFinImportIds(prev => [...prev, String(gRule.id)]);
-                                                                                                            }
-                                                                                                        }} disabled={!isCustom} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${!isCustom ? 'opacity-50 cursor-not-allowed' : ''}`} />
-                                                                                                     );
-                                                                                                 })()}
-                                                                                                                       {!['liability_insurance', 'cargo_insurance', 'physical_damage'].includes(exp.key) ? (
+                                                                                                {(() => {
+                                                                                                      const puData = finImportPerUnitData.find(d => d.week_ending === dateStr);
+                                                                                                      const puVal = puData ? Math.abs(puData[(exp as any).puKey] || 0) : 0;
+                                                                                                      const dObj = new Date(dateStr);
+                                                                                                      const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
+                                                                                                      const savedOverride = globalOverrides.find(go => go.valid_from === vfObj.toISOString().split('T')[0]);
+                                                                                                      const hasStateCustom = gRule && (gRule as any)[`is_custom_${exp.key}`] !== undefined;
+                                                                                                      const isCustom = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
+                                                                                                      
+                                                                                                      let customVal: any = '';
+                                                                                                      if (gRule && (gRule as any)[`custom_val_${exp.key}`] !== undefined) {
+                                                                                                          customVal = (gRule as any)[`custom_val_${exp.key}`];
+                                                                                                      } else if (savedOverride && savedOverride.amount !== undefined && savedOverride.amount !== null) {
+                                                                                                          customVal = savedOverride.amount;
+                                                                                                      }
+
+                                                                                                      const displayVal = isCustom ? customVal : puVal;
+                                                                                                      let multiplier = 0;
+                                                                                                      if (puData) {
+                                                                                                         if (exp.key === 'avg_trailer_price') multiplier = puData.eff_trailers_total || 0;
+                                                                                                         else if (exp.key === 'avg_truck_price') multiplier = puData.total_neff_teams_w_oo || 0;
+                                                                                                         else multiplier = puData.eff_non_teams_total || 0;
+                                                                                                      }
+                                                                                                      return (
+                                                                                                         <input type="number" value={displayVal === '' ? '' : (displayVal === 0 && !isCustom ? '' : (isCustom ? displayVal : Math.round(Number(displayVal))))} onChange={(e) => {
+                                                                                                            if (isCustom) {
+                                                                                                               const val = e.target.value;
+                                                                                                               const isTotalField = ['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key);
+                                                                                                               const total = isTotalField ? (Number(val) || 0) : (Number(val) || 0) * multiplier;
+                                                                                                               
+                                                                                                               if (gRule && !String(gRule.id).startsWith('dummy_')) {
+                                                                                                                   setFinImportData(prev => prev.map(d => d.id === gRule.id ? { ...d, [`is_custom_${exp.key}`]: true, [`custom_val_${exp.key}`]: val, [exp.key]: total } : d));
+                                                                                                                   if (!modifiedFinImportIds.includes(String(gRule.id))) setModifiedFinImportIds(prev => [...prev, String(gRule.id)]);
+                                                                                                               }
+                                                                                                               
+                                                                                                               if (savedOverride) {
+                                                                                                                   setLocalFixedExpenses(prev => prev.map(o => o.id === savedOverride.id ? { ...o, amount: val === '' ? '' : Number(val) } : o));
+                                                                                                               }
+                                                                                                             }
+                                                                                                         }} disabled={!isCustom} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${!isCustom ? 'opacity-50 cursor-not-allowed' : ''}`} />
+                                                                                                      );
+                                                                                                   })()}
+                                                                                                                       {!['liability_insurance', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
                                                                                                                           <span className="absolute right-2 text-zinc-500 text-[9px] pointer-events-none">/ pu</span>
                                                                                                                        ) : (
                                                                                                                           <div className="absolute right-2 group/tooltip flex items-center justify-center">
@@ -1682,12 +1818,26 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                               const customVal = hasStateCustom ? ((gRule as any)[`custom_val_${exp.key}`] || '') : (savedOverride ? savedOverride.amount : '');
                                                                                               const currentPu = isCustom ? Number(customVal) : puVal;
                                                                                               const currentTotal = currentPu * multiplier;
-                                                                                             const baseAmt = isCustom ? Number(customVal) : (gRule[exp.key] || 0);
-                                                                                               const effNT = puData ? puData.eff_non_teams_total : 1;
-                                                                                               const perUnitAmt = effNT > 0 ? (baseAmt / 52) / effNT : 0;
+                                                                                             let weeksDivider = 52;
+                                                                                               if (savedOverride && savedOverride.valid_from && savedOverride.valid_to) {
+                                                                                                  const dFrom = new Date(savedOverride.valid_from);
+                                                                                                  const dTo = new Date(savedOverride.valid_to);
+                                                                                                  if (!isNaN(dFrom.getTime()) && !isNaN(dTo.getTime())) {
+                                                                                                     const daysDiff = (dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24);
+                                                                                                     if (daysDiff > 0) weeksDivider = daysDiff / 7;
+                                                                                                  }
+                                                                                               }
+
+                                                                                               const baseAmt = isCustom ? Number(customVal) : (gRule[exp.key] || 0);
+                                                                                               const weeklyAmt = baseAmt / weeksDivider;
+                                                                                               const effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
+                                                                                               const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : 0;
                                                                                                let sharedResp = 0;
                                                                                                let compPay = 0;
-                                                                                               if ((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) {
+                                                                                               if (effNT <= 0) {
+                                                                                                   compPay = weeklyAmt;
+                                                                                                   sharedResp = 0;
+                                                                                               } else if ((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) {
                                                                                                    const baseLimit = Number((gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? 0);
                                                                                                    compPay = Math.min(perUnitAmt, baseLimit);
                                                                                                    sharedResp = Math.max(0, perUnitAmt - baseLimit);
@@ -1713,9 +1863,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                            </label>
                                                                                                         </div>
                                                                                                      </div>
-                                                                                                     <div className="flex flex-col gap-0.5">
-                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">Amount (Per Unit)</label>
-                                                                                                        <div className="text-[10px] text-zinc-300 font-mono font-bold h-5 flex items-center">{perUnitAmt.toFixed(2)}</div>
+                                                                                                     <div className="flex flex-col gap-0.5 w-28">
+                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">{effNT > 0 ? 'Amount (Per Unit)' : 'Weekly Amount'}</label>
+                                                                                                        <div className="text-[10px] text-zinc-300 font-mono font-bold h-5 flex items-center">{effNT > 0 ? perUnitAmt.toFixed(2) : weeklyAmt.toFixed(2)}</div>
                                                                                                      </div>
                                                                                                      <div className="flex flex-col gap-0.5 border-l border-zinc-800 pl-4">
                                                                                                         <label className="text-[8px] text-zinc-400 font-bold uppercase">{((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
@@ -1776,7 +1926,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                             <input type="date" value={cRule.valid_to || ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'valid_to', e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 focus:border-emerald-500 outline-none transition-colors h-7" />
                                                                          </td>
                                                                          <td className="py-1.5 px-3 flex items-center gap-2">
-                                                                            {cRule.contractType ? (
+                                                                            {cRule.contractType !== undefined && cRule.contractType !== null ? (
                                                                                <select value={cRule.contractType} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'contractType' as any, e.target.value)} className="w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold focus:border-purple-500 outline-none h-7">
                                                                                   <option value="" disabled>Select Contract</option>
                                                                                   {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
@@ -1784,11 +1934,27 @@ const fixedExpenseNames = Array.from(new Set([
                                                                             ) : (
                                                                                <select
                                                                                  value={cRule.companyId}
-                                                                                 onChange={(e) => handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value)}
+                                                                                 onChange={(e) => {
+                                                                                    if (e.target.value === 'NEW_COMPANY') {
+                                                                                       setCompanyPromptValue('');
+                                                                                       setCompanyPrompt({
+                                                                                           isOpen: true,
+                                                                                           callback: (newComp) => {
+                                                                                               if (newComp && newComp.trim() !== '') {
+                                                                                                   setCustomCompanies(prev => [...prev, newComp.trim()]);
+                                                                                                   handleCompanyExpenseChange(cRule.id, 'companyId', newComp.trim());
+                                                                                               }
+                                                                                           }
+                                                                                       });
+                                                                                    } else {
+                                                                                       handleCompanyExpenseChange(cRule.id, 'companyId', e.target.value);
+                                                                                    }
+                                                                                 }}
                                                                                  className="w-full bg-zinc-950 border border-amber-700/50 rounded px-2 py-1 text-xs text-amber-500 font-bold focus:border-amber-500 outline-none h-7"
                                                                                >
                                                                                   <option value="" disabled>Select Company</option>
-                                                                                  {companies.filter(c => !['GLOBAL', 'UNRECONCILED', 'UNASSIGNED'].includes(c.toUpperCase())).map(c => <option key={c} value={c}>{c}</option>)}
+                                                                                  <option value="NEW_COMPANY" className="text-emerald-500 font-bold">+ Add new company</option>
+                                                                                  {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
                                                                                </select>
                                                                             )}
                                                                          </td>
@@ -1798,8 +1964,8 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                           <div className="flex flex-col gap-1 w-32 mt-1">
                                                                                              <div className="relative flex items-center h-7">
                                                                                                 <span className="absolute left-2 text-amber-500/50 text-xs pointer-events-none">$</span>
-                                                                                                <input type="number" value={cRule.amount || cRule.amount_after ? Math.round(Number(cRule.amount || cRule.amount_after)) : ''} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                                {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'physical_damage'].includes(exp.key) ? (
+                                                                                                <input type="number" value={(cRule.amount !== undefined && cRule.amount !== null && cRule.amount !== '') ? Math.round(Number(cRule.amount)) : ((cRule.amount_after !== undefined && cRule.amount_after !== null && cRule.amount_after !== '') ? Math.round(Number(cRule.amount_after)) : '')} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
+                                                                                                {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
                                                                                                    <span className="absolute right-2 text-amber-500/50 text-[9px] pointer-events-none">/ pu</span>
                                                                                                 ) : (
                                                                                                    <div className="absolute right-2 group/tooltip flex items-center justify-center">
@@ -1908,7 +2074,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                              const puData = finImportPerUnitData.find(d => (d.week_ending || '').startsWith(targetDateStr));
                                                                                              effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
                                                                                           }
-                                                                                          return effNT > 0;
+                                                                                          return true;
                                                                                       });
 
                                                                                       const seenDates2 = new Set<string>();
@@ -1933,7 +2099,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                const puData = finImportPerUnitData.find(d => (d.week_ending || '').startsWith(targetDateStr));
                                                                                                effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
                                                                                             }
-                                                                                            if (effNT <= 0) return null;
+                                                                                            
                                                                                             const dObj = new Date(targetDateStr);
                                                                                             while(dObj.getUTCDay() !== 4) {
                                                                                                 dObj.setUTCDate(dObj.getUTCDate() + 1);
@@ -1943,11 +2109,27 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                             if (seenDates2.has(payDateStr)) return null;
                                                                                             seenDates2.add(payDateStr);
 
+                                                                                            if (payDateStr < '2026-02-19') return null;
+
+                                                                                            let weeksDivider = 52;
+                                                                                            if (cRule.valid_from && cRule.valid_to) {
+                                                                                               const dFrom = new Date(cRule.valid_from);
+                                                                                               const dTo = new Date(cRule.valid_to);
+                                                                                               if (!isNaN(dFrom.getTime()) && !isNaN(dTo.getTime())) {
+                                                                                                  const daysDiff = (dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24);
+                                                                                                  if (daysDiff > 0) weeksDivider = daysDiff / 7;
+                                                                                               }
+                                                                                            }
+
                                                                                             const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
-                                                                                            const perUnitAmt = effNT > 0 ? (baseAmt / 52) / effNT : 0;
+                                                                                            const weeklyAmt = baseAmt / weeksDivider;
+                                                                                            const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : 0;
                                                                                             let sharedResp = 0;
                                                                                             let compPay = 0;
-                                                                                            if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
+                                                                                            if (effNT <= 0) {
+                                                                                                compPay = weeklyAmt;
+                                                                                                sharedResp = 0;
+                                                                                            } else if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
                                                                                                 const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
                                                                                                 compPay = Math.min(perUnitAmt, baseLimit);
                                                                                                 sharedResp = Math.max(0, perUnitAmt - baseLimit);
@@ -1957,11 +2139,11 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                 sharedResp = perUnitAmt <= sharedVal ? 0 : sharedVal;
                                                                                             }
                                                                                             const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
-                                                                                      const sharedRespColor = 'text-amber-500';
+                                                                                            const sharedRespColor = 'text-amber-500';
                                                                                             return (
                                                                                                <div key={`${targetDateStr}_${index}`} className="flex items-center gap-6 py-1 border-b border-amber-900/10 last:border-0">
                                                                                                 <div className="w-24 text-[10px] text-zinc-300 font-mono">{payDateStr}</div>
-                                                                                                <div className="w-24 text-[10px] text-zinc-300 font-mono">Total (PU): {perUnitAmt.toFixed(2)}</div>
+                                                                                                <div className="w-28 text-[10px] text-zinc-300 font-mono">{effNT > 0 ? `Total (PU): ${perUnitAmt.toFixed(2)}` : `Weekly: ${weeklyAmt.toFixed(2)}`}</div>
                                                                                                 <div className={`w-32 text-[10px] font-mono font-bold ${compPayColor}`}>Comp Pay: {compPay.toFixed(2)}</div>
                                                                                                 <div className={`w-40 text-[10px] font-mono font-bold ${sharedRespColor}`}>Shared Resp: {sharedResp.toFixed(2)}</div>
                                                                                              </div>
@@ -2214,6 +2396,47 @@ if (currentFranchiseCharge === undefined) {
                  </div>
               </div>
            </div>
+       )}
+        
+        {customAlert?.isOpen && (
+            <div className="fixed inset-0 z-[100000] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-lg shadow-2xl w-96 flex flex-col gap-4">
+                    <div className="flex items-center gap-3 text-rose-500">
+                        <Info size={24} />
+                        <h3 className="font-bold text-lg">{customAlert.title}</h3>
+                    </div>
+                    <p className="text-zinc-300 text-sm">{customAlert.message}</p>
+                    <div className="flex justify-end mt-2">
+                        <button onClick={() => setCustomAlert(null)} className="px-4 py-2 rounded bg-zinc-800 text-zinc-300 hover:text-white font-bold text-xs transition-colors">Close</button>
+                    </div>
+                </div>
+            </div>
+        )}
+        
+        {companyPrompt?.isOpen && (
+            <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+                <div className="bg-zinc-900 border border-zinc-700 p-6 rounded-lg shadow-2xl w-96 flex flex-col gap-4">
+                    <h3 className="text-emerald-500 font-bold text-lg">Add New Company</h3>
+                    <input 
+                        type="text" 
+                        value={companyPromptValue}
+                        onChange={(e) => setCompanyPromptValue(e.target.value)} 
+                        placeholder="Enter company name..." 
+                        className="w-full bg-zinc-950 border border-zinc-700 rounded px-3 py-2 text-sm text-zinc-200 focus:border-emerald-500 outline-none"
+                        autoFocus
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                companyPrompt.callback(companyPromptValue);
+                                setCompanyPrompt(null);
+                            }
+                        }}
+                    />
+                    <div className="flex justify-end gap-2 mt-2">
+                        <button onClick={() => setCompanyPrompt(null)} className="px-4 py-2 rounded bg-zinc-800 text-zinc-400 hover:text-zinc-200 font-bold text-xs transition-colors">Cancel</button>
+                        <button onClick={() => { companyPrompt.callback(companyPromptValue); setCompanyPrompt(null); }} className="px-4 py-2 rounded bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/30 font-bold text-xs transition-colors">Confirm</button>
+                    </div>
+                </div>
+            </div>
         )}
       </div>
     </div>
