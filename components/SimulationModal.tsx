@@ -102,7 +102,7 @@ const fixedExpenseNames = Array.from(new Set([
 ...customExpenseNames
 ])).filter(Boolean);
 
-  const filteredFixedNames = fixedExpenseNames.filter(name => !finImportKeys.some(fi => fi.name === name) && name !== 'Liability Insurance (Global)' && name !== 'Dispatcher Pay' && name !== 'Revenue CPM');
+  const filteredFixedNames = fixedExpenseNames.filter(name => !finImportKeys.some(fi => fi.name === name) && name !== 'Liability Insurance (Global)' && name !== 'Dispatcher Pay' && name !== 'Revenue CPM' && !name.startsWith('MCLOO_INCLUDE_'));
 
   const unifiedExpenses = [
     ...filteredFixedNames.map(name => ({ type: 'FIXED', name, key: '', puKey: '' })),
@@ -1413,15 +1413,41 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                  </label>
                                                                                               </div>
                                                                                            </div>
-                                                                                        <div className="flex flex-col gap-1 w-64">
+                                                                                        <div className="flex flex-col gap-1 w-full">
                                                                                            <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
-                                                                                           <div className="relative h-7 w-32">
-                                                                                              <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
-                                                                                              {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? (
-                                                                                                 <input type="number" value={(cRule as any).company_base_for_mcloo ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'company_base_for_mcloo' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
-                                                                                              ) : (
-                                                                                                 <input type="number" value={(cRule as any).shared_insurance ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'shared_insurance' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
-                                                                                              )}
+                                                                                           <div className="flex items-center gap-3">
+                                                                                              <div className="relative h-7 w-32">
+                                                                                                 <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
+                                                                                                 {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? (
+                                                                                                    <input type="number" value={(cRule as any).company_base_for_mcloo ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'company_base_for_mcloo' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
+                                                                                                 ) : (
+                                                                                                    <input type="number" value={(cRule as any).shared_insurance ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'shared_insurance' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
+                                                                                                 )}
+                                                                                              </div>
+                                                                                              <div className="relative group">
+                                                                                                 <button className="h-7 px-3 flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded text-[10px] text-zinc-300 hover:border-amber-500/50 transition-colors">
+                                                                                                    <span>Include in Limit</span>
+                                                                                                    <ChevronDown size={12} className="text-zinc-500" />
+                                                                                                 </button>
+                                                                                                 <div className="absolute left-0 bottom-full mb-1 w-48 bg-zinc-900 border border-zinc-800 rounded-md shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[9999] p-2 flex flex-col gap-1.5">
+                                                                                                    {['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
+                                                                                                       const dummyName = `MCLOO_INCLUDE_${ins}`;
+                                                                                                       const isIncluded = localFixedExpenses.some(e => e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from);
+                                                                                                       return (
+                                                                                                          <label key={ins} className="flex items-center gap-2 px-2 py-1 hover:bg-white/5 rounded cursor-pointer group/item">
+                                                                                                             <input type="checkbox" checked={isIncluded} onChange={(e) => {
+                                                                                                                if (e.target.checked) {
+                                                                                                                   setLocalFixedExpenses(prev => [...prev, { id: Math.random().toString(36).substring(2, 11), category: 'Fixed', name: dummyName, companyId: cRule.companyId, amount: 0, frequency: 'Weekly', allocationType: 'divide', unit: '$', valid_from: cRule.valid_from, is_standalone: true } as any]);
+                                                                                                                } else {
+                                                                                                                   setLocalFixedExpenses(prev => prev.filter(e => !(e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from)));
+                                                                                                                }
+                                                                                                             }} className="w-3 h-3 accent-amber-500" />
+                                                                                                             <span className="text-[10px] text-zinc-400 group-hover/item:text-zinc-200">{ins}</span>
+                                                                                                          </label>
+                                                                                                       );
+                                                                                                    })}
+                                                                                                 </div>
+                                                                                              </div>
                                                                                            </div>
                                                                                         </div>
                                                                                      </div>
@@ -1497,7 +1523,36 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                       }
 
                                                                                       const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
-                                                                                      const weeklyAmt = baseAmt / weeksDivider;
+                                                                                      let extraWeeklyAmt = 0;
+                                                                                      ['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].forEach(ins => {
+                                                                                         const dummyName = `MCLOO_INCLUDE_${ins}`;
+                                                                                         const isIncluded = localFixedExpenses.some(e => e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from);
+                                                                                         if (isIncluded) {
+                                                                                             const insKeyObj = finImportKeys.find(k => k.name === ins);
+                                                                                             if (insKeyObj) {
+                                                                                                 let amt = 0;
+                                                                                                 const customExp = localFixedExpenses.find(e => e.name === ins && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from);
+                                                                                                 if (customExp && customExp.amount !== undefined && customExp.amount !== null && String(customExp.amount) !== '') {
+                                                                                                     amt = Number(customExp.amount);
+                                                                                                 } else {
+                                                                                                     const gRule = finImportData.find(d => d.week_ending === targetDateStr);
+                                                                                                     if (gRule) {
+                                                                                                         const globalOverride = localFixedExpenses.find(e => e.name === ins && e.companyId === 'ALL' && e.valid_from === cRule.valid_from);
+                                                                                                         const isCustom = (gRule as any)[`is_custom_${insKeyObj.key}`] || globalOverride;
+                                                                                                         if (isCustom) {
+                                                                                                             amt = Number((gRule as any)[`custom_val_${insKeyObj.key}`] || (globalOverride ? globalOverride.amount : 0));
+                                                                                                         } else {
+                                                                                                             const puData = finImportPerUnitData.find(d => d.week_ending === targetDateStr);
+                                                                                                             const puVal = puData ? Math.abs(puData[insKeyObj.puKey as keyof typeof puData] || 0) : 0;
+                                                                                                             amt = effNT > 0 ? puVal * effNT : Number(gRule[insKeyObj.key as keyof typeof gRule] || 0);
+                                                                                                         }
+                                                                                                     }
+                                                                                                 }
+                                                                                                 extraWeeklyAmt += amt / weeksDivider;
+                                                                                             }
+                                                                                         }
+                                                                                      });
+                                                                                      const weeklyAmt = (baseAmt / weeksDivider) + extraWeeklyAmt;
                                                                                       const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : 0;
                                                                                       let sharedResp = 0;
                                                                                       let compPay = 0;
@@ -1777,6 +1832,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                                       const savedOverride = globalOverrides.find(go => go.valid_from === vfObj.toISOString().split('T')[0]);
                                                                                                                       const hasStateCustom = (gRule as any)[`is_custom_${exp.key}`] !== undefined;
                                                                                                                       const isCustomLocal = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
+                                                                                                                      const isTotalField = ['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key);
+                                                                                                                      
+                                                                                                                      if (isTotalField) return null;
                                                                                                                       
                                                                                                                       return (
                                                                                                                          <div className="flex flex-col gap-1 mt-1">
@@ -1829,7 +1887,26 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                }
 
                                                                                                const baseAmt = isCustom ? Number(customVal) : (gRule[exp.key] || 0);
-                                                                                               const weeklyAmt = baseAmt / weeksDivider;
+                                                                                               let extraWeeklyAmt = 0;
+                                                                                               ['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].forEach(ins => {
+                                                                                                  const dummyName = `MCLOO_INCLUDE_${ins}`;
+                                                                                                  const dObj = new Date(dateStr);
+                                                                                                  const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
+                                                                                                  const vfStr = vfObj.toISOString().split('T')[0];
+                                                                                                  const isIncluded = localFixedExpenses.some(e => e.name === dummyName && e.companyId === 'ALL' && e.valid_from === vfStr);
+                                                                                                  if (isIncluded) {
+                                                                                                      const insKeyObj = finImportKeys.find(k => k.name === ins);
+                                                                                                      if (insKeyObj) {
+                                                                                                          const savedOverride = localFixedExpenses.find(go => go.name === ins && go.companyId === 'ALL' && go.valid_from === vfStr);
+                                                                                                          const hasStateCustom = (gRule as any)[`is_custom_${insKeyObj.key}`] !== undefined;
+                                                                                                          const isCustomIns = hasStateCustom ? !!(gRule as any)[`is_custom_${insKeyObj.key}`] : !!savedOverride;
+                                                                                                          const customValIns = hasStateCustom ? ((gRule as any)[`custom_val_${insKeyObj.key}`] || '') : (savedOverride ? savedOverride.amount : '');
+                                                                                                          const baseAmtIns = isCustomIns ? Number(customValIns) : (gRule[insKeyObj.key as keyof typeof gRule] || 0);
+                                                                                                          extraWeeklyAmt += baseAmtIns / weeksDivider;
+                                                                                                      }
+                                                                                                  }
+                                                                                               });
+                                                                                               const weeklyAmt = (baseAmt / weeksDivider) + extraWeeklyAmt;
                                                                                                const effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
                                                                                                const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : 0;
                                                                                                let sharedResp = 0;
@@ -1869,13 +1946,42 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                      </div>
                                                                                                      <div className="flex flex-col gap-0.5 border-l border-zinc-800 pl-4">
                                                                                                         <label className="text-[8px] text-zinc-400 font-bold uppercase">{((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
-                                                                                                        <div className="relative h-5 w-24">
-                                                                                                           <span className="absolute left-1.5 top-0.5 text-zinc-500 text-[9px] pointer-events-none">$</span>
-                                                                                                           {((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? (
-                                                                                                              <input type="number" value={(gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? ''} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : undefined; handleFinImportChange(gRule.id, 'company_base_for_mcloo', v as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
-                                                                                                           ) : (
-                                                                                                              <input type="number" value={(gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? ''} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : undefined; handleFinImportChange(gRule.id, 'shared_insurance', v as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
-                                                                                                           )}
+                                                                                                        <div className="flex items-center gap-2">
+                                                                                                           <div className="relative h-5 w-24">
+                                                                                                              <span className="absolute left-1.5 top-0.5 text-zinc-500 text-[9px] pointer-events-none">$</span>
+                                                                                                              {((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? (
+                                                                                                                 <input type="number" value={(gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? ''} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : undefined; handleFinImportChange(gRule.id, 'company_base_for_mcloo', v as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
+                                                                                                              ) : (
+                                                                                                                 <input type="number" value={(gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? ''} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : undefined; handleFinImportChange(gRule.id, 'shared_insurance', v as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
+                                                                                                              )}
+                                                                                                           </div>
+                                                                                                           <div className="relative group">
+                                                                                                              <button className="h-5 px-2 flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded text-[8px] text-zinc-400 hover:border-emerald-500/50 transition-colors">
+                                                                                                                 <span>Include</span>
+                                                                                                                 <ChevronDown size={10} />
+                                                                                                              </button>
+                                                                                                              <div className="absolute left-0 bottom-full mb-1 w-40 bg-zinc-900 border border-zinc-800 rounded shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[9999] p-1 flex flex-col gap-0.5">
+                                                                                                                 {['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
+                                                                                                                    const dummyName = `MCLOO_INCLUDE_${ins}`;
+                                                                                                                    const dObj = new Date(dateStr);
+                                                                                                                    const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
+                                                                                                                    const vfStr = vfObj.toISOString().split('T')[0];
+                                                                                                                    const isIncluded = localFixedExpenses.some(e => e.name === dummyName && e.companyId === 'ALL' && e.valid_from === vfStr);
+                                                                                                                    return (
+                                                                                                                       <label key={ins} className="flex items-center gap-1.5 px-1.5 py-1 hover:bg-white/5 rounded cursor-pointer">
+                                                                                                                          <input type="checkbox" checked={isIncluded} onChange={(e) => {
+                                                                                                                             if (e.target.checked) {
+                                                                                                                                setLocalFixedExpenses(prev => [...prev, { id: Math.random().toString(36).substring(2, 11), category: 'Fixed', name: dummyName, companyId: 'ALL', amount: 0, frequency: 'Weekly', allocationType: 'divide', unit: '$', valid_from: vfStr, is_standalone: true } as any]);
+                                                                                                                             } else {
+                                                                                                                                setLocalFixedExpenses(prev => prev.filter(e => !(e.name === dummyName && e.companyId === 'ALL' && e.valid_from === vfStr)));
+                                                                                                                             }
+                                                                                                                          }} className="w-2.5 h-2.5 accent-emerald-500" />
+                                                                                                                          <span className="text-[9px] text-zinc-400">{ins.replace(' Insurance', '')}</span>
+                                                                                                                       </label>
+                                                                                                                    );
+                                                                                                                 })}
+                                                                                                              </div>
+                                                                                                           </div>
                                                                                                         </div>
                                                                                                      </div>
                                                                                                      <div className="flex flex-col gap-0.5 border-l border-zinc-800 pl-4">

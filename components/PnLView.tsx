@@ -108,7 +108,7 @@ const MasterTable: React.FC<{
 
   const val = (amount: number, divisor: number) => isAverageView ? (divisor > 0 ? amount / divisor : 0) : amount;
   const uniqueContracts = Array.from(new Set(drivers.map(d => d.contractType || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const uniqueCompanies = Array.from(new Set(drivers.map(d => d.companyId || 'Unassigned'))).filter(c => c !== 'Unassigned' && !/^Company\s*\d*$/i.test(String(c))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueCompanies = Array.from(new Set(drivers.map(d => d.companyId || 'Unassigned'))).filter(c => c !== 'Unassigned' && c !== 'UNRECONCILED' && !/^Company\s*\d*$/i.test(String(c))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueFranchises = Array.from(new Set(drivers.map(d => d.franchiseId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueTeams = Array.from(new Set(drivers.map(d => d.teamId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueDrivers = Array.from(new Set(drivers.map(d => d.name || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
@@ -1294,9 +1294,15 @@ const PnLView: React.FC<PnLViewProps> = ({
         let liabilityAuto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
         let liabilityGeneral = getFcRule('Liability Insurance (General)', '', '');
         let liabilityGlobal = getFcRule('Liability Insurance (Global)', '', '');
-        let liability = liabilityAuto + liabilityGeneral + liabilityGlobal;
+        let liability = liabilityAuto + liabilityGlobal;
         let sharedLiabilityValue = 0;
         
+        let cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
+        let trailerInterchange = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
+        let lago = getFcRule('LAGO', 'lago_custom', 'lago');
+        let phd_premium = getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium');
+        let phd = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
+
         if (d.contractType === 'MCLOO') {
             const currTime = date ? new Date(date).getTime() : Date.now();
             const isValidVal = (val: any) => val !== undefined && val !== null && String(val).trim() !== '';
@@ -1318,7 +1324,17 @@ const PnLView: React.FC<PnLViewProps> = ({
             }
 
             if (matchedExp) {
-                         const totalAmount = liabilityAuto + liabilityGeneral + liabilityGlobal;
+                         let totalAmount = liabilityAuto + liabilityGlobal;
+                         
+                         const checkIncluded = (insName: string) => fixedExpenses.some(e => e.name === `MCLOO_INCLUDE_${insName}` && (e.companyId === d.companyId || e.companyId === 'ALL') && (!e.valid_from || new Date(e.valid_from).getTime() <= currTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= currTime));
+                         
+                         if (checkIncluded('Liability Insurance (General)')) { totalAmount += liabilityGeneral; liabilityGeneral = 0; }
+                         if (checkIncluded('Cargo Insurance')) { totalAmount += cargo; cargo = 0; }
+                         if (checkIncluded('Trailer Interchange')) { totalAmount += trailerInterchange; trailerInterchange = 0; }
+                         if (checkIncluded('LAGO')) { totalAmount += lago; lago = 0; }
+                         if (checkIncluded('PD Premium')) { totalAmount += phd_premium; phd_premium = 0; }
+                         if (checkIncluded('Physical Damage')) { totalAmount += phd; phd = 0; }
+
                          const baseLimit = (matchedExp as any).company_base_for_mcloo;
                          if (baseLimit !== undefined && baseLimit !== null && String(baseLimit).trim() !== '') {
                              const limit = Number(baseLimit) || 0;
@@ -1330,6 +1346,8 @@ const PnLView: React.FC<PnLViewProps> = ({
                      } else {
                          liability = liabilityAuto + liabilityGeneral + liabilityGlobal;
                      }
+                 } else {
+                    liability = liabilityAuto + liabilityGeneral + liabilityGlobal;
                  }
 
          if (d.name === 'Angela Sega' && effContractType === 'MCLOO' && String(d.payDate).includes('04-09')) {
@@ -1349,11 +1367,7 @@ const PnLView: React.FC<PnLViewProps> = ({
              console.log('fixedExpenses examined:', fixedExpenses.filter(e => e.companyId === d.companyId || e.companyId === 'ALL'));
          }
          
-         const cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
-         const trailerInterchange = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
-         const lago = getFcRule('LAGO', 'lago_custom', 'lago');
-        const phd_premium = getFcRule('PD Premium', 'physical_damage_premium_custom', 'physical_damage_premium');
-        const phd = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
+         
         const plates = getFcRule('Plates', 'plates_custom', 'plates');
         const factoring = getFcRule('Factoring', 'factoring_custom', 'factoring');
         const telematics = getFcRule('Telematics', 'telematics_custom', 'telematics');
@@ -1401,8 +1415,8 @@ const PnLView: React.FC<PnLViewProps> = ({
          let ins_phd_trailer = (phd / 4.0) * effTr;
          let insurance_costs_calc = ins_liab_auto + ins_liab_gen + ins_cargo + ins_trailer_interchange + ins_lago + ins_phd_premium + ins_phd_truck + ins_phd_trailer;
          
-      if (d.name === 'Dorsey Frank' && String(d.payDate).includes('05-07') && !loggedTpogDrivers.has('Dorsey Frank')) {
-           loggedTpogDrivers.add('Dorsey Frank');
+      if (d.name === 'Akeem Collins' && String(d.payDate).includes('05-07') && !loggedTpogDrivers.has('Akeem Collins')) {
+           loggedTpogDrivers.add('Akeem Collins');
            console.log('--- WEEKLY EXPENSES DEBUG | DRIVER:', d.name, ' | TYPE:', effContractType, ' | COMPANY:', d.companyId, ' | PAY DATE:', d.payDate, '---');
            console.log('FIXED TOTAL:', fixed_costs_calc);
            console.log('effNT:', effNT);
@@ -3085,7 +3099,7 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                          const lagoPU = getDetailedExpensePerUnit('LAGO', getSidebarVal('lago', 'lago_custom'));
                                          
                                          const pdPremiumData = getDetailedExpenseTotal('PD Premium');
-                                   const pdPremiumPU = getDetailedExpensePerUnit('PD Premium', getSidebarVal('physical_damage_premium', 'physical_damage_premium_custom'));
+                                   const pdPremiumPU = getDetailedExpensePerUnit('PD Premium', getSidebarVal('pd_premium', 'pd_premium_custom'));
 
                                    const pdData = getDetailedExpenseTotal('Physical Damage');
                                          const pdPU = getDetailedExpensePerUnit('Physical Damage', getSidebarVal('physical_damage', 'physical_damage_custom'));
@@ -3512,7 +3526,7 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                  {renderRow('Liability Insurance (General)', '', '', false, 1, liabGenPUTooltip, liabGenTotalTooltip, finalLiabGenPerUnit, finalLiabGenTotal)}
                                  {renderRow('Cargo Insurance', 'cargo_insurance', 'cargo_insurance_custom', false, 1, cargoPUTooltip, cargoTotalTooltip, finalCargoPerUnit, finalCargoTotal)}
                                  {renderRow('Trailer Interchange', 'trailer_interchange', 'trailer_interchange_custom', false, 1, trailerInterchangePUTooltip, trailerInterchangeTotalTooltip, finalTrailerInterchangePerUnit, finalTrailerInterchangeTotal)}
-                         {renderRow('PD Premium', 'physical_damage_premium', 'physical_damage_premium_custom', false, 1, pdPremiumPUTooltip, pdPremiumTotalTooltip, finalPdPremiumPerUnit, finalPdPremiumTotal)}
+                         {renderRow('PD Premium', 'pd_premium', 'pd_premium_custom', false, 1, pdPremiumPUTooltip, pdPremiumTotalTooltip, finalPdPremiumPerUnit, finalPdPremiumTotal)}
                          {renderRow('Physical Damage (Truck)', 'physical_damage', 'physical_damage_custom', false, 1, pdTruckPUTooltip, pdTruckTotalTooltip, finalPdTruckPerUnit, finalPdTruckTotal)}
                                  {renderRow('Physical Damage (Trailer)', 'physical_damage', 'physical_damage_custom', false, 1, pdTrailerPUTooltip, pdTrailerTotalTooltip, finalPdTrailerPerUnit, finalPdTrailerTotal)}
                               </div>
