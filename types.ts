@@ -33,6 +33,7 @@ export interface FinImportRecord {
       tech_pay?: number;
       liability_insurance?: number;
       cargo_insurance?: number;
+      lease_gap_coverage?: number;
       trailer_interchange?: number;
       lago?: number;
   physical_damage_premium?: number;
@@ -88,6 +89,8 @@ export interface DriverPerformance {
   companyPay: number; 
   marginAmount: number;
   fuelSavings: number;
+  franchise_revenue_collected?: number;
+  franchise_po?: number;
   
   // Base Expenses (Raw inputs)
   baseFuelCost: number;

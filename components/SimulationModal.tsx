@@ -79,6 +79,7 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
 { name: 'Liability Insurance (Auto)', key: 'liability_insurance', puKey: 'liability' },
 { name: 'Liability Insurance (General)', key: 'liability_insurance_general', puKey: 'liability_general' },
 { name: 'Cargo Insurance', key: 'cargo_insurance', puKey: 'cargo_w_per_unit' },
+{ name: 'Lease Gap Coverage', key: 'lease_gap_coverage', puKey: 'lease_gap_coverage_w_per_unit' },
 { name: 'Trailer Interchange', key: 'trailer_interchange', puKey: 'trailer_interchange_w_per_unit' },
 { name: 'LAGO', key: 'lago', puKey: 'lago_w_per_unit' },
 { name: 'PD Premium', key: 'physical_damage_premium', puKey: 'phd_premium_w_per_unit' },
@@ -94,10 +95,10 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
 { name: 'Tech Pay', key: 'tech_pay', puKey: 'backoffice_tech' }
 ];
 
-const availableContractTypes = Array.from(new Set(['MCLOO', 'LOO', 'LPOO', 'OO', 'MCOO', 'POG', 'TPOG', 'CPM', 'TPOG WITH FRANCHISE', ...localConfigContracts.map(c => c.contract_type)])).filter(Boolean);
+const availableContractTypes = Array.from(new Set(['MCLOO', 'LOO', 'LPOO', 'OO', 'MCOO', 'POG', 'TPOG', 'CPM', ...localConfigContracts.map(c => c.contract_type === 'TPOG WITH FRANCHISE' ? 'TPOG' : c.contract_type)])).filter(Boolean);
 
 const fixedExpenseNames = Array.from(new Set([
-'Plates', 'Factoring', 
+'CPM', 'Plates', 'Factoring', 
 ...localFixedExpenses.map(e => e.name), 
 ...customExpenseNames
 ])).filter(Boolean);
@@ -112,7 +113,7 @@ const fixedExpenseNames = Array.from(new Set([
   React.useEffect(() => {
         if (isOpen) {
           setLocalSimConfig(simulationConfig);
-          setLocalFixedExpenses([...fixedExpenses].map(e => {
+          setLocalFixedExpenses([...fixedExpenses].filter(e => e.contract_type !== 'TPOG WITH FRANCHISE' && (e as any).contractType !== 'TPOG WITH FRANCHISE').map(e => {
               const mapped: any = { ...e, original_valid_from: e.valid_from };
               if (mapped.name === 'Liability Insurance') mapped.name = 'Liability Insurance (Auto)';
               if (mapped.contract_type) {
@@ -126,7 +127,7 @@ const fixedExpenseNames = Array.from(new Set([
               const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0;
               return dateB - dateA;
           }));
-          setLocalConfigContracts(configContracts || []);
+          setLocalConfigContracts((configContracts || []).filter(c => c.contract_type !== 'TPOG WITH FRANCHISE'));
 
           const fetchFinData = async () => {
              const { data: importData } = await supabase.from('finImport').select('*').order('week_ending', { ascending: false });
@@ -141,7 +142,7 @@ const fixedExpenseNames = Array.from(new Set([
              
              const { fetchPnlConfigs } = await import('../lib/supabase');
              const loadedPnlConfigs = await fetchPnlConfigs();
-             setPnlConfigs(loadedPnlConfigs);
+             setPnlConfigs(loadedPnlConfigs.filter((c: any) => c.contract_type !== 'TPOG WITH FRANCHISE'));
           };
           fetchFinData();
     }
@@ -274,20 +275,16 @@ const fixedExpenseNames = Array.from(new Set([
   };
 
   const handleFinImportChange = (id: string | number, key: string, val: any) => {
-      setFinImportData(prev => prev.map(d => {
-          if (d.id === id) {
-              let finalVal = val;
-              if (key !== 'franchise_charge' && key !== 'shared_insurance') {
-                  finalVal = parseFloat(val) || 0;
-              }
-              return { ...d, [key]: finalVal };
-          }
-          return d;
-      }));
-      if (!modifiedFinImportIds.includes(String(id))) {
-          setModifiedFinImportIds(prev => [...prev, String(id)]);
-      }
-  };
+                 setFinImportData(prev => prev.map(d => {
+                     if (d.id === id) {
+                         return { ...d, [key]: val };
+                     }
+                     return d;
+                 }));
+                 if (!modifiedFinImportIds.includes(String(id))) {
+                     setModifiedFinImportIds(prev => [...prev, String(id)]);
+                 }
+             };
 
   const handleAddFinImportDate = async (expName: string) => {
           const fromDateStr = newFinDates[expName];
@@ -501,15 +498,21 @@ const fixedExpenseNames = Array.from(new Set([
       
       });
       
+      let processedExpandedExpenses = expandedFinalExpenses.filter(e => (e as any).contractType !== 'TPOG WITH FRANCHISE');
+      const tpogExps = processedExpandedExpenses.filter(e => (e as any).contractType === 'TPOG');
+      tpogExps.forEach(e => {
+          processedExpandedExpenses.push({ ...e, id: Math.random().toString(36).substring(2, 11), contractType: 'TPOG WITH FRANCHISE' } as any);
+      });
+
       const deletedIds = fixedExpenses
-        .filter(oe => !expandedFinalExpenses.some(fe => String(fe.id) === String(oe.id)))
+        .filter(oe => !processedExpandedExpenses.some(fe => String(fe.id) === String(oe.id)))
         .map(oe => oe.id);
 
       if (deletedIds.length > 0) {
         await supabase.from('fixed_expenses').delete().in('id', deletedIds);
       }
 
-      const expensesToSave = expandedFinalExpenses.map(exp => ({
+      const expensesToSave = processedExpandedExpenses.map(exp => ({
                id: String(exp.id),
                name: exp.name,
                amount: Number(exp.amount) || 0,
@@ -534,17 +537,28 @@ const fixedExpenseNames = Array.from(new Set([
       }
 
       if (onSaveExpenses) {
-        await onSaveExpenses(expandedFinalExpenses);
+        await onSaveExpenses(processedExpandedExpenses);
       }
 
       const { saveConfigContracts, savePnlConfigs } = await import('../lib/supabase');
-      const cleanContracts = localConfigContracts.map(c => ({
+      let cleanContracts = localConfigContracts.map(c => ({
           ...c,
           valid_from: c.valid_from && String(c.valid_from).trim() !== '' ? c.valid_from : null,
           valid_to: c.valid_to && String(c.valid_to).trim() !== '' ? c.valid_to : null
-      }));
+      })).filter(c => c.contract_type !== 'TPOG WITH FRANCHISE');
+      
+      const tpogContracts = cleanContracts.filter(c => c.contract_type === 'TPOG');
+      tpogContracts.forEach(c => {
+          cleanContracts.push({ ...c, id: Math.random().toString(36).substring(7), contract_type: 'TPOG WITH FRANCHISE' });
+      });
       await saveConfigContracts(cleanContracts);
-      await savePnlConfigs(pnlConfigs);
+
+      let finalPnlConfigs = pnlConfigs.filter(c => c.contract_type !== 'TPOG WITH FRANCHISE');
+      const tpogPnl = finalPnlConfigs.filter(c => c.contract_type === 'TPOG');
+      tpogPnl.forEach(c => {
+          finalPnlConfigs.push({ ...c, id: Math.random().toString(36).substring(7), contract_type: 'TPOG WITH FRANCHISE' });
+      });
+      await savePnlConfigs(finalPnlConfigs);
 
       if (modifiedFinImportIds.length > 0) {
           const cleanData = (dataArray: any[]) => dataArray.map(item => {
@@ -575,9 +589,9 @@ const fixedExpenseNames = Array.from(new Set([
       }
 
       setSimulationConfig(localSimConfig);
-      setFixedExpenses(expandedFinalExpenses);
+      setFixedExpenses(processedExpandedExpenses);
       if (setConfigContracts) {
-          setConfigContracts(localConfigContracts);
+          setConfigContracts(cleanContracts);
       }
 
       await new Promise(resolve => setTimeout(resolve, 1500));
@@ -654,9 +668,9 @@ const fixedExpenseNames = Array.from(new Set([
                                 <React.Fragment key={ct as string}>
                                    <tr onClick={() => setSelectedContractType(isExpanded ? '' : (ct as string))} className="cursor-pointer hover:bg-zinc-800/30 transition-colors group">
                                       <td className="p-3 text-sm font-bold text-emerald-500 flex items-center gap-2">
-                                         <ChevronDown size={14} className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`} />
-                                         {ct as string}
-                                      </td>
+                                            <ChevronDown size={14} className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`} />
+                                            {ct as string}
+                                         </td>
                                    </tr>
                                    {isExpanded && (
                                       <tr>
@@ -701,7 +715,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                const dispMarginInput = renderInputField("Disp Margin", Number((((conf as any).dispatcher_margin_percent || 0) * 100).toFixed(2)), (e: any) => handleUpdate('dispatcher_margin_percent', e.target.value), "text-purple-400");
 
                                                                const renderFormula = () => {
-                                                                  if (ct === 'TPOG' || ct === 'TPOG WITH FRANCHISE') {
+                                                                  if (ct === 'TPOG') {
                                                                      const mcGrossVal = Number(((conf as any).mc_gross_percent * 100).toFixed(2));
                                                                      const franchiseVal = Number((100 - mcGrossVal).toFixed(2));
 
@@ -735,8 +749,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                      return (
                                                                         <div className="flex flex-col gap-2 w-full">
                                                                            <select value={calcType} onChange={(e) => { const newConf = [...localConfigContracts]; const targetIndex = localConfigContracts.findIndex(x => x.id === conf.id); if(targetIndex !== -1) { newConf[targetIndex].calculation_type = e.target.value; setLocalConfigContracts(newConf); } }} className="w-max bg-zinc-950 border border-zinc-700 rounded py-1 px-2 text-[10px] text-zinc-300 focus:border-emerald-500 outline-none transition-colors h-7">
-                                                                              <option value="TPOG_NONF">Classic TPOG</option>
-                                                                              <option value="TPOG_FRANCHISE">TPOG With Franchise Formula</option>
+                                                                              <option value="TPOG_NONF">TPOG</option>
                                                                               <option value="NEW_FORMULA">New TPOG Formula</option>
                                                                            </select>
                                                                            <div className="flex items-center whitespace-nowrap text-[11px] text-zinc-300 font-mono bg-zinc-900/50 pl-3 pr-6 pt-4 pb-1.5 rounded border border-zinc-800 w-max relative z-10">
@@ -809,7 +822,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                 })()}
                                                <button onClick={() => {
                                                    const lastRule = currentRules[currentRules.length - 1];
-                                                               const defaultCalcType = lastRule ? lastRule.calculation_type : (ct === 'TPOG' ? 'TPOG_NONF' : (ct === 'TPOG WITH FRANCHISE' ? 'TPOG_FRANCHISE' : (ct === 'CPM' ? 'CPM_STYLE' : 'MCLOO_STYLE')));
+                                                               const defaultCalcType = lastRule ? lastRule.calculation_type : (ct === 'TPOG' ? 'TPOG_NONF' : (ct === 'CPM' ? 'CPM_STYLE' : 'MCLOO_STYLE'));
                                                                setLocalConfigContracts([...localConfigContracts, {
                                                       id: Math.random().toString(36).substring(7), 
                                                       contract_type: ct as string, 
@@ -982,13 +995,13 @@ const fixedExpenseNames = Array.from(new Set([
                                  const latestVal = matchedExp ? activeAmount : 0;
                                  const latestUnit = matchedExp ? (matchedExp.unit || '$') : '$';
                                  
-                                 const defaultCols = ['Plates', 'Factoring'].includes(exp.name) ? ['valid_from', 'valid_to', 'amount'] : ['valid_from', 'valid_to', 'amount', 'unit'];
-                                 const activeColumns = (expenseColumns[exp.name] || defaultCols).filter(c => !(['Plates', 'Factoring'].includes(exp.name) && c === 'unit'));
+                                 const defaultCols = ['CPM', 'Plates', 'Factoring'].includes(exp.name) ? ['valid_from', 'valid_to', 'amount'] : ['valid_from', 'valid_to', 'amount', 'unit'];
+                                 const activeColumns = (expenseColumns[exp.name] || defaultCols).filter(c => !(['CPM', 'Plates', 'Factoring'].includes(exp.name) && c === 'unit'));
 
                                  return (
                                     <React.Fragment key={exp.name}>
                                        <tr onClick={() => setSelectedExpenseName(isExpanded ? '' : exp.name)} className="cursor-pointer hover:bg-zinc-800/30 transition-colors group">
-                                          <td className={`p-3 text-sm font-bold flex items-center gap-2 ${['Plates', 'Factoring'].includes(exp.name) ? 'text-blue-400' : 'text-emerald-500'}`}>
+                                          <td className={`p-3 text-sm font-bold flex items-center gap-2 ${['CPM', 'Plates', 'Factoring'].includes(exp.name) ? 'text-blue-400' : 'text-emerald-500'}`}>
                                              <ChevronDown size={14} className={`transition-transform ${isExpanded ? 'rotate-180' : '-rotate-90'}`} />
                                              <span>{exp.name}</span>
                                           </td>
@@ -1026,6 +1039,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   >
                                                                      <option value="" disabled>Select Contract</option>
                                                                      {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c}</option>)}
+                                                                     {exp.name === 'CPM' && <option value="TPOG (Franchise PnL)">TPOG (Franchise PnL)</option>}
                                                                   </select>
                                                                ) : (
                                                                   <select
@@ -1068,7 +1082,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7">
                                                                         <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
-                                                                        <input type="number" value={(expObj.amount_before !== undefined && expObj.amount_before !== null && expObj.amount_before !== '') ? Number(expObj.amount_before) : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_before', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
+                                                                        <input type="number" value={(expObj.amount_before !== undefined && expObj.amount_before !== null && expObj.amount_before !== '') ? expObj.amount_before : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_before', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
@@ -1076,7 +1090,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7">
                                                                         <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
-                                                                        <input type="number" value={(expObj.amount_after !== undefined && expObj.amount_after !== null && expObj.amount_after !== '') ? Number(expObj.amount_after) : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_after', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
+                                                                        <input type="number" value={(expObj.amount_after !== undefined && expObj.amount_after !== null && expObj.amount_after !== '') ? expObj.amount_after : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount_after', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
@@ -1085,7 +1099,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   <td className="py-1.5 px-2">
                                                                      <div className="relative flex items-center h-7 w-32">
                                                                         <span className="absolute left-2 text-zinc-500 text-xs pointer-events-none">{expObj.unit === '%' ? '%' : '$'}</span>
-                                                                        <input type="number" value={(expObj.amount !== undefined && expObj.amount !== null && expObj.amount !== '') ? Number(expObj.amount) : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
+                                                                        <input type="number" value={(expObj.amount !== undefined && expObj.amount !== null && expObj.amount !== '') ? expObj.amount : ''} onChange={(e) => handleCompanyExpenseChange(expObj.id, 'amount', e.target.value)} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full pl-5 pr-2`} />
                                                                      </div>
                                                                   </td>
                                                                )}
@@ -1188,7 +1202,7 @@ const fixedExpenseNames = Array.from(new Set([
                                            activeAmount = matchedExp.amount_after !== undefined ? matchedExp.amount_after : (matchedExp.amount || 0);
                                        }
                                     } else {
-                                         const isComplex = ['Liability Insurance (Auto)', 'Liability Insurance (General)', 'Liability Insurance (Global)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].includes(matchedExp.name);
+                                         const isComplex = ['Liability Insurance (Auto)', 'Liability Insurance (General)', 'Liability Insurance (Global)', 'Cargo Insurance', 'Lease Gap Coverage', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].includes(matchedExp.name);
                                          if (isComplex && matchedExp.amount_before !== undefined) {
                                             activeAmount = matchedExp.amount_before;
                                         } else {
@@ -1269,7 +1283,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                           </div>
                                                       </div>
                                                    </div>
-                                                   <div className="max-h-[400px] overflow-y-auto border border-zinc-800 rounded">
+                                                   <div className="border border-zinc-800 rounded">
                                                        <table className="w-full text-left border-collapse">
                                                           <thead className="sticky top-0 bg-zinc-900 z-10">
                                                              <tr className="border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
@@ -1328,10 +1342,10 @@ const fixedExpenseNames = Array.from(new Set([
                                                                           <div className="flex items-start gap-4">
                                                                              <div className="flex items-center gap-2 mt-1">
                                                                                 <div className="flex flex-col gap-1 w-32">
-                                                                                   <div className="relative flex items-center h-7">
-                                                                                      <span className="absolute left-2 text-amber-500/50 text-xs pointer-events-none">$</span>
-                                                                                      <input type="number" value={(cRule.amount !== undefined && cRule.amount !== null && cRule.amount !== '') ? Math.round(Number(cRule.amount)) : ((cRule.amount_after !== undefined && cRule.amount_after !== null && cRule.amount_after !== '') ? Math.round(Number(cRule.amount_after)) : '')} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                      {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
+                                                                                  <div className="relative flex items-center h-7">
+                                                                                                <span className="absolute left-2 text-amber-500/50 text-xs pointer-events-none">$</span>
+                                                                                                <input type="number" value={(cRule.amount !== undefined && cRule.amount !== null && cRule.amount !== '') ? cRule.amount : ((cRule.amount_after !== undefined && cRule.amount_after !== null && cRule.amount_after !== '') ? cRule.amount_after : '')} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
+                                                                                                {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
                                                                                          <span className="absolute right-2 text-amber-500/50 text-[9px] pointer-events-none">/ pu</span>
                                                                                       ) : (
                                                                                          <div className="absolute right-2 group/tooltip flex items-center justify-center">
@@ -1414,7 +1428,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                               </div>
                                                                                            </div>
                                                                                         <div className="flex flex-col gap-1 w-full">
-                                                                                           <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
+                                                                                           <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Base Amount (Company Pay)' : 'Shared Insurance (Per Unit)'}</label>
                                                                                            <div className="flex items-center gap-3">
                                                                                               <div className="relative h-7 w-32">
                                                                                                  <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
@@ -1429,7 +1443,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                     <span>Include in Limit</span>
                                                                                                     <ChevronDown size={12} className="text-zinc-500" />
                                                                                                  </button>
-                                                                                                 <div className="absolute left-0 bottom-full mb-1 w-48 bg-zinc-900 border border-zinc-800 rounded-md shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[9999] p-2 flex flex-col gap-1.5">
+                                                                                                 <div className="absolute left-0 bottom-full mb-1 w-48 bg-zinc-950 border border-zinc-700 rounded-md shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10000] p-2 flex flex-col gap-1.5 ring-1 ring-white/10">
                                                                                                     {['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
                                                                                                        const dummyName = `MCLOO_INCLUDE_${ins}`;
                                                                                                        const isIncluded = localFixedExpenses.some(e => e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from);
@@ -1517,12 +1531,12 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                          const dFrom = new Date(cRule.valid_from);
                                                                                          const dTo = new Date(cRule.valid_to);
                                                                                          if (!isNaN(dFrom.getTime()) && !isNaN(dTo.getTime())) {
-                                                                                            const daysDiff = (dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24);
+                                                                                            const daysDiff = ((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
                                                                                             if (daysDiff > 0) weeksDivider = daysDiff / 7;
                                                                                          }
                                                                                       }
 
-                                                                                      const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
+                                                                                      const baseAmtRow = Number(cRule.amount || cRule.amount_after || 0);
                                                                                       let extraWeeklyAmt = 0;
                                                                                       ['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].forEach(ins => {
                                                                                          const dummyName = `MCLOO_INCLUDE_${ins}`;
@@ -1552,21 +1566,18 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                              }
                                                                                          }
                                                                                       });
-                                                                                      const weeklyAmt = (baseAmt / weeksDivider) + extraWeeklyAmt;
-                                                                                      const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : 0;
+                                                                                      const weeklyAmt = (baseAmtRow / weeksDivider) + extraWeeklyAmt;
+                                                                                      const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : weeklyAmt;
                                                                                       let sharedResp = 0;
                                                                                       let compPay = 0;
-                                                                                      if (effNT <= 0) {
-                                                                                          compPay = weeklyAmt;
-                                                                                          sharedResp = 0;
-                                                                                      } else if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
+                                                                                      if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
                                                                                           const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
-                                                                                          compPay = Math.min(perUnitAmt, baseLimit);
-                                                                                          sharedResp = Math.max(0, perUnitAmt - baseLimit);
+                                                                                          compPay = baseLimit;
+                                                                                          sharedResp = perUnitAmt - baseLimit;
                                                                                       } else {
                                                                                           const sharedVal = Number((cRule as any).shared_insurance || 0);
-                                                                                          compPay = perUnitAmt <= sharedVal ? perUnitAmt : perUnitAmt - sharedVal;
-                                                                                          sharedResp = perUnitAmt <= sharedVal ? 0 : sharedVal;
+                                                                                          sharedResp = sharedVal;
+                                                                                          compPay = perUnitAmt - sharedVal;
                                                                                       }
                                                                                       const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
                                                                                       const sharedRespColor = 'text-amber-500';
@@ -1831,10 +1842,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                                       const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
                                                                                                                       const savedOverride = globalOverrides.find(go => go.valid_from === vfObj.toISOString().split('T')[0]);
                                                                                                                       const hasStateCustom = (gRule as any)[`is_custom_${exp.key}`] !== undefined;
-                                                                                                                      const isCustomLocal = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
-                                                                                                                      const isTotalField = ['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key);
-                                                                                                                      
-                                                                                                                      if (isTotalField) return null;
+const isCustomLocal = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
+const isTotalField = ['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'lease_gap_coverage', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key);
+if (isTotalField) return null;
                                                                                                                       
                                                                                                                       return (
                                                                                                                          <div className="flex flex-col gap-1 mt-1">
@@ -1881,15 +1891,15 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                   const dFrom = new Date(savedOverride.valid_from);
                                                                                                   const dTo = new Date(savedOverride.valid_to);
                                                                                                   if (!isNaN(dFrom.getTime()) && !isNaN(dTo.getTime())) {
-                                                                                                     const daysDiff = (dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24);
+                                                                                                     const daysDiff = ((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
                                                                                                      if (daysDiff > 0) weeksDivider = daysDiff / 7;
                                                                                                   }
                                                                                                }
 
                                                                                                const baseAmt = isCustom ? Number(customVal) : (gRule[exp.key] || 0);
-                                                                                               let extraWeeklyAmt = 0;
-                                                                                               ['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].forEach(ins => {
-                                                                                                  const dummyName = `MCLOO_INCLUDE_${ins}`;
+let extraWeeklyAmt = 0;
+['Liability Insurance (General)', 'Cargo Insurance', 'Lease Gap Coverage', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].forEach(ins => {
+    const dummyName = `MCLOO_INCLUDE_${ins}`;
                                                                                                   const dObj = new Date(dateStr);
                                                                                                   const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
                                                                                                   const vfStr = vfObj.toISOString().split('T')[0];
@@ -1901,27 +1911,31 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                           const hasStateCustom = (gRule as any)[`is_custom_${insKeyObj.key}`] !== undefined;
                                                                                                           const isCustomIns = hasStateCustom ? !!(gRule as any)[`is_custom_${insKeyObj.key}`] : !!savedOverride;
                                                                                                           const customValIns = hasStateCustom ? ((gRule as any)[`custom_val_${insKeyObj.key}`] || '') : (savedOverride ? savedOverride.amount : '');
-                                                                                                          const baseAmtIns = isCustomIns ? Number(customValIns) : (gRule[insKeyObj.key as keyof typeof gRule] || 0);
+                                                                                                          let baseAmtIns = 0;
+                                                                                                          if (isCustomIns) {
+                                                                                                              baseAmtIns = Number(customValIns);
+                                                                                                          } else {
+                                                                                                              const puDataTemp = finImportPerUnitData.find(d => d.week_ending === dateStr);
+                                                                                                              const puValTemp = puDataTemp ? Math.abs((puDataTemp as any)[insKeyObj.puKey] || 0) : 0;
+                                                                                                              baseAmtIns = multiplier > 0 ? puValTemp * multiplier : Number((gRule as any)[insKeyObj.key] || 0);
+                                                                                                          }
                                                                                                           extraWeeklyAmt += baseAmtIns / weeksDivider;
                                                                                                       }
                                                                                                   }
                                                                                                });
                                                                                                const weeklyAmt = (baseAmt / weeksDivider) + extraWeeklyAmt;
                                                                                                const effNT = puData ? (Number(puData.eff_non_teams_total) || 0) : 0;
-                                                                                               const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : 0;
+                                                                                               const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : weeklyAmt;
                                                                                                let sharedResp = 0;
                                                                                                let compPay = 0;
-                                                                                               if (effNT <= 0) {
-                                                                                                   compPay = weeklyAmt;
-                                                                                                   sharedResp = 0;
-                                                                                               } else if ((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) {
+                                                                                               if ((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) {
                                                                                                    const baseLimit = Number((gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? 0);
-                                                                                                   compPay = Math.min(perUnitAmt, baseLimit);
-                                                                                                   sharedResp = Math.max(0, perUnitAmt - baseLimit);
+                                                                                                   compPay = baseLimit;
+                                                                                                   sharedResp = perUnitAmt - baseLimit;
                                                                                                } else {
                                                                                                    const sharedVal = Number((gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? 0);
-                                                                                                   compPay = perUnitAmt <= sharedVal ? perUnitAmt : perUnitAmt - sharedVal;
-                                                                                                   sharedResp = perUnitAmt <= sharedVal ? 0 : sharedVal;
+                                                                                                   sharedResp = sharedVal;
+                                                                                                   compPay = perUnitAmt - sharedVal;
                                                                                                }
                                                                                                const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
                                                                                                const sharedRespColor = 'text-amber-500';
@@ -1945,14 +1959,14 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                         <div className="text-[10px] text-zinc-300 font-mono font-bold h-5 flex items-center">{effNT > 0 ? perUnitAmt.toFixed(2) : weeklyAmt.toFixed(2)}</div>
                                                                                                      </div>
                                                                                                      <div className="flex flex-col gap-0.5 border-l border-zinc-800 pl-4">
-                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">{((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
+                                                                                                        <label className="text-[8px] text-zinc-400 font-bold uppercase">{((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? 'Base Amount (Company Pay)' : 'Shared Insurance (Per Unit)'}</label>
                                                                                                         <div className="flex items-center gap-2">
                                                                                                            <div className="relative h-5 w-24">
                                                                                                               <span className="absolute left-1.5 top-0.5 text-zinc-500 text-[9px] pointer-events-none">$</span>
                                                                                                               {((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) ? (
-                                                                                                                 <input type="number" value={(gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? ''} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : undefined; handleFinImportChange(gRule.id, 'company_base_for_mcloo', v as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
+                                                                                                                 <input type="number" value={(gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? ''} onChange={(e) => { handleFinImportChange(gRule.id, 'company_base_for_mcloo', e.target.value as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
                                                                                                               ) : (
-                                                                                                                 <input type="number" value={(gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? ''} onChange={(e) => { const v = e.target.value ? Number(e.target.value) : undefined; handleFinImportChange(gRule.id, 'shared_insurance', v as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
+                                                                                                                 <input type="number" value={(gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? ''} onChange={(e) => { handleFinImportChange(gRule.id, 'shared_insurance', e.target.value as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
                                                                                                               )}
                                                                                                            </div>
                                                                                                            <div className="relative group">
@@ -1960,9 +1974,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                                  <span>Include</span>
                                                                                                                  <ChevronDown size={10} />
                                                                                                               </button>
-                                                                                                              <div className="absolute left-0 bottom-full mb-1 w-40 bg-zinc-900 border border-zinc-800 rounded shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[9999] p-1 flex flex-col gap-0.5">
-                                                                                                                 {['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
-                                                                                                                    const dummyName = `MCLOO_INCLUDE_${ins}`;
+                                                                                                              <div className="absolute left-0 bottom-full mb-1 w-40 bg-zinc-950 border border-zinc-700 rounded shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10000] p-1 flex flex-col gap-0.5 ring-1 ring-white/10">
+    {['Liability Insurance (General)', 'Cargo Insurance', 'Lease Gap Coverage', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
+        const dummyName = `MCLOO_INCLUDE_${ins}`;
                                                                                                                     const dObj = new Date(dateStr);
                                                                                                                     const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
                                                                                                                     const vfStr = vfObj.toISOString().split('T')[0];
@@ -2070,10 +2084,10 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                           <div className="flex flex-col gap-1 w-32 mt-1">
                                                                                              <div className="relative flex items-center h-7">
                                                                                                 <span className="absolute left-2 text-amber-500/50 text-xs pointer-events-none">$</span>
-                                                                                                <input type="number" value={(cRule.amount !== undefined && cRule.amount !== null && cRule.amount !== '') ? Math.round(Number(cRule.amount)) : ((cRule.amount_after !== undefined && cRule.amount_after !== null && cRule.amount_after !== '') ? Math.round(Number(cRule.amount_after)) : '')} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                                {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
-                                                                                                   <span className="absolute right-2 text-amber-500/50 text-[9px] pointer-events-none">/ pu</span>
-                                                                                                ) : (
+                                                                                                <input type="number" value={(cRule.amount !== undefined && cRule.amount !== null && cRule.amount !== '') ? cRule.amount : ((cRule.amount_after !== undefined && cRule.amount_after !== null && cRule.amount_after !== '') ? cRule.amount_after : '')} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
+{!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'lease_gap_coverage', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
+    <span className="absolute right-2 text-amber-500/50 text-[9px] pointer-events-none">/ pu</span>
+) : (
                                                                                                    <div className="absolute right-2 group/tooltip flex items-center justify-center">
                                                                                                       <Info size={12} className="text-amber-500/70 hover:text-amber-500 transition-colors cursor-help" />
                                                                                                       <div className="hidden group-hover/tooltip:block absolute right-0 bottom-full mb-1 w-48 bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal z-[100] text-center border border-zinc-700 pointer-events-none">
@@ -2144,15 +2158,41 @@ const fixedExpenseNames = Array.from(new Set([
 </label>
                                                                                                         </div>
                                                                                            </div>
-                                                                                        <div className="flex flex-col gap-1 w-64">
-                                                                                           <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Max Base Amount (Company Pay)' : 'Max Shared Insurance Resp. (Per Unit)'}</label>
-                                                                                           <div className="relative h-7 w-32">
-                                                                                              <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
-                                                                                              {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? (
-                                                                                                 <input type="number" value={(cRule as any).company_base_for_mcloo ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'company_base_for_mcloo' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
-                                                                                              ) : (
-                                                                                                 <input type="number" value={(cRule as any).shared_insurance ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'shared_insurance' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
-                                                                                              )}
+                                                                                        <div className="flex flex-col gap-1 w-full">
+                                                                                           <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? 'Base Amount (Company Pay)' : 'Shared Insurance (Per Unit)'}</label>
+                                                                                           <div className="flex items-center gap-3">
+                                                                                              <div className="relative h-7 w-32">
+                                                                                                 <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
+                                                                                                 {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) ? (
+                                                                                                    <input type="number" value={(cRule as any).company_base_for_mcloo ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'company_base_for_mcloo' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
+                                                                                                 ) : (
+                                                                                                    <input type="number" value={(cRule as any).shared_insurance ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'shared_insurance' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
+                                                                                                 )}
+                                                                                              </div>
+                                                                                              <div className="relative group">
+                                                                                                 <button className="h-7 px-3 flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded text-[10px] text-zinc-300 hover:border-amber-500/50 transition-colors">
+    <span>Include in Limit</span>
+    <ChevronDown size={12} className="text-zinc-500" />
+</button>
+<div className="absolute left-0 bottom-full mb-1 w-48 bg-zinc-950 border border-zinc-700 rounded-md shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10000] p-2 flex flex-col gap-1.5 ring-1 ring-white/10">
+    {['Liability Insurance (General)', 'Cargo Insurance', 'Lease Gap Coverage', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
+        const dummyName = `MCLOO_INCLUDE_${ins}`;
+                                                                                                       const isIncluded = localFixedExpenses.some(e => e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from);
+                                                                                                       return (
+                                                                                                          <label key={ins} className="flex items-center gap-2 px-2 py-1 hover:bg-white/5 rounded cursor-pointer group/item">
+                                                                                                             <input type="checkbox" checked={isIncluded} onChange={(e) => {
+                                                                                                                if (e.target.checked) {
+                                                                                                                   setLocalFixedExpenses(prev => [...prev, { id: Math.random().toString(36).substring(2, 11), category: 'Fixed', name: dummyName, companyId: cRule.companyId, amount: 0, frequency: 'Weekly', allocationType: 'divide', unit: '$', valid_from: cRule.valid_from, is_standalone: true } as any]);
+                                                                                                                } else {
+                                                                                                                   setLocalFixedExpenses(prev => prev.filter(e => !(e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from)));
+                                                                                                                }
+                                                                                                             }} className="w-3 h-3 accent-amber-500" />
+                                                                                                             <span className="text-[10px] text-zinc-400 group-hover/item:text-zinc-200">{ins}</span>
+                                                                                                          </label>
+                                                                                                       );
+                                                                                                    })}
+                                                                                                 </div>
+                                                                                              </div>
                                                                                            </div>
                                                                                         </div>
                                                                                      </div>
@@ -2222,27 +2262,24 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                const dFrom = new Date(cRule.valid_from);
                                                                                                const dTo = new Date(cRule.valid_to);
                                                                                                if (!isNaN(dFrom.getTime()) && !isNaN(dTo.getTime())) {
-                                                                                                  const daysDiff = (dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24);
+                                                                                                  const daysDiff = ((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
                                                                                                   if (daysDiff > 0) weeksDivider = daysDiff / 7;
                                                                                                }
                                                                                             }
 
                                                                                             const baseAmt = Number(cRule.amount || cRule.amount_after || 0);
                                                                                             const weeklyAmt = baseAmt / weeksDivider;
-                                                                                            const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : 0;
+                                                                                            const perUnitAmt = effNT > 0 ? weeklyAmt / effNT : weeklyAmt;
                                                                                             let sharedResp = 0;
                                                                                             let compPay = 0;
-                                                                                            if (effNT <= 0) {
-                                                                                                compPay = weeklyAmt;
-                                                                                                sharedResp = 0;
-                                                                                            } else if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
+                                                                                            if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
                                                                                                 const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
-                                                                                                compPay = Math.min(perUnitAmt, baseLimit);
-                                                                                                sharedResp = Math.max(0, perUnitAmt - baseLimit);
+                                                                                                compPay = baseLimit;
+                                                                                                sharedResp = perUnitAmt - baseLimit;
                                                                                             } else {
                                                                                                 const sharedVal = Number((cRule as any).shared_insurance || 0);
-                                                                                                compPay = perUnitAmt <= sharedVal ? perUnitAmt : perUnitAmt - sharedVal;
-                                                                                                sharedResp = perUnitAmt <= sharedVal ? 0 : sharedVal;
+                                                                                                sharedResp = sharedVal;
+                                                                                                compPay = perUnitAmt - sharedVal;
                                                                                             }
                                                                                             const compPayColor = compPay > 0 ? 'text-rose-500' : compPay < 0 ? 'text-emerald-500' : 'text-zinc-400';
                                                                                             const sharedRespColor = 'text-amber-500';
@@ -2469,8 +2506,8 @@ if (currentFranchiseCharge === undefined) {
                                 <div className="flex flex-wrap items-center gap-4 mt-2 pt-2 border-t border-zinc-800/30">
                                    <span className="text-[10px] font-bold text-zinc-500 uppercase">Visible columns:</span>
                                    {(() => {
-                                      const defaultCols = ['Plates', 'Factoring'].includes(en) ? ['valid_from', 'valid_to', 'amount'] : ['valid_from', 'valid_to', 'amount', 'unit'];
-                                      const activeColumns = (expenseColumns[en] || defaultCols).filter(c => !(['Plates', 'Factoring'].includes(en) && c === 'unit'));
+                                      const defaultCols = ['CPM', 'Plates', 'Factoring'].includes(en) ? ['valid_from', 'valid_to', 'amount'] : ['valid_from', 'valid_to', 'amount', 'unit'];
+                                      const activeColumns = (expenseColumns[en] || defaultCols).filter(c => !(['CPM', 'Plates', 'Factoring'].includes(en) && c === 'unit'));
                                       const toggleColumn = (col: string) => {
                                           if (activeColumns.includes(col)) {
                                               setExpenseColumns({...expenseColumns, [en]: activeColumns.filter(c => c !== col)});
@@ -2484,7 +2521,7 @@ if (currentFranchiseCharge === undefined) {
                                          { id: 'amount_before', label: 'Amount Before' },
                                          { id: 'amount_after', label: 'Amount After' },
                                          { id: 'amount', label: 'Amount' },
-                                         ...(['Plates', 'Factoring'].includes(en) ? [] : [{ id: 'unit', label: 'Unit' }])
+                                         ...(['CPM', 'Plates', 'Factoring'].includes(en) ? [] : [{ id: 'unit', label: 'Unit' }])
                                       ];
                                       return allPossibleCols.map(col => (
                                           <label key={col.id} className="flex items-center gap-1.5 cursor-pointer">

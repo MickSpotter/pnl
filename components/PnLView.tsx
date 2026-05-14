@@ -12,6 +12,18 @@ import Simulator from './Simulator';
 
 let hasPlayedInitialAnimations = false;
 
+const getWeeklyAmountFromExp = (amount: number, exp?: any) => {
+  if (!exp) return amount;
+  if (exp.valid_from && exp.valid_to) {
+    const dFrom = new Date(exp.valid_from);
+    const dTo = new Date(exp.valid_to);
+    const daysDiff = Math.round((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    if (daysDiff > 0) return amount / (daysDiff / 7);
+  }
+  if (exp.frequency === 'Annually') return amount / 52;
+  if (exp.frequency === 'Monthly') return amount / 4.33;
+  return amount;
+};
 interface PnLViewProps {
   allDrivers?: DriverPerformance[];
   drivers: DriverPerformance[];
@@ -126,7 +138,7 @@ const MasterTable: React.FC<{
             margin: 0, fuelSavings: 0, cogs: 0, dispatcherPay: 0, allocatedFixed: 0, baseFixed: 0, adjFixed: 0, totalPO: 0, totalPOCov: 0,
             totalEscrow: 0, totalBalance: 0, totalRecruiting: 0, netIncome: 0, effNonTeams: 0, pnlPerDriver: 0,
             driverPay: 0, fuel: 0, maint: 0, tolls: 0, faults: 0, insuranceExp: 0,
-            insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0
+            insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0
           };
           driversByName.forEach((drvRecords) => {
             const m = calculateMetrics(drvRecords, true);
@@ -160,6 +172,7 @@ const MasterTable: React.FC<{
             t.insLiabAuto += m.insLiabAuto || 0;
             t.insLiabGen += m.insLiabGen || 0;
             t.insCargo += m.insCargo || 0;
+            t.insLeaseGapCoverage += m.insLeaseGapCoverage || 0;
             t.insTrailerInterchange += m.insTrailerInterchange || 0;
             t.insLago += m.insLago || 0;
             t.insPhdPremium += m.insPhdPremium || 0;
@@ -214,7 +227,31 @@ const MasterTable: React.FC<{
         }
         const activeDrivers = rows.flatMap(r => r.drivers);
         const t = getAggregatedMetrics(activeDrivers);
-        const overallW4 = get4wMetrics('COMPANY');
+        let overallW4 = get4wMetrics('COMPANY');
+        
+        const tpogFranchiseDrivers = activeDrivers.filter(d => d.contractType === 'TPOG' && !!d.franchiseId).map(d => ({
+            ...d,
+            companyPay: (d as any).franchise_revenue_collected || 0,
+            fixed_costs: (d as any).franchise_fixed_costs_full || 0,
+            poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
+            poAmount: (d as any).franchise_po || 0
+        }));
+        
+        if (tpogFranchiseDrivers.length > 0) {
+            const rawF = getAggregatedMetrics(tpogFranchiseDrivers);
+            const fMetrics: any = { ...rawF };
+            const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver'];
+            
+            Object.keys(fMetrics).forEach(k => {
+                if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
+                    fMetrics[k] = fMetrics[k] / 2;
+                }
+            });
+
+            t.netIncome -= fMetrics.netIncome;
+            t.pnlPerDriver = t.effNonTeams > 0 ? t.netIncome / t.effNonTeams : 0;
+        }
+
         return { ...t, w4Sum: overallW4.sum, w4Avg: overallW4.avg };
       })();
 
@@ -290,8 +327,8 @@ const MasterTable: React.FC<{
           <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabAuto, div)))}</span></div>
           <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabGen, div)), 2)}</span></div>
           <div className="flex justify-between gap-4"><span>Cargo:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insCargo, div)))}</span></div>
+          <div className="flex justify-between gap-4"><span>Lease Gap Coverage:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLeaseGapCoverage, div)))}</span></div>
           <div className="flex justify-between gap-4"><span>Trailer Interchange:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insTrailerInterchange, div)))}</span></div>
-          <div className="flex justify-between gap-4"><span>LAGO:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLago, div)))}</span></div>
           <div className="flex justify-between gap-4"><span>PhD Premium:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdPremium, div)))}</span></div>
           <div className="flex justify-between gap-4"><span>PhD Truck:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTruck, div)))}</span></div>
           <div className="flex justify-between gap-4"><span>PhD Trailer:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTrailer, div)))}</span></div>
@@ -514,13 +551,67 @@ const MasterTable: React.FC<{
           })}
          {groupBy === 'Contract' && sortArray(uniqueContracts, 'Contract').map(contractName => {
             const compDrivers = groupedDrivers.get(contractName || 'Unassigned') || [];
-            const metrics = getAggregatedMetrics(compDrivers);
-            const w4 = get4wMetrics(contractName);
+            let metrics = getAggregatedMetrics(compDrivers);
+            let w4 = get4wMetrics(contractName);
+            
+            let fMetrics: any = null;
+            let franchiseW4: any = null;
+
+            if (contractName === 'TPOG') {
+               const tpogFranchiseDrivers = compDrivers.filter(d => !!d.franchiseId).map(d => ({
+                   ...d,
+                   companyPay: (d as any).franchise_revenue_collected || 0,
+                   fixed_costs: (d as any).franchise_fixed_costs_full || 0,
+                   poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
+                   poAmount: (d as any).franchise_po || 0
+               }));
+               
+               if (tpogFranchiseDrivers.length > 0) {
+                   const rawMetrics = getAggregatedMetrics(tpogFranchiseDrivers);
+                   fMetrics = { ...rawMetrics };
+                   
+                   const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver'];
+                   
+                   Object.keys(fMetrics).forEach(k => {
+                       if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
+                           fMetrics[k] = fMetrics[k] / 2;
+                       }
+                   });
+                   
+                   franchiseW4 = get4wMetrics('TPOG (Franchise PnL)');
+
+                   Object.keys(metrics).forEach(k => {
+                       if (!doNotDivide.includes(k) && typeof (metrics as any)[k] === 'number' && typeof fMetrics[k] === 'number') {
+                           (metrics as any)[k] -= fMetrics[k];
+                       }
+                   });
+                   w4 = { sum: w4.sum - franchiseW4.sum, avg: w4.avg - franchiseW4.avg };
+               }
+            }
+
             return (
-              <tr key={contractName} className="group hover:bg-zinc-800/20 transition-colors">
-                <td className="px-1 py-0.5 font-bold text-emerald-400 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{contractName}</td>
-                {renderRowCells(metrics, w4)}
-              </tr>
+              <React.Fragment key={contractName}>
+                <tr className="group hover:bg-zinc-800/20 transition-colors">
+                  <td className="px-1 py-0.5 font-bold text-emerald-400 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{contractName}</td>
+                  {renderRowCells(metrics, w4)}
+                </tr>
+                {fMetrics && (
+                     <tr key="TPOG_FRANCHISE_ROW" className="group hover:bg-zinc-800/20 transition-colors">
+                       <td className="px-1 py-0.5 font-bold text-amber-400 font-sans sticky left-0 z-10 group-hover:z-[100] !overflow-visible bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)] pl-4">
+                         <div className="flex items-center gap-1.5">
+                           <span>└ TPOG (Franchise PnL)</span>
+                           <div className="group/fran_info flex items-center cursor-help">
+                             <Info size={12} className="text-amber-500/70 hover:text-amber-400 transition-colors" />
+                             <div className="fixed hidden group-hover/fran_info:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] whitespace-normal w-56 pointer-events-none ml-4 mt-6 font-normal normal-case text-left">
+                               This row displays the franchise's share of the PnL for TPOG contracts. It is shown for informational purposes only and does not affect the Total PnL, as the adjustments are already accounted for in the main TPOG row above.
+                             </div>
+                           </div>
+                         </div>
+                       </td>
+                       {renderRowCells(fMetrics, franchiseW4)}
+                     </tr>
+                )}
+              </React.Fragment>
             );
           })}
          {groupBy === 'Franchise' && sortArray(uniqueFranchises, 'Franchise').map(franchiseName => {
@@ -658,8 +749,8 @@ const MasterTable: React.FC<{
                         <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabAuto, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabGen, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>Cargo:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insCargo, div)))}</span></div>
+                        <div className="flex justify-between gap-4"><span>Lease Gap Coverage:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLeaseGapCoverage, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>Trailer Interchange:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insTrailerInterchange, div)))}</span></div>
-                        <div className="flex justify-between gap-4"><span>LAGO:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLago, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>PhD Premium:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdPremium, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>PhD Truck:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdTruck, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>PhD Trailer:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdTrailer, div)))}</span></div>
@@ -711,14 +802,12 @@ const PnLView: React.FC<PnLViewProps> = ({
   }, [allDrivers, drivers]);
   const allUniqueFranchises = useMemo(() => Array.from(new Set((allDrivers || drivers).map(d => d.franchiseId))).filter(Boolean).sort() as string[], [allDrivers, drivers]);
   const allUniqueTeams = useMemo(() => Array.from(new Set((allDrivers || drivers).map(d => d.teamId))).filter(Boolean).sort() as string[], [allDrivers, drivers]);
-  const driverWithEffectiveContractsGlobal = useMemo(() => {
+ const driverWithEffectiveContractsGlobal = useMemo(() => {
       const src = allDrivers || drivers;
       return src.map(d => {
           let effContract = d.contractType;
           if (d.contractType === 'TPOG' && d.franchiseId) {
               effContract = 'TPOG WITH FRANCHISE';
-          } else if (d.contractType === 'OO' && d.franchiseId && src.some(m => m.contractType === 'MCLOO' && m.franchiseId === d.franchiseId)) {
-              effContract = 'OO WITH FRANCHISE';
           }
           return { ...d, contractType: effContract };
       });
@@ -743,7 +832,7 @@ const PnLView: React.FC<PnLViewProps> = ({
     if (category === 'teams') rawOptions = subset.map(d => d.teamId || '');
     if (category === 'drivers') rawOptions = subset.map(d => d.name || '');
 
-    return Array.from(new Set(rawOptions)).filter(Boolean).sort() as string[];
+    return Array.from(new Set(rawOptions)).filter(opt => Boolean(opt) && opt !== 'Unassigned' && opt !== 'UNRECONCILED').sort() as string[];
   }, [allDrivers, globalFilter]);
 
   const updateGlobalFilter = (category: string, selected: string[]) => {
@@ -886,7 +975,7 @@ const PnLView: React.FC<PnLViewProps> = ({
   }, [parsedFinImportData, uniqueDates]);
 
   const getActiveAmount = useCallback((expName: string, currentDate: string | null, companyId?: string, activeCompanyCount: number = 1) => {
-    const currTime = currentDate ? new Date(currentDate).getTime() : Date.now();
+    const currTime = (currentDate ? new Date(currentDate).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
     
     const evaluateExp = (matchedExp: ExpenseItem) => {
           if (matchedExp.threshold_date) {
@@ -1045,9 +1134,8 @@ const PnLView: React.FC<PnLViewProps> = ({
       if (truckBaseFixed === 0 && !truckExp) {
           baseTruckPrice = -Math.abs(Number(avgTruckPrice) || 0);
       } else {
-          if (truckExp?.frequency === 'Annually') truckBaseFixed = truckBaseFixed / 52;
-          else if (truckExp?.frequency === 'Monthly') truckBaseFixed = truckBaseFixed / 4.33;
-          baseTruckPrice = -Math.abs(truckBaseFixed);
+          truckBaseFixed = getWeeklyAmountFromExp(truckBaseFixed, truckExp);
+              baseTruckPrice = -Math.abs(truckBaseFixed);
       }
       
       let trailerBaseFixed = getActiveAmount('Trailer', date).amount;
@@ -1056,9 +1144,8 @@ const PnLView: React.FC<PnLViewProps> = ({
       if (trailerBaseFixed === 0 && !trailerExp) {
           baseTrailerPrice = -Math.abs(Number(avgTrailerPrice) || 0);
       } else {
-          if (trailerExp?.frequency === 'Annually') trailerBaseFixed = trailerBaseFixed / 52;
-          else if (trailerExp?.frequency === 'Monthly') trailerBaseFixed = trailerBaseFixed / 4.33;
-          baseTrailerPrice = -Math.abs(trailerBaseFixed);
+          trailerBaseFixed = getWeeklyAmountFromExp(trailerBaseFixed, trailerExp);
+              baseTrailerPrice = -Math.abs(trailerBaseFixed);
       }
       
       
@@ -1080,8 +1167,8 @@ const PnLView: React.FC<PnLViewProps> = ({
          }
          let v_c6 = 0;
          if (r_c6 !== 0 || exp_c6) {
-             v_c6 = -(exp_c6?.frequency === 'Annually' ? r_c6 / 52 : exp_c6?.frequency === 'Monthly' ? r_c6 / 4.33 : r_c6);
-         } else if (rawFinImportData) {
+                 v_c6 = -getWeeklyAmountFromExp(r_c6, exp_c6);
+             } else if (rawFinImportData) {
              v_c6 = globalEffNonTeams > 0 ? -(rawFinImportData.liability_insurance || 0) / globalEffNonTeams : 0;
          }
 
@@ -1089,8 +1176,8 @@ const PnLView: React.FC<PnLViewProps> = ({
          let exp_c7 = getActiveAmount('Cargo Insurance', date).exp;
          let v_c7 = 0;
          if (r_c7 !== 0 || exp_c7) {
-             v_c7 = -(exp_c7?.frequency === 'Annually' ? r_c7 / 52 : exp_c7?.frequency === 'Monthly' ? r_c7 / 4.33 : r_c7);
-         } else if (rawFinImportData) {
+                 v_c7 = -getWeeklyAmountFromExp(r_c7, exp_c7);
+             } else if (rawFinImportData) {
              v_c7 = globalEffNonTeams > 0 ? -(rawFinImportData.cargo_insurance || 0) / globalEffNonTeams : 0;
          }
 
@@ -1098,8 +1185,8 @@ const PnLView: React.FC<PnLViewProps> = ({
          let exp_c8 = getActiveAmount('Physical Damage', date).exp;
          let v_c8 = 0;
          if (r_c8 !== 0 || exp_c8) {
-             v_c8 = -(exp_c8?.frequency === 'Annually' ? r_c8 / 52 : exp_c8?.frequency === 'Monthly' ? r_c8 / 4.33 : r_c8);
-         } else if (rawFinImportData) {
+                 v_c8 = -getWeeklyAmountFromExp(r_c8, exp_c8);
+             } else if (rawFinImportData) {
              v_c8 = globalEffNonTeams > 0 ? -(rawFinImportData.physical_damage || 0) / globalEffNonTeams : 0;
          }
          
@@ -1123,8 +1210,8 @@ const PnLView: React.FC<PnLViewProps> = ({
          const telematicsAmt = getActiveAmount('Telematics', date).amount || getActiveAmount('ELD & Telematics', date).amount;
          const telematicsExp = getActiveAmount('Telematics', date).exp || getActiveAmount('ELD & Telematics', date).exp;
          if (telematicsAmt !== 0 || telematicsExp) {
-             val_c25 = -(telematicsExp?.frequency === 'Annually' ? telematicsAmt / 52 : telematicsExp?.frequency === 'Monthly' ? telematicsAmt / 4.33 : telematicsAmt);
-         } else if (globalMatch) {
+                 val_c25 = -getWeeklyAmountFromExp(telematicsAmt, telematicsExp);
+             } else if (globalMatch) {
              const gTelematics = globalMatch.telematics || 0;
              const compTelematics = gTelematics * (cTotalNonTeams / globalEffNonTeams);
              val_c25 = cTotalNonTeams > 0 ? -(compTelematics / cTotalNonTeams) : 0;
@@ -1146,11 +1233,9 @@ const PnLView: React.FC<PnLViewProps> = ({
                  exp = getActiveAmount(item.alt, date).exp;
              }
              if (amt !== 0 || exp) {
-                 let perUnit = amt;
-                 if (exp?.frequency === 'Annually') perUnit = amt / 52;
-                 else if (exp?.frequency === 'Monthly') perUnit = amt / 4.33;
-                 val_c16_c21 -= perUnit;
-             } else if (globalMatch) {
+                     let perUnit = getWeeklyAmountFromExp(amt, exp);
+                     val_c16_c21 -= perUnit;
+                 } else if (globalMatch) {
                  const gItem = globalMatch[item.key] || 0;
                  const compItem = gItem * (cTotalNonTeams / globalEffNonTeams);
                  val_c16_c21 -= cTotalNonTeams > 0 ? (compItem / cTotalNonTeams) : 0;
@@ -1161,10 +1246,8 @@ const PnLView: React.FC<PnLViewProps> = ({
          let customFixedPerNT = 0;
          customExpenseNames.forEach(expName => {
              const { amount, exp } = getActiveAmount(expName, date, compId, uniqueCompsInWeek.length);
-             let weeklyAmount = amount;
-             if (exp?.frequency === 'Annually') weeklyAmount = amount / 52;
-             if (exp?.frequency === 'Monthly') weeklyAmount = amount / 4.33;
-             const isDivide = exp?.allocationType === 'divide' || exp?.allocationType === 'global' || !exp?.allocationType;
+                 let weeklyAmount = getWeeklyAmountFromExp(amount, exp);
+                 const isDivide = exp?.allocationType === 'divide' || exp?.allocationType === 'global' || !exp?.allocationType;
              if (isDivide) {
                  customFixedPerNT += cTotalNonTeams > 0 ? -(weeklyAmount / cTotalNonTeams) : 0;
              } else {
@@ -1182,12 +1265,8 @@ const PnLView: React.FC<PnLViewProps> = ({
 
       weekDrivers.forEach(d => {
         let effContractType = d.contractType || '';
-        if (d.contractType === 'TPOG' && d.franchiseId) {
-            effContractType = 'TPOG WITH FRANCHISE';
-        } else if (d.contractType === 'OO' && d.franchiseId && weekDrivers.some(m => m.contractType === 'MCLOO' && m.franchiseId === d.franchiseId)) {
-            effContractType = 'OO WITH FRANCHISE';
-        }
-
+        const isFranchise = d.contractType === 'TPOG' && !!d.franchiseId;
+        
         const effNT = d.effectiveNonTeams || 0;
         const effTr = (d as any).effectiveTrailers || 0;
         const gross = d.totalGross || ((d.grossRevenue || 0) + (d.marginAmount || 0));
@@ -1263,8 +1342,8 @@ const PnLView: React.FC<PnLViewProps> = ({
                       (el.contract_type || '').replace(/\s+/g, '').toLowerCase() === effContractType.replace(/\s+/g, '').toLowerCase() &&
                       (el.expense_name || '').toLowerCase().includes(expenseNameKeyword.toLowerCase())
                   );
-                  if (contractRule && contractRule.cpm !== undefined && contractRule.cpm !== null) {
-                      cpm = Math.abs(Number(contractRule.cpm));
+                  if (contractRule && contractRule.amount !== undefined && contractRule.amount !== null) {
+                      cpm = Math.abs(Number(contractRule.amount));
                   }
               }
               if (cpm === null) {
@@ -1277,8 +1356,8 @@ const PnLView: React.FC<PnLViewProps> = ({
                           (el.company_id || '').replace(/\s+/g, '').toLowerCase() === (d.companyId || '').replace(/\s+/g, '').toLowerCase() &&
                           (el.expense_name || '').toLowerCase().includes(expenseNameKeyword.toLowerCase())
                       );
-                      if (compRule && compRule.cpm !== undefined && compRule.cpm !== null) {
-                          cpm = Math.abs(Number(compRule.cpm));
+                      if (compRule && compRule.amount !== undefined && compRule.amount !== null) {
+                          cpm = Math.abs(Number(compRule.amount));
                       }
                   }
               }
@@ -1292,22 +1371,43 @@ const PnLView: React.FC<PnLViewProps> = ({
           };
 
         let liabilityAuto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
+        let sharedInsLiabActive = getActiveAmount('Shared Insurance Liability', date, d.companyId, uniqueCompsInWeek.length);
+        let sharedInsLiab = sharedInsLiabActive.amount !== 0 || sharedInsLiabActive.exp ? Math.abs(getWeeklyAmountFromExp(sharedInsLiabActive.amount, sharedInsLiabActive.exp)) : getFcRule('Shared Insurance Liability', 'shared_insurance_liability_custom', 'shared_insurance_liability');
+        liabilityAuto = liabilityAuto > sharedInsLiab ? liabilityAuto - sharedInsLiab : 0;
         let liabilityGeneral = getFcRule('Liability Insurance (General)', '', '');
         let liabilityGlobal = getFcRule('Liability Insurance (Global)', '', '');
         let liability = liabilityAuto + liabilityGlobal;
-        let sharedLiabilityValue = 0;
+        let sharedLiabilityValue = sharedInsLiab;
         
-        let cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
-        let trailerInterchange = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
-        let lago = getFcRule('LAGO', 'lago_custom', 'lago');
-        let phd_premium = getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium');
-        let phd = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
+        let cargoActive = getActiveAmount('Cargo Insurance', date, d.companyId, uniqueCompsInWeek.length);
+        let cargo = cargoActive.amount !== 0 || cargoActive.exp ? Math.abs(getWeeklyAmountFromExp(cargoActive.amount, cargoActive.exp)) : getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
+
+        let leaseGapActive = getActiveAmount('Lease Gap Coverage', date, d.companyId, uniqueCompsInWeek.length);
+        let leaseGap = leaseGapActive.amount !== 0 || leaseGapActive.exp ? Math.abs(getWeeklyAmountFromExp(leaseGapActive.amount, leaseGapActive.exp)) : getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage');
+        
+        let tiActive = getActiveAmount('Trailer Interchange', date, d.companyId, uniqueCompsInWeek.length);
+        let trailerInterchange = tiActive.amount !== 0 || tiActive.exp ? Math.abs(getWeeklyAmountFromExp(tiActive.amount, tiActive.exp)) : getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
+        
+        let lagoActive = getActiveAmount('LAGO', date, d.companyId, uniqueCompsInWeek.length);
+        let lago = 0;
+        if (lagoActive.amount !== 0 || lagoActive.exp) {
+            let weekly = Math.abs(getWeeklyAmountFromExp(lagoActive.amount, lagoActive.exp));
+            lago = globalEffNonTeams > 0 ? weekly / globalEffNonTeams : 0;
+        } else {
+            lago = getFcRule('LAGO', 'lago_custom', 'lago');
+        }
+        
+        let phdPremiumActive = getActiveAmount('PD Premium', date, d.companyId, uniqueCompsInWeek.length);
+        let phd_premium = phdPremiumActive.amount !== 0 || phdPremiumActive.exp ? Math.abs(getWeeklyAmountFromExp(phdPremiumActive.amount, phdPremiumActive.exp)) : getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium');
+        
+        let phdActive = getActiveAmount('Physical Damage', date, d.companyId, uniqueCompsInWeek.length);
+        let phd = phdActive.amount !== 0 || phdActive.exp ? Math.abs(getWeeklyAmountFromExp(phdActive.amount, phdActive.exp)) : getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
 
         if (d.contractType === 'MCLOO') {
-            const currTime = date ? new Date(date).getTime() : Date.now();
+            const currTime = (date ? new Date(date).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
             const isValidVal = (val: any) => val !== undefined && val !== null && String(val).trim() !== '';
 
-            let matchedExp = fixedExpenses.find(e => 
+            let matchedExp = fixedExpenses.find(e =>
                 (e.companyId || '').replace(/\s+/g, '').toLowerCase() === (d.companyId || '').replace(/\s+/g, '').toLowerCase() && 
                 (isValidVal((e as any).shared_liability) || isValidVal((e as any).shared_insurance) || isValidVal((e as any).company_base_for_mcloo)) &&
                 (!e.valid_from || new Date(e.valid_from).getTime() <= currTime) &&
@@ -1330,6 +1430,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                          
                          if (checkIncluded('Liability Insurance (General)')) { totalAmount += liabilityGeneral; liabilityGeneral = 0; }
                          if (checkIncluded('Cargo Insurance')) { totalAmount += cargo; cargo = 0; }
+                         if (checkIncluded('Lease Gap Coverage')) { totalAmount += leaseGap; leaseGap = 0; }
                          if (checkIncluded('Trailer Interchange')) { totalAmount += trailerInterchange; trailerInterchange = 0; }
                          if (checkIncluded('LAGO')) { totalAmount += lago; lago = 0; }
                          if (checkIncluded('PD Premium')) { totalAmount += phd_premium; phd_premium = 0; }
@@ -1350,8 +1451,8 @@ const PnLView: React.FC<PnLViewProps> = ({
                     liability = liabilityAuto + liabilityGeneral + liabilityGlobal;
                  }
 
-         if (d.name === 'Angela Sega' && effContractType === 'MCLOO' && String(d.payDate).includes('04-09')) {
-             console.log('--- DEBUG LIABILITY: Angela Sega | Pay Date:', d.payDate, '---');
+         if ((d.name === 'Alonzo Proyer' || d.name === 'Allen Dixon') && d.payDate === '2026-05-07') {
+             console.log(`--- DEBUG LIABILITY: ${d.name} | Pay Date: ${d.payDate} ---`);
              console.log('Company:', d.companyId);
              console.log('1. liabilityAuto:', liabilityAuto);
              console.log('2. liabilityGeneral:', liabilityGeneral);
@@ -1378,7 +1479,7 @@ const PnLView: React.FC<PnLViewProps> = ({
         const backoffice_reg = getFcRule('Back Office Pay', 'backoffice_reg_custom', 'backoffice_reg');
         const backoffice_tech = getFcRule('Tech Pay', 'backoffice_tech_custom', 'backoffice_tech');
          const truck_weekly = getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly');
-         const truck_cpm = getFcRuleCpm('Truck Price', 'truck_price_cpm', 'truck_price_cpm');
+         const truck_cpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm');
          const trailer_weekly = getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
          
          const isOO = d.contractType === 'OO';
@@ -1387,66 +1488,136 @@ const PnLView: React.FC<PnLViewProps> = ({
          const driver_gross = Number(d.grossRevenue || 0);
          const margin_amt = Number(d.marginAmount || 0);
          
-         let fixed_costs_calc = 0;
-         if (isOO) {
-             fixed_costs_calc =
-                 (effNT * (liability + cargo + trailerInterchange + lago + phone_and_internet + office_supplies + rent_and_parking + backup_mc + backoffice_reg + backoffice_tech)) +
-                 (effTr * (trailer_weekly + (phd / 4.0))) +
-                 ((driver_gross + margin_amt) * (factoring / 100.0)) +
-                 (truck_cpm * (Number(d.milesDriven) || 0));
+         if (d.contractType === 'MCLOO') {
+             cargo = cargo === 0 ? 0 : getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
+             leaseGap = leaseGap === 0 ? 0 : getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage');
+             trailerInterchange = trailerInterchange === 0 ? 0 : getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
+             lago = lago === 0 ? 0 : getFcRule('LAGO', 'lago_custom', 'lago');
+             phd_premium = phd_premium === 0 ? 0 : getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium');
+             phd = phd === 0 ? 0 : getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
          } else {
-             fixed_costs_calc =
-                 (effNT * (liability + cargo + trailerInterchange + lago + phd_premium + phd + truck_weekly + plates + telematics + phone_and_internet + office_supplies + rent_and_parking + backup_mc + backoffice_reg + backoffice_tech)) +
-                 (effTr * (trailer_weekly + (phd / 4.0))) +
-                 ((driver_gross + margin_amt) * (factoring / 100.0)) +
-                 (truck_cpm * (Number(d.milesDriven) || 0));
-             if (isGarland) {
-                 fixed_costs_calc -= effNT * (truck_weekly + phd_premium + phd + plates);
-             }
+             cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
+             leaseGap = getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage');
+             trailerInterchange = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
+             lago = getFcRule('LAGO', 'lago_custom', 'lago');
+             phd_premium = getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium');
+             phd = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
          }
 
-         let ins_liab_auto = liabilityAuto * effNT;
-         let ins_liab_gen = (liabilityGeneral + liabilityGlobal) * effNT;
+         let company_fixed_full = 0;
+         let franchise_fixed_full = 0;
+
+         const calculateFixedForType = (type: string) => {
+             effContractType = type;
+             let l_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
+             let s_liab_act = getActiveAmount('Shared Insurance Liability', date, d.companyId, uniqueCompsInWeek.length);
+             let s_liab = s_liab_act.amount !== 0 || s_liab_act.exp ? Math.abs(getWeeklyAmountFromExp(s_liab_act.amount, s_liab_act.exp)) : getFcRule('Shared Insurance Liability', 'shared_insurance_liability_custom', 'shared_insurance_liability');
+             l_auto = l_auto > s_liab ? l_auto - s_liab : 0;
+             const l_gl = getFcRule('Liability Insurance (Global)', '', '');
+             const l_total = l_auto + l_gl;
+             const c_cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
+             const c_lease_gap = getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage');
+             const c_ti = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
+             const c_lago = getFcRule('LAGO', 'lago_custom', 'lago');
+             const c_phd_p = getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium');
+             const c_phd = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
+             const c_plates = getFcRule('Plates', 'plates_custom', 'plates');
+             const c_fact = getFcRule('Factoring', 'factoring_custom', 'factoring');
+             const c_tel = getFcRule('Telematics', 'telematics_custom', 'telematics');
+             const c_phone = getFcRule('Phone & Internet', 'phone_and_internet_custom', 'phone_and_internet');
+             const c_off = getFcRule('Office Supplies', 'office_supplies_custom', 'office_supplies');
+             const c_rent = getFcRule('Rent & Parking', 'rent_and_parking_custom', 'rent_and_parking');
+             const c_bmc = getFcRule('Backup MC', 'backup_mc_custom', 'backup_mc');
+             const c_boreg = getFcRule('Back Office Pay', 'backoffice_reg_custom', 'backoffice_reg');
+             const c_botech = getFcRule('Tech Pay', 'backoffice_tech_custom', 'backoffice_tech');
+             const c_tw = getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly');
+             const c_tcpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm');
+             const c_trw = getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
+
+             let total = (effNT * (l_total + c_cargo + c_lease_gap + c_ti + c_lago + c_phd_p + c_phd + c_tw + c_plates + c_tel + c_phone + c_off + c_rent + c_bmc + c_boreg + c_botech)) +
+                         (effTr * (c_trw + (c_phd / 4.0))) +
+                         ((driver_gross + margin_amt) * (c_fact / 100.0)) +
+                         (c_tcpm * (Number(d.milesDriven) || 0));
+             return total;
+         };
+
+         if (isOO) {
+             company_fixed_full = (effNT * (liability + cargo + leaseGap + trailerInterchange + lago + phone_and_internet + office_supplies + rent_and_parking + backup_mc + backoffice_reg + backoffice_tech)) + (effTr * (trailer_weekly + (phd / 4.0))) + ((driver_gross + margin_amt) * (factoring / 100.0)) + (truck_cpm * (Number(d.milesDriven) || 0));
+         } else if (d.contractType === 'MCLOO') {
+             company_fixed_full = (effNT * (liability + cargo + leaseGap + trailerInterchange + lago + phd_premium + phd + truck_weekly + plates + telematics + phone_and_internet + office_supplies + rent_and_parking + backup_mc + backoffice_reg + backoffice_tech)) + (effTr * (trailer_weekly + (phd / 4.0))) + ((driver_gross + margin_amt) * (factoring / 100.0)) + (truck_cpm * (Number(d.milesDriven) || 0));
+         } else {
+             company_fixed_full = calculateFixedForType(d.contractType || '');
+             if (isGarland) company_fixed_full -= effNT * (truck_weekly + phd_premium + phd + plates);
+             if (isFranchise) franchise_fixed_full = calculateFixedForType('TPOG (Franchise PnL)');
+         }
+
+         let ins_liab_auto = (d.contractType === 'MCLOO' ? liability : liabilityAuto) * effNT;
+         let ins_liab_gen = (d.contractType === 'MCLOO' ? liabilityGeneral : (liabilityGeneral + liabilityGlobal)) * effNT;
          let ins_cargo = cargo * effNT;
+         let ins_lease_gap = leaseGap * effNT;
          let ins_trailer_interchange = trailerInterchange * effNT;
          let ins_lago = lago * effNT;
-         let ins_phd_premium = isOO ? 0 : (phd_premium * effNT);
+         let ins_phd_premium = phd_premium * effNT;
          let ins_phd_truck = isOO ? 0 : (phd * effNT);
          let ins_phd_trailer = (phd / 4.0) * effTr;
-         let insurance_costs_calc = ins_liab_auto + ins_liab_gen + ins_cargo + ins_trailer_interchange + ins_lago + ins_phd_premium + ins_phd_truck + ins_phd_trailer;
+         let insurance_costs_calc = ins_liab_auto + ins_liab_gen + ins_cargo + ins_lease_gap + ins_trailer_interchange + ins_phd_premium + ins_phd_truck + ins_phd_trailer;
          
-      if (d.name === 'Akeem Collins' && String(d.payDate).includes('05-07') && !loggedTpogDrivers.has('Akeem Collins')) {
-           loggedTpogDrivers.add('Akeem Collins');
+      if ((d.name === 'Alonzo Proyer' || d.name === 'Allen Dixon') && d.payDate === '2026-05-07' && !loggedTpogDrivers.has(`${d.name}_2026-05-07`)) {
+           loggedTpogDrivers.add(`${d.name}_2026-05-07`);
+           effContractType = d.contractType || '';
+           let dbg_l_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
+           let dbg_s_liab_act = getActiveAmount('Shared Insurance Liability', date, d.companyId, uniqueCompsInWeek.length);
+           let dbg_s_liab = dbg_s_liab_act.amount !== 0 || dbg_s_liab_act.exp ? Math.abs(getWeeklyAmountFromExp(dbg_s_liab_act.amount, dbg_s_liab_act.exp)) : getFcRule('Shared Insurance Liability', 'shared_insurance_liability_custom', 'shared_insurance_liability');
+           dbg_l_auto = dbg_l_auto > dbg_s_liab ? dbg_l_auto - dbg_s_liab : 0;
+           let dbg_l_total = dbg_l_auto + getFcRule('Liability Insurance (Global)', '', '');
+           let dbg_cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
+           let dbg_lease_gap = getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage');
+           let dbg_ti = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
+           let dbg_lago = getFcRule('LAGO', 'lago_custom', 'lago');
+           let dbg_phd_p = getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium');
+           let dbg_phd = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
+           let dbg_plates = getFcRule('Plates', 'plates_custom', 'plates');
+           let dbg_fact = getFcRule('Factoring', 'factoring_custom', 'factoring');
+           let dbg_tel = getFcRule('Telematics', 'telematics_custom', 'telematics');
+           let dbg_phone = getFcRule('Phone & Internet', 'phone_and_internet_custom', 'phone_and_internet');
+           let dbg_off = getFcRule('Office Supplies', 'office_supplies_custom', 'office_supplies');
+           let dbg_rent = getFcRule('Rent & Parking', 'rent_and_parking_custom', 'rent_and_parking');
+           let dbg_bmc = getFcRule('Backup MC', 'backup_mc_custom', 'backup_mc');
+           let dbg_boreg = getFcRule('Back Office Pay', 'backoffice_reg_custom', 'backoffice_reg');
+           let dbg_botech = getFcRule('Tech Pay', 'backoffice_tech_custom', 'backoffice_tech');
+           let dbg_tw = getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly');
+           let dbg_tcpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm');
+           let dbg_trw = getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
+
            console.log('--- WEEKLY EXPENSES DEBUG | DRIVER:', d.name, ' | TYPE:', effContractType, ' | COMPANY:', d.companyId, ' | PAY DATE:', d.payDate, '---');
-           console.log('FIXED TOTAL:', fixed_costs_calc);
+           console.log('FIXED TOTAL:', company_fixed_full);
            console.log('effNT:', effNT);
            console.log('effTr:', effTr);
-           console.log('liability:', liability);
-           console.log('cargo:', cargo);
-           console.log('trailerInterchange:', trailerInterchange);
-           console.log('lago:', lago);
-           console.log('phd_premium:', phd_premium);
-           console.log('phd:', phd);
-           console.log('truck_weekly:', truck_weekly);
-           console.log('plates:', plates);
-           console.log('telematics:', telematics);
-           console.log('phone_and_internet:', phone_and_internet);
-           console.log('office_supplies:', office_supplies);
-           console.log('rent_and_parking:', rent_and_parking);
-           console.log('backup_mc:', backup_mc);
-           console.log('backoffice_reg:', backoffice_reg);
-           console.log('backoffice_tech:', backoffice_tech);
-           console.log('truck_cpm:', truck_cpm);
-           console.log('milesDriven:', d.milesDriven);
-           console.log('trailer_weekly:', trailer_weekly);
-           console.log('driver_gross:', driver_gross);
-           console.log('margin_amt:', margin_amt);
-           console.log('factoring (%):', factoring);
+           console.log('liability:', dbg_l_total * effNT);
+           console.log('cargo:', dbg_cargo * effNT);
+           console.log('leaseGapCoverage:', dbg_lease_gap * effNT);
+           console.log('trailerInterchange:', dbg_ti * effNT);
+           console.log('lago:', dbg_lago * effNT);
+           console.log('phd_premium:', dbg_phd_p * effNT);
+           console.log('phd (truck):', dbg_phd * effNT);
+           console.log('phd (trailer):', (dbg_phd / 4) * effTr);
+           console.log('truck_weekly:', dbg_tw * effNT);
+           console.log('plates:', dbg_plates * effNT);
+           console.log('telematics:', dbg_tel * effNT);
+           console.log('phone_and_internet:', dbg_phone * effNT);
+           console.log('office_supplies:', dbg_off * effNT);
+           console.log('rent_and_parking:', dbg_rent * effNT);
+           console.log('backup_mc:', dbg_bmc * effNT);
+           console.log('backoffice_reg:', dbg_boreg * effNT);
+           console.log('backoffice_tech:', dbg_botech * effNT);
+           console.log('truck_cpm:', dbg_tcpm * (Number(d.milesDriven) || 0));
+           console.log('trailer_weekly:', dbg_trw * effTr);
+           console.log('factoring:', (driver_gross + margin_amt) * (dbg_fact / 100));
        }
 
-        let fixed = fixed_costs_calc || 0;
+        let fixed = company_fixed_full || 0;
 
-       let companyTakeMulti = 1;
+       let companyTakeMulti = 1;
         if ((d.contractType === 'TPOG WITH FRANCHISE' || (d.contractType === 'TPOG' && d.franchiseId)) && configContracts && configContracts.length > 0) {
             const tpogFranRule = [...configContracts].filter(c => c.contract_type === 'TPOG WITH FRANCHISE').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
             if (tpogFranRule && tpogFranRule.calculation_type === 'TPOG_FRANCHISE') {
@@ -1459,7 +1630,7 @@ const PnLView: React.FC<PnLViewProps> = ({
 
         let dispGrossPerc = 0;
         let dispMarginPerc = 0;
-        const curTime = date ? new Date(date).getTime() : Date.now();
+        const curTime = (date ? new Date(date).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
         const validDispExps = fixedExpenses.filter(e => {
             if (e.name !== 'Dispatcher Pay') return false;
             const fromTime = e.valid_from ? new Date(e.valid_from).getTime() : -Infinity;
@@ -1491,12 +1662,14 @@ const PnLView: React.FC<PnLViewProps> = ({
           fuelCost: Number(d.fuelCost || 0) * companyTakeMulti,
           fuelSavings: Number(d.fuelSavings || 0) * companyTakeMulti,
           recruitingCost: Number(d.recruitingCost || 0) * companyTakeMulti,
-          calculatedFixedCost: fixed * companyTakeMulti,
-          fixed_costs: fixed * companyTakeMulti,
+          calculatedFixedCost: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
+          fixed_costs: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
+          franchise_fixed_costs_full: franchise_fixed_full,
           insuranceCost: insurance_costs_calc,
           insLiabAuto: ins_liab_auto,
           insLiabGen: ins_liab_gen,
           insCargo: ins_cargo,
+          insLeaseGapCoverage: ins_lease_gap,
           insTrailerInterchange: ins_trailer_interchange,
           insLago: ins_lago,
           insPhdPremium: ins_phd_premium,
@@ -1703,6 +1876,7 @@ const PnLView: React.FC<PnLViewProps> = ({
     const insLiabAuto = initialDrivers.reduce((sum, d) => sum + ((d as any).insLiabAuto || 0), 0);
     const insLiabGen = initialDrivers.reduce((sum, d) => sum + ((d as any).insLiabGen || 0), 0);
     const insCargo = initialDrivers.reduce((sum, d) => sum + ((d as any).insCargo || 0), 0);
+    const insLeaseGapCoverage = initialDrivers.reduce((sum, d) => sum + ((d as any).insLeaseGapCoverage || 0), 0);
     const insTrailerInterchange = initialDrivers.reduce((sum, d) => sum + ((d as any).insTrailerInterchange || 0), 0);
     const insLago = initialDrivers.reduce((sum, d) => sum + ((d as any).insLago || 0), 0);
     const insPhdPremium = initialDrivers.reduce((sum, d) => sum + ((d as any).insPhdPremium || 0), 0);
@@ -1717,38 +1891,49 @@ const PnLView: React.FC<PnLViewProps> = ({
     let totalRecruiting = 0;
     let baseFixed = 0;
     let adjFixed = 0;
+    let pnlCompanyPay = 0;
+    let pnlTolls = 0;
+    let pnlTotalPOCov = 0;
+    let pnlTotalRecruiting = 0;
+    let pnlBaseFixed = 0;
+    let pnlAdjFixed = 0;
 
     initialDrivers.forEach(d => {
         const activeItems = getPnlConfigItems(d.contractType || '');
 
-        if (activeItems.includes('revenue_collected')) {
-            companyPay += d.companyPay || 0;
-        }
+        const dCompanyPay = d.companyPay || 0;
+        companyPay += dCompanyPay;
+        if (activeItems.includes('revenue_collected')) pnlCompanyPay += dCompanyPay;
 
-        if (activeItems.includes('tolls')) {
-            tolls += Math.abs((d as any).calculatedTolls !== undefined ? (d as any).calculatedTolls : ((d as any).tolls !== undefined ? (d as any).tolls : (d.tollCost || 0)));
-        }
+        const dTolls = Math.abs((d as any).calculatedTolls !== undefined ? (d as any).calculatedTolls : ((d as any).tolls !== undefined ? (d as any).tolls : (d.tollCost || 0)));
+        tolls += dTolls;
+        if (activeItems.includes('tolls')) pnlTolls += dTolls;
 
-        if (activeItems.includes('po')) {
-            totalPOCov += (Number(d.poCoverage) || 0);
-        }
+        const dPOCov = Number(d.poCoverage) || 0;
+        totalPOCov += dPOCov;
+        if (activeItems.includes('po')) pnlTotalPOCov += dPOCov;
 
-        if (activeItems.includes('recruiting')) {
-            totalRecruiting += (d.recruitingCost || 0);
-        }
+        const dRecruiting = d.recruitingCost || 0;
+        totalRecruiting += dRecruiting;
+        if (activeItems.includes('recruiting')) pnlTotalRecruiting += dRecruiting;
 
+        const dBaseFixed = (d as any).fixed_costs || 0;
+        const dAdjFixed = simulationConfig.globalFixedExpenseAdjustment * (d.effectiveDrivers || 0);
+        baseFixed += dBaseFixed;
+        adjFixed += dAdjFixed;
         if (activeItems.includes('weekly_expenses')) {
-            baseFixed += ((d as any).fixed_costs || 0);
-            adjFixed += simulationConfig.globalFixedExpenseAdjustment * (d.effectiveDrivers || 0);
+            pnlBaseFixed += dBaseFixed;
+            pnlAdjFixed += dAdjFixed;
         }
     });
 
     const cogs = driverPay + fuel + maint + tolls + faults;
 
     const allocatedFixed = baseFixed + adjFixed;
+    const pnlAllocatedFixed = pnlBaseFixed + pnlAdjFixed;
     const totalFixedPerUnit = effCount > 0 ? (allocatedFixed / effCount) : 0;
 
-    const netIncome = companyPay - allocatedFixed - Math.abs(totalPOCov) - Math.abs(totalRecruiting) - Math.abs(tolls);
+    const netIncome = pnlCompanyPay - pnlAllocatedFixed - Math.abs(pnlTotalPOCov) - Math.abs(pnlTotalRecruiting) - Math.abs(pnlTolls);
     const pnlPerDriver = effNonTeams > 0 ? netIncome / effNonTeams : 0;
 
     return {
@@ -1757,8 +1942,9 @@ const PnLView: React.FC<PnLViewProps> = ({
       totalPO, totalPOCov, totalEscrow, totalBalance, totalRecruiting,
       effNonTeams, currentPayDate,
       numOfTrucks, avgTruckPrice, numOfTrailers, avgTrailerPrice, truckUtilization, trailerUtilization,
-      rawFinImportData, effNonTeamsForTrucks: effNonTeamsNoOOCount, insuranceExp, insLiabAuto, insLiabGen, insCargo, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer
-    };
+      rawFinImportData, effNonTeamsForTrucks: effNonTeamsNoOOCount,
+      insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer
+    };
   }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems]);
 
   const rawTotalActive = displayedDrivers.reduce((sum, d) => sum + (d.effectiveDrivers || 0), 0);
@@ -1776,9 +1962,9 @@ const PnLView: React.FC<PnLViewProps> = ({
      return { ...rawMetrics, netIncome: totalNetIncome };
   }, [displayedDrivers, groupBy, calculateMetrics]);
   const displayTotalFixed = useMemo(() => {
-     let total = 0;
-     ['Liability Insurance', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].forEach(name => {
-         let amt = getActiveAmount(name, companyMetrics.currentPayDate).amount;
+    let total = 0;
+    ['Liability Insurance', 'Cargo Insurance', 'Lease Gap Coverage', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].forEach(name => {
+      let amt = getActiveAmount(name, companyMetrics.currentPayDate).amount;
          let exp = getActiveAmount(name, companyMetrics.currentPayDate).exp;
          if (amt === 0 && !exp) {
              const fallbackName = name === 'Liability Insurance' ? 'Liability Insurance (Global)' : name;
@@ -1839,17 +2025,25 @@ const PnLView: React.FC<PnLViewProps> = ({
   // -- PNL HISTORY CALCULATION (Dynamic) --
   const pnlHistoryOptions = useMemo(() => {
     const options = new Set<string>();
+    let hasTpogFranchise = false;
     enrichedDrivers.forEach(d => {
       if (pnlHistoryGroupBy === 'Company' && d.companyId) options.add(d.companyId);
-      if (pnlHistoryGroupBy === 'Contract' && d.contractType) options.add(d.contractType);
+      if (pnlHistoryGroupBy === 'Contract' && d.contractType) {
+          options.add(d.contractType);
+          if (d.contractType === 'TPOG' && d.franchiseId) hasTpogFranchise = true;
+      }
       if (pnlHistoryGroupBy === 'Franchise' && d.franchiseId) options.add(d.franchiseId);
       if (pnlHistoryGroupBy === 'Team' && d.teamId) options.add(d.teamId);
     });
-    return Array.from(options).filter(opt => {
-   if (opt === 'UNRECONCILED' || opt === 'Unassigned') return false;
-   if (pnlHistoryGroupBy === 'Contract' && ['TCPML', 'MCLPOO', 'CPML'].includes(opt)) return false;
-   return true;
-}).sort();
+    const arr = Array.from(options).filter(opt => {
+       if (opt === 'UNRECONCILED' || opt === 'Unassigned') return false;
+       if (pnlHistoryGroupBy === 'Contract' && ['TCPML', 'MCLPOO', 'CPML'].includes(opt)) return false;
+       return true;
+    }).sort();
+    if (pnlHistoryGroupBy === 'Contract' && hasTpogFranchise) {
+        arr.push('TPOG (Franchise PnL)');
+    }
+    return arr;
   }, [enrichedDrivers, pnlHistoryGroupBy]);
 
   const resolvedPnlFilter = useMemo(() => {
@@ -1883,13 +2077,38 @@ const PnLView: React.FC<PnLViewProps> = ({
     };
 
     const history = Object.keys(groups).map(date => {
-      const weekDrivers = groups[date];
-      
-      const totalMetrics = calcAggregated(weekDrivers);
-      const totalNetIncome = totalMetrics.netIncome;
-      const totalNT = totalMetrics.nt;
-      
-      const entityData: Record<string, { amount: number, nt: number }> = {};
+              const weekDrivers = groups[date];
+              
+              const totalMetrics = calcAggregated(weekDrivers);
+              let totalNetIncome = totalMetrics.netIncome;
+              const totalNT = totalMetrics.nt;
+
+              const tpogFranchiseDrivers = weekDrivers.filter(d => d.contractType === 'TPOG' && !!d.franchiseId).map(d => ({
+                  ...d,
+                  companyPay: (d as any).franchise_revenue_collected || 0,
+                  fixed_costs: (d as any).franchise_fixed_costs_full || 0,
+                  poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
+                  poAmount: (d as any).franchise_po || 0
+              }));
+
+              let fNetIncome = 0;
+              let fNt = 0;
+              if (tpogFranchiseDrivers.length > 0) {
+                  const driversByName = new Map<string, any[]>();
+                  tpogFranchiseDrivers.forEach(d => {
+                      const name = d.name || 'Unknown';
+                      if (!driversByName.has(name)) driversByName.set(name, []);
+                      driversByName.get(name)!.push(d);
+                  });
+                  driversByName.forEach(drvRecords => {
+                      const m = calculateMetrics(drvRecords, true);
+                      fNetIncome += m.netIncome / 2;
+                      fNt += (m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount) / 2;
+                  });
+                  totalNetIncome -= fNetIncome;
+              }
+              
+              const entityData: Record<string, { amount: number, nt: number }> = {};
       pnlHistoryOptions.forEach(opt => entityData[opt] = { amount: 0, nt: 0 });
 
       const groupedByEntity = new Map<string, any[]>();
@@ -1910,9 +2129,18 @@ const PnLView: React.FC<PnLViewProps> = ({
               entityData[entityKey] = { amount: m.netIncome, nt: m.nt };
           }
       });
+      
+      if (pnlHistoryGroupBy === 'Contract' && entityData['TPOG'] !== undefined) {
+          entityData['TPOG'].amount -= fNetIncome;
+      }
+      
+      if (pnlHistoryGroupBy === 'Contract' && entityData['TPOG (Franchise PnL)'] !== undefined) {
+          entityData['TPOG (Franchise PnL)'].amount = fNetIncome;
+          entityData['TPOG (Franchise PnL)'].nt = fNt;
+      }
 
       return { 
-         date, 
+         date,
          totalAmount: totalNetIncome,
          totalNT,
          entityData
@@ -1996,7 +2224,30 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
       else if (groupBy === 'Franchise') uniqueFranchises.forEach(c => neededEntities.add(c));
       else if (groupBy === 'Driver') uniqueDrivers.forEach(c => neededEntities.add(c));
 
-      if (neededEntities.has('COMPANY')) processEntity('COMPANY', dateDrivers);
+      if (neededEntities.has('COMPANY')) {
+          processEntity('COMPANY', dateDrivers);
+          const tpogFranchiseDrivers = dateDrivers.filter(d => d.contractType === 'TPOG' && !!d.franchiseId).map(d => ({
+              ...d,
+              companyPay: (d as any).franchise_revenue_collected || 0,
+              fixed_costs: (d as any).franchise_fixed_costs_full || 0,
+              poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
+              poAmount: (d as any).franchise_po || 0
+          }));
+          if (tpogFranchiseDrivers.length > 0) {
+              let fNetIncome = 0;
+              const driversByName = new Map<string, any[]>();
+              tpogFranchiseDrivers.forEach(d => {
+                  const name = d.name || 'Unknown';
+                  if (!driversByName.has(name)) driversByName.set(name, []);
+                  driversByName.get(name)!.push(d);
+              });
+              driversByName.forEach(drvRecords => {
+                  const m = calculateMetrics(drvRecords, true);
+                  fNetIncome += ((m.companyPay || 0) / 2) - ((m.allocatedFixed || 0) / 2) - Math.abs((m.totalPOCov || 0) / 2) - Math.abs((m.totalRecruiting || 0) / 2) - Math.abs((m.tolls || 0) / 2);
+              });
+              row['COMPANY_netIncome'] -= fNetIncome;
+          }
+      }
       
       const byContract: Record<string, any[]> = {};
       const byCompany: Record<string, any[]> = {};
@@ -2030,6 +2281,38 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
       uniqueContracts.forEach(contractId => {
         if (neededEntities.has(contractId) && byContract[contractId]) processEntity(contractId, byContract[contractId]);
       });
+      if (neededEntities.has('TPOG') && byContract['TPOG']) {
+        const franDrivers = byContract['TPOG'].filter((d: any) => !!d.franchiseId).map((d: any) => ({
+          ...d,
+          companyPay: d.franchise_revenue_collected || 0,
+          fixed_costs: d.franchise_fixed_costs_full || 0,
+          poCoverage: d.franchise_po ? -Math.abs(Number(d.franchise_po)) : 0,
+          poAmount: d.franchise_po || 0
+        }));
+        if (franDrivers.length > 0) {
+          let tNet = 0;
+          let fGross = 0, fMargin = 0, fCompanyPay = 0, fAllocatedFixed = 0, fTolls = 0, fTotalPOCov = 0, fTotalRecruiting = 0;
+          const byName = new Map<string, any[]>();
+          franDrivers.forEach((d: any) => {
+            const n = d.name || 'Unknown';
+            if (!byName.has(n)) byName.set(n, []);
+            byName.get(n)!.push(d);
+          });
+          byName.forEach(recs => {
+            const m = calculateMetrics(recs, true);
+            fGross += m.gross / 2;
+            fMargin += m.margin / 2;
+            fCompanyPay += (m.companyPay || 0) / 2;
+            fAllocatedFixed += (m.allocatedFixed || 0) / 2;
+            fTolls += Math.abs(m.tolls || 0) / 2;
+            fTotalPOCov += Math.abs(m.totalPOCov || 0) / 2;
+            fTotalRecruiting += Math.abs(m.totalRecruiting || 0) / 2;
+            tNet += m.netIncome / 2;
+          });
+          row['TPOG (Franchise PnL)_netIncome'] = tNet;
+          
+        }
+      }
       uniqueCompanies.forEach(cId => {
         if (neededEntities.has(cId) && byCompany[cId]) processEntity(cId, byCompany[cId]);
       });
@@ -2140,16 +2423,11 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
 
   const sidebarUtilization = useMemo(() => {
       const baseDrivers = allDrivers || drivers;
-      const gfComps = globalFilter?.companies || [];
-      const isCompFiltered = gfComps.length > 0;
       
       let utilDrivers = baseDrivers;
       if (selectedDate !== 'ALL') {
          const targetDate = selectedDate === 'LATEST' ? latestPayDate : selectedDate;
          utilDrivers = utilDrivers.filter(d => d.payDate === targetDate);
-      }
-      if (isCompFiltered) {
-         utilDrivers = utilDrivers.filter(d => gfComps.includes(d.companyId || ''));
       }
       
       const metrics = calculateMetrics(utilDrivers);
@@ -2159,7 +2437,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
           nt: metrics.effNonTeamsForTrucks,
           tr: metrics.effTrailersCount
       };
-  }, [allDrivers, drivers, selectedDate, latestPayDate, globalFilter, calculateMetrics]);
+  }, [allDrivers, drivers, selectedDate, latestPayDate, calculateMetrics]);
 
   return (
     <div className="flex flex-col h-full gap-2">
@@ -2661,10 +2939,11 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
              <div className="overflow-y-auto flex-1 pr-1 space-y-1.5 pb-4">
                  
                  {(() => {
-                    const validFcRecordsSidebar = (fixedCostsData || []).filter(r => r.pay_date <= companyMetrics.currentPayDate).sort((a: any, b: any) => new Date(b.pay_date).getTime() - new Date(a.pay_date).getTime());
+                    const sidebarTargetDate = selectedDate === 'ALL' || selectedDate === 'LATEST' ? latestPayDate : selectedDate;
+                    const validFcRecordsSidebar = (fixedCostsData || []).filter(r => r.pay_date <= sidebarTargetDate).sort((a: any, b: any) => new Date(b.pay_date).getTime() - new Date(a.pay_date).getTime());
                     const fcSidebar = validFcRecordsSidebar.length > 0 ? validFcRecordsSidebar[0] : {};
                     
-                    const weekAllDrivers = (allDrivers || drivers).filter(d => d.payDate === companyMetrics.currentPayDate);
+                    const weekAllDrivers = (allDrivers || drivers).filter(d => d.payDate === sidebarTargetDate);
                     
                     const globalNT = (() => {
                         const map = new Map<string, { nt: number, count: number }>();
@@ -2700,7 +2979,10 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                         return tr || 1;
                     })();
 
-                    const filteredWeekDrivers = displayedDrivers.filter(d => d.payDate === companyMetrics.currentPayDate);
+                    const filteredWeekDrivers = weekAllDrivers;
+
+                    const sidebarGross = filteredWeekDrivers.reduce((sum, d) => sum + (d.grossRevenue || 0) + (d.marginAmount || 0), 0);
+                    const sidebarAvgTruckPrice = sidebarTargetDate && finImportByDate[sidebarTargetDate as string] ? finImportByDate[sidebarTargetDate as string].avgTruckPrice : 0;
 
                     const filteredNT = filteredWeekDrivers.reduce((sum, d) => sum + (d.effectiveNonTeams || 0), 0);
 
@@ -2745,7 +3027,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
     let total = customTotal !== undefined ? customTotal : 0;
     if (customTotal === undefined) {
         if (isPercent) {
-            total = (companyMetrics.gross + companyMetrics.margin) * (val / 100);
+            total = sidebarGross * (val / 100);
         } else {
             total = val * multiplier;
         }
@@ -2764,7 +3046,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                             <span className={`text-[10px] font-mono font-bold transition-colors duration-200 ${valTooltip ? 'cursor-help text-sky-400/80 hover:text-sky-300' : 'text-sky-400/80'}`}>
                               {isPercent 
                                   ? `${isProfit ? '+' : '-'}${Math.abs(val)}%` 
-                                  : `${isProfit ? '+' : '-'}${label.includes('General') ? `$${Math.abs(val).toFixed(2)}` : formatCurrency(Math.abs(val))}`}
+                                  : `${isProfit ? '+' : '-'}${label.includes('General') ? `$${Math.abs(val).toFixed(2)}` : (label.includes('Trailer Interchange') && Math.abs(val) < 1 ? `$${Math.abs(val).toFixed(1)}` : formatCurrency(Math.abs(val)))}`}
                             </span>
                             {valTooltip && (
                                <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none dynamic-tooltip w-max">
@@ -2792,7 +3074,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                     const getRowTotal = (globalKey: string, customKey?: string, isPercent: boolean = false, multiplier: number = filteredNT) => {
                         const val = getSidebarVal(globalKey, customKey);
                         if (val === 0) return 0;
-                        if (isPercent) return (companyMetrics.gross + companyMetrics.margin) * (val / 100);
+                        if (isPercent) return sidebarGross * (val / 100);
                         return val * multiplier;
                     };
 
@@ -2809,8 +3091,8 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                                             let weeklySum = 0;
                                             const breakdown: { company: string, literal: number, frequency: string, weekly: number }[] = [];
 
-                                            const currTimeForComps = companyMetrics.currentPayDate ? new Date(companyMetrics.currentPayDate).getTime() : Date.now();
-                                            const specificExps = fixedExpenses.filter(e => 
+                                            const currTimeForComps = (sidebarTargetDate ? new Date(sidebarTargetDate as string).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
+                                            const specificExps = fixedExpenses.filter(e =>
                                                 (e.name.toLowerCase().includes(expName.toLowerCase()) || (fallbackExpName && e.name.toLowerCase().includes(fallbackExpName.toLowerCase()))) && 
                                                 e.companyId && e.companyId !== 'ALL' && e.companyId !== 'UNRECONCILED' &&
                                                 (!e.valid_from || new Date(e.valid_from).getTime() <= currTimeForComps) &&
@@ -2827,16 +3109,24 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                                                 
                                                 if (!hasDrivers && !hasSpecificExp) return;
 
-                                                let { amount, exp } = getActiveAmount(expName, companyMetrics.currentPayDate, compId, uniqueCompsInWeek.length);
+                                                let { amount, exp } = getActiveAmount(expName, sidebarTargetDate as string | null, compId, uniqueCompsInWeek.length);
                                                 if (amount === 0 && !exp && fallbackExpName) {
-                                                    const fallback = getActiveAmount(fallbackExpName, companyMetrics.currentPayDate, compId, uniqueCompsInWeek.length);
+                                                    const fallback = getActiveAmount(fallbackExpName, sidebarTargetDate as string | null, compId, uniqueCompsInWeek.length);
                                                     amount = fallback.amount;
                                                     exp = fallback.exp;
                                                 }
 
                                                 let weekly = amount;
-                                                if (exp?.frequency === 'Annually') weekly = amount / 52;
-                                                else if (exp?.frequency === 'Monthly') weekly = amount / 4.33;
+                                                if (exp?.valid_from && exp?.valid_to) {
+                                                    const dFrom = new Date(exp.valid_from);
+                                                    const dTo = new Date(exp.valid_to);
+                                                    const daysDiff = ((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                                                    if (daysDiff > 0) weekly = amount / (daysDiff / 7);
+                                                } else if (exp?.frequency === 'Annually') {
+                                                    weekly = amount / 52;
+                                                } else if (exp?.frequency === 'Monthly') {
+                                                    weekly = amount / 4.33;
+                                                }
 
                                                 if (amount > 0 || hasSpecificExp) {
                                                     weeklySum += weekly;
@@ -2854,8 +3144,32 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                         let sumPerUnit = 0;
                         const breakdown: { company: string, perUnit: number }[] = [];
 
-                        const currTimeForComps = companyMetrics.currentPayDate ? new Date(companyMetrics.currentPayDate).getTime() : Date.now();
-                        const specificExps = fixedExpenses.filter(e => 
+                        const currTimeForComps = (sidebarTargetDate ? new Date(sidebarTargetDate as string).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
+                        
+                        const globalExpRule = fixedExpenses.find(e => 
+                            e.name.toLowerCase().includes(expNameKeyword.toLowerCase()) && 
+                            e.companyId === 'ALL' &&
+                            (!e.valid_from || new Date(e.valid_from).getTime() <= currTimeForComps) &&
+                            (!e.valid_to || new Date(e.valid_to).getTime() >= currTimeForComps)
+                        );
+
+                        let resolvedGlobalAmt = globalAmt;
+                        if (globalExpRule && globalExpRule.amount !== undefined) {
+                            let weekly = globalExpRule.amount;
+                            if (globalExpRule.valid_from && globalExpRule.valid_to) {
+                                const dFrom = new Date(globalExpRule.valid_from);
+                                const dTo = new Date(globalExpRule.valid_to);
+                                const daysDiff = ((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                                if (daysDiff > 0) weekly = globalExpRule.amount / (daysDiff / 7);
+                            } else if (globalExpRule.frequency === 'Annually') {
+                                weekly = globalExpRule.amount / 52;
+                            } else if (globalExpRule.frequency === 'Monthly') {
+                                weekly = globalExpRule.amount / 4.33;
+                            }
+                            resolvedGlobalAmt = Math.abs(weekly);
+                        }
+
+                        const specificExps = fixedExpenses.filter(e =>
                             e.name.toLowerCase().includes(expNameKeyword.toLowerCase()) && 
                             e.companyId && e.companyId !== 'ALL' && e.companyId !== 'UNRECONCILED' &&
                             (!e.valid_from || new Date(e.valid_from).getTime() <= currTimeForComps) &&
@@ -2866,7 +3180,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                         const compsToCheck = Array.from(new Set([...activeCompsInWeek, ...specComps, ...specificExps.map(e => e.companyId)])) as string[];
 
                         compsToCheck.forEach(compId => {
-                            let amt = globalAmt;
+                            let amt = resolvedGlobalAmt;
                             let hasSpecific = false;
                             if (specCosts && Array.isArray(specCosts)) {
                                 const compRule = specCosts.find((el: any) =>
@@ -2881,8 +3195,16 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                             const expRule = specificExps.find(e => e.companyId === compId);
                             if (!hasSpecific && expRule && expRule.amount !== undefined) {
                                 let weekly = expRule.amount;
-                                if (expRule.frequency === 'Annually') weekly = expRule.amount / 52;
-                                else if (expRule.frequency === 'Monthly') weekly = expRule.amount / 4.33;
+                                if (expRule.valid_from && expRule.valid_to) {
+                                    const dFrom = new Date(expRule.valid_from);
+                                    const dTo = new Date(expRule.valid_to);
+                                    const daysDiff = ((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                                    if (daysDiff > 0) weekly = expRule.amount / (daysDiff / 7);
+                                } else if (expRule.frequency === 'Annually') {
+                                    weekly = expRule.amount / 52;
+                                } else if (expRule.frequency === 'Monthly') {
+                                    weekly = expRule.amount / 4.33;
+                                }
                                 amt = Math.abs(weekly);
                                 hasSpecific = true;
                             }
@@ -2925,7 +3247,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                             {hasGross && <span className="text-[10px] text-zinc-400 font-mono tabular-nums text-right">{formatCurrency(b.gross)}</span>}
                             {hasUnit && <span className="text-[10px] text-zinc-400 font-mono tabular-nums text-right">{unitVal !== undefined ? unitVal.toFixed(1) : ''}</span>}
                             <span className="text-[10px] text-zinc-200 font-bold font-mono tabular-nums text-right">
-                                {b.perUnit < 0 ? '+' : '-'}{showDecimals ? `$${Math.abs(unitVal === 0 ? 0 : b.perUnit).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : formatCurrency(Math.abs(unitVal === 0 ? 0 : b.perUnit))}
+                                {unitVal < 0.14 ? '' : (b.perUnit < 0 ? '+' : '-')}{showDecimals ? `$${Math.abs(unitVal < 0.14 ? 0 : b.perUnit).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : formatCurrency(Math.abs(unitVal < 0.14 ? 0 : b.perUnit))}
                             </span>
                         </div>
                     );
@@ -2975,9 +3297,8 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                                        const dt = new Date(dStr);
                                                        return dt.getTime();
                                                   };
-                                                  const cTime = companyMetrics.currentPayDate ? parseDateSafelyLocal(companyMetrics.currentPayDate) : Date.now();
+                                                  const cTime = (sidebarTargetDate ? parseDateSafelyLocal(sidebarTargetDate as string) : Date.now()) - (3 * 24 * 60 * 60 * 1000);
                                                   const specInsComps = Array.isArray(specCosts) ? specCosts.filter((el: any) => el.company_id && (el.expense_name || '').toLowerCase().includes('liability insurance (auto)')).map((el: any) => el.company_id) : [];
-                                                  
                                                   const insuranceActiveComps = Array.from(new Set([
                                                       ...activeCompsInWeek,
                                                       ...specInsComps,
@@ -3006,7 +3327,7 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                                       }
                                                   }
                                                   if (amount === null) {
-                                                      const currentCompTime = companyMetrics.currentPayDate ? new Date(companyMetrics.currentPayDate).getTime() : Date.now();
+                                                      const currentCompTime = (sidebarTargetDate ? new Date(sidebarTargetDate as string).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
                                                       const expRule = fixedExpenses.find(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === compId && (!e.valid_from || new Date(e.valid_from).getTime() <= currentCompTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= currentCompTime));
                                                       if (expRule && expRule.amount !== undefined) {
                                                           let weekly = expRule.amount;
@@ -3028,7 +3349,7 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                                        const dt = new Date(dStr);
                                                        return dt.getTime();
                                                   };
-                                                  const currTime = companyMetrics.currentPayDate ? parseDateSafely(companyMetrics.currentPayDate) : Date.now();
+                                                  const currTime = (sidebarTargetDate ? parseDateSafely(sidebarTargetDate as string) : Date.now()) - (3 * 24 * 60 * 60 * 1000);
                                                   
                                                   compDrivers.forEach(d => {
                                                       const effNT = d.effectiveNonTeams || 0;
@@ -3040,26 +3361,26 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                                   
                                                   if (baseLiabilityAuto === 0) return;
 
-                                                  const parseDateSafelyLocal = (dStr: string) => {
+                                                  const parseDateSafelyLocal2 = (dStr: string) => {
                                                        if (!dStr) return 0;
                                                        const dt = new Date(dStr);
                                                        return dt.getTime();
                                                   };
-                                                  const cTime = companyMetrics.currentPayDate ? parseDateSafelyLocal(companyMetrics.currentPayDate) : Date.now();
+                                                  const targetCTime = (sidebarTargetDate ? parseDateSafelyLocal2(sidebarTargetDate as string) : Date.now()) - (3 * 24 * 60 * 60 * 1000);
                                                   
                                                   let weeksDivider = 52;
-                                                  const expRule = fixedExpenses.find(e => e.name.includes('Liability Insurance') && (e.companyId === compId || e.companyId === 'ALL') && (!e.valid_from || new Date(e.valid_from).getTime() <= cTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= cTime));
+                                                  const expRule = fixedExpenses.find(e => e.name.includes('Liability Insurance') && (e.companyId === compId || e.companyId === 'ALL') && (!e.valid_from || new Date(e.valid_from).getTime() <= targetCTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= targetCTime));
                                                   if (expRule && expRule.valid_from && expRule.valid_to) {
                                                       const dFrom = new Date(expRule.valid_from);
                                                       const dTo = new Date(expRule.valid_to);
-                                                      const daysDiff = (dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24);
+                                                      const daysDiff = ((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
                                                       if (daysDiff > 0) weeksDivider = daysDiff / 7;
                                                   }
 
                                                   let effPerUnit = 0;
                                                   let finalWeekly = 0;
 
-                                                  if (totalCompNT > 0) {
+                                                  if (totalCompNT >= 0.14) {
                                                       effPerUnit = totalCompanyLiability / totalCompNT;
                                                       finalWeekly = totalCompanyLiability;
                                                   } else {
@@ -3115,65 +3436,80 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
 
                     const liabGenPUBreakdown = liabGenPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompNT(b.company) }));
                     const liabGenPUTooltip = buildPerUnitTooltip('Liability Insurance (General)', liabGenPUBreakdown, true);
-                    const liabGenTotalBreakdown = liabGenPU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: nt > 0 ? b.perUnit * nt : b.perUnit, nt }; });
+                    const liabGenTotalBreakdown = liabGenPU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: nt >= 0.14 ? b.perUnit * nt : b.perUnit, nt }; });
                     const liabGenTotalTooltip = buildTotalTooltip('Liability Insurance (General)', liabGenTotalBreakdown);
 
                     const cargoPUBreakdown = cargoPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompNT(b.company) }));
                     const cargoPUTooltip = buildPerUnitTooltip('Cargo Insurance', cargoPUBreakdown);
-                    const cargoTotalBreakdown = cargoPU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: nt > 0 ? b.perUnit * nt : b.perUnit, nt }; });
-                    const cargoTotalTooltip = buildTotalTooltip('Cargo Insurance', cargoTotalBreakdown);
+                    const cargoTotalBreakdown = cargoPU.breakdown.map(b => {
+    const nt = getCompNT(b.company);
+    return { company: b.company, weekly: nt >= 0.14 ? b.perUnit * nt : b.perUnit, nt };
+});
+const cargoTotalTooltip = buildTotalTooltip('Cargo Insurance', cargoTotalBreakdown);
 
-                    const trailerInterchangePUBreakdown = trailerInterchangePU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompNT(b.company) }));
+const leaseGapPU = getDetailedExpensePerUnit('Lease Gap Coverage', getSidebarVal('lease_gap_coverage', 'lease_gap_coverage_custom'));
+const leaseGapPUBreakdown = leaseGapPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompNT(b.company) }));
+const leaseGapPUTooltip = buildPerUnitTooltip('Lease Gap Coverage', leaseGapPUBreakdown);
+const leaseGapTotalBreakdown = leaseGapPU.breakdown.map(b => {
+    const nt = getCompNT(b.company);
+    return { company: b.company, weekly: nt >= 0.14 ? b.perUnit * nt : b.perUnit, nt };
+});
+const leaseGapTotalTooltip = buildTotalTooltip('Lease Gap Coverage', leaseGapTotalBreakdown);
+
+const trailerInterchangePUBreakdown = trailerInterchangePU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompNT(b.company) }));
                     const trailerInterchangePUTooltip = buildPerUnitTooltip('Trailer Interchange', trailerInterchangePUBreakdown);
-                    const trailerInterchangeTotalBreakdown = trailerInterchangePU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: nt > 0 ? b.perUnit * nt : b.perUnit, nt }; });
+                    const trailerInterchangeTotalBreakdown = trailerInterchangePU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: nt >= 0.14 ? b.perUnit * nt : b.perUnit, nt }; });
                     const trailerInterchangeTotalTooltip = buildTotalTooltip('Trailer Interchange', trailerInterchangeTotalBreakdown);
 
-                    const lagoPUBreakdown = lagoPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompNT(b.company) }));
+                    const lagoPUBreakdown = lagoPU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, perUnit: filteredNT > 0 ? b.perUnit / filteredNT : 0, nt }; });
                     const lagoPUTooltip = buildPerUnitTooltip('LAGO', lagoPUBreakdown);
-                    const lagoTotalBreakdown = lagoPU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: nt > 0 ? b.perUnit * nt : b.perUnit, nt }; });
+                    const lagoTotalBreakdown = lagoPU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: filteredNT > 0 ? b.perUnit * (nt / filteredNT) : 0, nt }; });
                     const lagoTotalTooltip = buildTotalTooltip('LAGO', lagoTotalBreakdown);
 
                     const pdPremiumPUBreakdown = pdPremiumPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompNT(b.company) }));
                     const pdPremiumPUTooltip = buildPerUnitTooltip('PD Premium', pdPremiumPUBreakdown);
-                    const pdPremiumTotalBreakdown = pdPremiumPU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: nt > 0 ? b.perUnit * nt : b.perUnit, nt }; });
+                    const pdPremiumTotalBreakdown = pdPremiumPU.breakdown.map(b => { const nt = getCompNT(b.company); return { company: b.company, weekly: nt >= 0.14 ? b.perUnit * nt : b.perUnit, nt }; });
                     const pdPremiumTotalTooltip = buildTotalTooltip('PD Premium', pdPremiumTotalBreakdown);
 
                     const pdTruckPUBreakdown = pdPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit, nt: getCompTruckNT(b.company) }));
                     const pdTruckPUTooltip = buildPerUnitTooltip('Physical Damage (Truck)', pdTruckPUBreakdown);
-                    const pdTruckTotalBreakdown = pdPU.breakdown.map(b => { const nt = getCompTruckNT(b.company); return { company: b.company, weekly: nt > 0 ? b.perUnit * nt : b.perUnit, nt }; });
+                    const pdTruckTotalBreakdown = pdPU.breakdown.map(b => { const nt = getCompTruckNT(b.company); return { company: b.company, weekly: nt >= 0.14 ? b.perUnit * nt : b.perUnit, nt }; });
                     const pdTruckTotalTooltip = buildTotalTooltip('Physical Damage (Truck)', pdTruckTotalBreakdown);
 
                     const pdTrailerPUBreakdown = pdPU.breakdown.map(b => ({ company: b.company, perUnit: b.perUnit / 4, tr: getCompTr(b.company) }));
-                    const pdTrailerTotalBreakdown = pdTrailerPUBreakdown.map(b => { const tr = getCompTr(b.company); return { company: b.company, weekly: tr > 0 ? b.perUnit * tr : b.perUnit, tr }; });
+                    const pdTrailerTotalBreakdown = pdTrailerPUBreakdown.map(b => { const tr = getCompTr(b.company); return { company: b.company, weekly: tr >= 0.14 ? b.perUnit * tr : b.perUnit, tr }; });
                     const pdTrailerPUTooltip = buildPerUnitTooltip('Physical Damage (Trailer)', pdTrailerPUBreakdown);
                     const pdTrailerTotalTooltip = buildTotalTooltip('Physical Damage (Trailer)', pdTrailerTotalBreakdown);
 
                     let finalLiabAutoTotal = liabAutoTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
-                    let finalLiabAutoPerUnit = liabAutoPU.averagePerUnit;
+                    let finalLiabAutoPerUnit = filteredNT > 0 ? finalLiabAutoTotal / filteredNT : 0;
 
                     const finalLiabGenTotal = liabGenTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
-                    const finalLiabGenPerUnit = liabGenPU.averagePerUnit;
+                    const finalLiabGenPerUnit = filteredNT > 0 ? finalLiabGenTotal / filteredNT : 0;
 
                     const finalCargoTotal = cargoTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
-                    const finalCargoPerUnit = cargoPU.averagePerUnit;
+const finalCargoPerUnit = filteredNT > 0 ? finalCargoTotal / filteredNT : 0;
 
-                    const finalTrailerInterchangeTotal = trailerInterchangeTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
-                    const finalTrailerInterchangePerUnit = trailerInterchangePU.averagePerUnit;
+const finalLeaseGapTotal = leaseGapTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
+const finalLeaseGapPerUnit = filteredNT > 0 ? finalLeaseGapTotal / filteredNT : 0;
+
+const finalTrailerInterchangeTotal = trailerInterchangeTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
+const finalTrailerInterchangePerUnit = filteredNT > 0 ? finalTrailerInterchangeTotal / filteredNT : 0;
 
                     const finalLagoTotal = lagoTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
-                    const finalLagoPerUnit = lagoPU.averagePerUnit;
+                    const finalLagoPerUnit = filteredNT > 0 ? finalLagoTotal / filteredNT : 0;
 
                     const finalPdPremiumTotal = pdPremiumTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
-                    const finalPdPremiumPerUnit = pdPremiumPU.averagePerUnit;
+                    const finalPdPremiumPerUnit = filteredNT > 0 ? finalPdPremiumTotal / filteredNT : 0;
 
                     const finalPdTruckTotal = pdTruckTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
-                    const finalPdTruckPerUnit = pdPU.averagePerUnit;
+                    const finalPdTruckPerUnit = filteredTruckNT > 0 ? finalPdTruckTotal / filteredTruckNT : 0;
 
                     const finalPdTrailerTotal = pdTrailerTotalBreakdown.reduce((sum, b) => sum + b.weekly, 0);
-                    const finalPdTrailerPerUnit = pdPU.averagePerUnit / 4;
+                    const finalPdTrailerPerUnit = filteredTr > 0 ? finalPdTrailerTotal / filteredTr : 0;
 
-                    const insPerUnitTotal = finalLiabAutoPerUnit + finalLiabGenPerUnit + finalCargoPerUnit + finalTrailerInterchangePerUnit + finalPdPremiumPerUnit + finalPdTruckPerUnit + finalPdTrailerPerUnit;
-                    const insTotal = finalLiabAutoTotal + finalLiabGenTotal + finalCargoTotal + finalTrailerInterchangeTotal + finalPdPremiumTotal + finalPdTruckTotal + finalPdTrailerTotal;
+                    const insPerUnitTotal = finalLiabAutoPerUnit + finalLiabGenPerUnit + finalCargoPerUnit + finalLeaseGapPerUnit + finalTrailerInterchangePerUnit + finalPdPremiumPerUnit + finalPdTruckPerUnit + finalPdTrailerPerUnit;
+                    const insTotal = finalLiabAutoTotal + finalLiabGenTotal + finalCargoTotal + finalLeaseGapTotal + finalTrailerInterchangeTotal + finalPdPremiumTotal + finalPdTruckTotal + finalPdTrailerTotal;
                     
                     const otherPerUnitTotal = finalLagoPerUnit;
                     const otherTotal = finalLagoTotal;
@@ -3204,8 +3540,7 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                            valTooltip = buildPerUnitTooltip(item.label, tooltipBreakdown);
                            const totalBd = tooltipBreakdown.map(b => { 
                                const nt = ntGetter(b.company);
-                               const isInsurance = item.label.toLowerCase().includes('insurance') || item.label.toLowerCase().includes('pd premium');
-                               return { company: b.company, weekly: (nt > 0 || !isInsurance) ? b.perUnit * nt : b.perUnit }; 
+                               return { company: b.company, weekly: nt >= 0.14 ? b.perUnit * nt : b.perUnit }; 
                            });
                            totalTooltip = buildTotalTooltip(item.label, totalBd);
                        }
@@ -3224,13 +3559,13 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                          let totalTruckCpmCost = 0;
                                          let totalTruckWeeklyCost = 0;
                                          const truckWeeklyBreakdown: { company: string, perUnit: number, weekly: number, nt: number }[] = [];
-                                         
-                                         const currTime = companyMetrics.currentPayDate ? new Date(companyMetrics.currentPayDate).getTime() : Date.now();
-                                         const validTruckRules = fixedExpenses.filter(e => {
+                                             
+                                             const currTimeTruck = (sidebarTargetDate ? new Date(sidebarTargetDate as string).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
+                                             const validTruckRules = fixedExpenses.filter(e => {
                                              if (e.name !== 'Truck Price') return false;
                                              const fromTime = e.valid_from ? new Date(e.valid_from).getTime() : -Infinity;
                                              const toTime = e.valid_to ? new Date(e.valid_to).getTime() : Infinity;
-                                             return currTime >= fromTime && currTime <= toTime;
+                                             return currTimeTruck >= fromTime && currTimeTruck <= toTime;
                                          });
 
                                          // 1. Grupisanje NT i milja isključivo po ugovoru (OO se preskače u potpunosti)
@@ -3239,12 +3574,10 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                          filteredWeekDrivers.forEach(d => {
                                              let effContractType = d.contractType || '';
                                              if (d.contractType === 'TPOG' && d.franchiseId) {
-                                                 effContractType = 'TPOG WITH FRANCHISE';
-                                             } else if (d.contractType === 'OO' && d.franchiseId && weekAllDrivers.some(m => m.contractType === 'MCLOO' && m.franchiseId === d.franchiseId)) {
-                                                 effContractType = 'OO WITH FRANCHISE';
+                                                 effContractType = 'TPOG (Franchise PnL)';
                                              }
 
-                                             if (effContractType === 'OO' || effContractType === 'OO WITH FRANCHISE') return; // Preskačemo OO za Truck Price
+                                             if (effContractType === 'OO') return; 
 
                                              if (!contractStats[effContractType]) {
                                                  contractStats[effContractType] = { nt: 0, miles: 0 };
@@ -3261,7 +3594,7 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                              let amount: number | null = null;
                                              let cpm: number | null = null;
 
-                                             if (cType.replace(/\s+/g, '').toUpperCase() === 'TPOGWITHFRANCHISE') {
+                                             if (cType.replace(/\s+/g, '').toUpperCase() === 'TPOG(FRANCHISEPNL)') {
                                                  let cCosts = fcSidebar.contract_specific_costs;
                                                  if (typeof cCosts === 'string') { try { cCosts = JSON.parse(cCosts); } catch(e) {} }
                                                  if (cCosts && Array.isArray(cCosts)) {
@@ -3282,8 +3615,8 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                              if (amount === null && fcSidebar['truck_weekly'] !== undefined && fcSidebar['truck_weekly'] !== null && String(fcSidebar['truck_weekly']).trim() !== '') {
                                                  amount = Math.abs(Number(fcSidebar['truck_weekly']));
                                              }
-                                             if (amount === null && companyMetrics.avgTruckPrice) {
-                                                 amount = Math.abs(Number(companyMetrics.avgTruckPrice));
+                                             if (amount === null && sidebarAvgTruckPrice) {
+                                                 amount = Math.abs(Number(sidebarAvgTruckPrice));
                                              }
 
                                              totalTruckWeeklyCost += (amount || 0) * stats.nt;
@@ -3342,7 +3675,7 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
 
                                          const equipTotal = tWeeklyPerUnit + getSidebarVal('trailer_weekly') + tCpmPerUnit;
                                          
-                                         const factoringTotalAmount = (companyMetrics.gross + companyMetrics.margin) * (getSidebarVal('factoring', 'factoring_custom') / 100);
+                                         const factoringTotalAmount = sidebarGross * (getSidebarVal('factoring', 'factoring_custom') / 100);
                     const factoringPerUnitValue = filteredNT > 0 ? factoringTotalAmount / filteredNT : 0;
                     const opTotal = getSidebarVal('plates', 'plates_custom') + factoringPerUnitValue;
                     const equipTotalWeekly = totalTruckWeeklyCost + getRowTotal('trailer_weekly', undefined, false, filteredTr) + totalTruckCpmCost;
@@ -3524,8 +3857,9 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                                <div className="bg-zinc-950/40 rounded border border-zinc-800/30 divide-y divide-zinc-800/30">
                                  {renderRow('Liability Insurance (Auto)', 'liability_insurance', 'liability_insurance_custom', false, 1, liabAutoPUTooltip, liabAutoTotalTooltip, finalLiabAutoPerUnit, finalLiabAutoTotal)}
                                  {renderRow('Liability Insurance (General)', '', '', false, 1, liabGenPUTooltip, liabGenTotalTooltip, finalLiabGenPerUnit, finalLiabGenTotal)}
-                                 {renderRow('Cargo Insurance', 'cargo_insurance', 'cargo_insurance_custom', false, 1, cargoPUTooltip, cargoTotalTooltip, finalCargoPerUnit, finalCargoTotal)}
-                                 {renderRow('Trailer Interchange', 'trailer_interchange', 'trailer_interchange_custom', false, 1, trailerInterchangePUTooltip, trailerInterchangeTotalTooltip, finalTrailerInterchangePerUnit, finalTrailerInterchangeTotal)}
+{renderRow('Cargo Insurance', 'cargo_insurance', 'cargo_insurance_custom', false, 1, cargoPUTooltip, cargoTotalTooltip, finalCargoPerUnit, finalCargoTotal)}
+{renderRow('Lease Gap Coverage', 'lease_gap_coverage', 'lease_gap_coverage_custom', false, 1, leaseGapPUTooltip, leaseGapTotalTooltip, finalLeaseGapPerUnit, finalLeaseGapTotal)}
+{renderRow('Trailer Interchange', 'trailer_interchange', 'trailer_interchange_custom', false, 1, trailerInterchangePUTooltip, trailerInterchangeTotalTooltip, finalTrailerInterchangePerUnit, finalTrailerInterchangeTotal)}
                          {renderRow('PD Premium', 'pd_premium', 'pd_premium_custom', false, 1, pdPremiumPUTooltip, pdPremiumTotalTooltip, finalPdPremiumPerUnit, finalPdPremiumTotal)}
                          {renderRow('Physical Damage (Truck)', 'physical_damage', 'physical_damage_custom', false, 1, pdTruckPUTooltip, pdTruckTotalTooltip, finalPdTruckPerUnit, finalPdTruckTotal)}
                                  {renderRow('Physical Damage (Trailer)', 'physical_damage', 'physical_damage_custom', false, 1, pdTrailerPUTooltip, pdTrailerTotalTooltip, finalPdTrailerPerUnit, finalPdTrailerTotal)}
@@ -3575,7 +3909,7 @@ const buildTotalTooltip = (title: string, rawBreakdown: any[]) => {
                       <span className="text-[10px] text-zinc-400 italic">Adjustment</span>
                     </div>
                     <div className="w-[25%] text-right">
-                      <span className="text-[10px] font-mono text-zinc-400">{formatCurrency(simulationConfig.globalFixedExpenseAdjustment * companyMetrics.effCount, 1)}</span>
+                      <span className="text-[10px] font-mono text-zinc-400">{formatCurrency(simulationConfig.globalFixedExpenseAdjustment * (allDrivers || drivers).filter(d => d.payDate === companyMetrics.currentPayDate).reduce((sum, d) => sum + (d.effectiveDrivers || 0), 0), 1)}</span>
                     </div>
                  </div>
                )}
