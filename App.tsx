@@ -281,6 +281,7 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
              baseDriverFaultExpenses: 0,
              baseNetPay: 0,
              fuelUsed: 0,
+             fuel_quantity: row.fuel_quantity ? Number(String(row.fuel_quantity).replace(/,/g, '')) : 0,
              fuelCost: Number(row.fuel_spent || 0),
             tollCost: Number(row.tolls_amount || 0) !== 0 ? -Math.abs(Number(row.tolls_amount || 0)) : 0,
             maintenanceCost: 0,

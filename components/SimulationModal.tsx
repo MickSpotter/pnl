@@ -4,6 +4,7 @@ import { formatCurrency } from '../utils';
 import { supabase } from '../lib/supabase';
 import RevenueCpm from './RevenueCpm';
 import PnlEditor from './PnlEditor';
+import FuelRebate from './FuelRebate';
 import { SimulationConfig, ExpenseItem, ConfigContract, PnlConfig } from '../types';
 
 interface SimulationModalProps {
@@ -42,7 +43,7 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [localConfigContracts, setLocalConfigContracts] = React.useState<ConfigContract[]>(configContracts || []);
   const [isSaving, setIsSaving] = React.useState(false);
   const [loadingMessage, setLoadingMessage] = React.useState('Saving...');
-  const [activeTab, setActiveTab] = React.useState<'fixed' | 'contracts' | 'dispatcher' | 'cpm' | 'pnl'>('fixed');
+  const [activeTab, setActiveTab] = React.useState<'fixed' | 'contracts' | 'dispatcher' | 'cpm' | 'pnl' | 'fuel_rebate'>('fixed');
   const [selectedContractType, setSelectedContractType] = React.useState('');
   const [pnlConfigs, setPnlConfigs] = React.useState<PnlConfig[]>([]);
   const [selectedExpenseName, setSelectedExpenseName] = React.useState('');
@@ -103,7 +104,7 @@ const fixedExpenseNames = Array.from(new Set([
 ...customExpenseNames
 ])).filter(Boolean);
 
-  const filteredFixedNames = fixedExpenseNames.filter(name => !finImportKeys.some(fi => fi.name === name) && name !== 'Liability Insurance (Global)' && name !== 'Dispatcher Pay' && name !== 'Revenue CPM' && !name.startsWith('MCLOO_INCLUDE_'));
+  const filteredFixedNames = fixedExpenseNames.filter(name => !finImportKeys.some(fi => fi.name === name) && name !== 'Liability Insurance (Global)' && name !== 'Dispatcher Pay' && name !== 'Revenue CPM' && name !== 'Fuel Rebate' && !name.startsWith('MCLOO_INCLUDE_'));
 
   const unifiedExpenses = [
     ...filteredFixedNames.map(name => ({ type: 'FIXED', name, key: '', puKey: '' })),
@@ -639,6 +640,7 @@ const fixedExpenseNames = Array.from(new Set([
             <button onClick={() => setActiveTab('dispatcher')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'dispatcher' ? 'border-purple-500 text-purple-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Dispatcher Pay</button>
             <button onClick={() => setActiveTab('cpm')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'cpm' ? 'border-pink-500 text-pink-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>CPM REVENUE</button>
             <button onClick={() => setActiveTab('pnl')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'pnl' ? 'border-cyan-500 text-cyan-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>PNL CALCULATION</button>
+            <button onClick={() => setActiveTab('fuel_rebate')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fuel_rebate' ? 'border-rose-500 text-rose-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>FUEL REBATE</button>
         </div>
 
         <div className="h-[600px] overflow-y-auto p-6 bg-zinc-950/30">
@@ -940,6 +942,17 @@ const fixedExpenseNames = Array.from(new Set([
                  pnlConfigs={pnlConfigs} 
                  setPnlConfigs={setPnlConfigs} 
                  availableContractTypes={availableContractTypes} 
+              />
+           </div>
+
+           <div className={activeTab === 'fuel_rebate' ? 'block' : 'hidden'}>
+              <FuelRebate
+                 localFixedExpenses={localFixedExpenses}
+                 handleCompanyExpenseChange={handleCompanyExpenseChange}
+                 handleDeleteCompanyExpense={handleDeleteCompanyExpense}
+                 availableContractTypes={availableContractTypes}
+                 companies={allCompanies}
+                 setLocalFixedExpenses={setLocalFixedExpenses}
               />
            </div>
 
@@ -1345,7 +1358,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                   <div className="relative flex items-center h-7">
                                                                                                 <span className="absolute left-2 text-amber-500/50 text-xs pointer-events-none">$</span>
                                                                                                 <input type="number" value={(cRule.amount !== undefined && cRule.amount !== null && cRule.amount !== '') ? cRule.amount : ((cRule.amount_after !== undefined && cRule.amount_after !== null && cRule.amount_after !== '') ? cRule.amount_after : '')} onChange={(e) => { handleCompanyExpenseChange(cRule.id, 'amount', e.target.value); handleCompanyExpenseChange(cRule.id, 'amount_after', e.target.value); }} className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                                {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
+                                                                                                {!['liability_insurance', 'liability_insurance_general', 'cargo_insurance', 'lease_gap_coverage', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
                                                                                          <span className="absolute right-2 text-amber-500/50 text-[9px] pointer-events-none">/ pu</span>
                                                                                       ) : (
                                                                                          <div className="absolute right-2 group/tooltip flex items-center justify-center">
@@ -1773,7 +1786,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                          }} disabled={!isCustom} className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-8 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${!isCustom ? 'opacity-50 cursor-not-allowed' : ''}`} />
                                                                                                       );
                                                                                                    })()}
-                                                                                                                       {!['liability_insurance', 'cargo_insurance', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
+                                                                                                                       {!['liability_insurance', 'cargo_insurance', 'lease_gap_coverage', 'trailer_interchange', 'lago', 'physical_damage_premium', 'physical_damage'].includes(exp.key) ? (
                                                                                                                           <span className="absolute right-2 text-zinc-500 text-[9px] pointer-events-none">/ pu</span>
                                                                                                                        ) : (
                                                                                                                           <div className="absolute right-2 group/tooltip flex items-center justify-center">

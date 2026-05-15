@@ -137,7 +137,7 @@ const MasterTable: React.FC<{
             rawEffCount: 0, effCount: 0, effNonTeamsCount: 0, effTrailersCount: 0, gross: 0, companyPay: 0,
             margin: 0, fuelSavings: 0, cogs: 0, dispatcherPay: 0, allocatedFixed: 0, baseFixed: 0, adjFixed: 0, totalPO: 0, totalPOCov: 0,
             totalEscrow: 0, totalBalance: 0, totalRecruiting: 0, netIncome: 0, effNonTeams: 0, pnlPerDriver: 0,
-            driverPay: 0, fuel: 0, maint: 0, tolls: 0, faults: 0, insuranceExp: 0,
+            driverPay: 0, fuel: 0, maint: 0, tolls: 0, faults: 0, insuranceExp: 0, fuelRebate: 0,
             insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0
           };
           driversByName.forEach((drvRecords) => {
@@ -165,6 +165,7 @@ const MasterTable: React.FC<{
             t.effNonTeams += m.effNonTeams;
             t.driverPay += m.driverPay || 0;
             t.fuel += m.fuel || 0;
+            t.fuelRebate += m.fuelRebate || 0;
             t.maint += m.maint || 0;
             t.tolls += m.tolls || 0;
             t.faults += m.faults || 0;
@@ -310,7 +311,7 @@ const MasterTable: React.FC<{
 
      return computedArr.map(item => item.original);
   };
-  const renderRowCells = (metrics: any, w4: any, isStub: boolean = false) => {
+ const renderRowCells = (metrics: any, w4: any, isStub: boolean = false, rowName?: string) => {
     const div = metrics.effNonTeamsCount > 0 ? metrics.effNonTeamsCount : metrics.effCount;
     return (
     <>
@@ -335,6 +336,7 @@ const MasterTable: React.FC<{
         </div>
       </td>
        <td className="px-1 py-0.5 text-right text-purple-400">{val(metrics.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.fuel, div)))}` : formatCurrency(val(metrics.fuel, div))}</td>
+       <td className="px-1 py-0.5 text-right text-purple-400">{formatCurrency(val(metrics.fuelRebate, div))}</td>
       <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.companyPay, div))}</td>
       <td className="px-1 py-0.5 text-right text-blue-400">-{formatCurrency(Math.abs(val(metrics.allocatedFixed, div)))}</td>
       <td className="px-1 py-0.5 text-right text-blue-400">{val(metrics.tolls, div) === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(val(metrics.tolls, div)))}`}</td>
@@ -342,8 +344,14 @@ const MasterTable: React.FC<{
        <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.totalRecruiting, div))}</td>
        {show4w && <td className="px-1 py-0.5 text-right font-medium text-orange-300">{isStub ? '-' : formatCurrency(val(w4.sum, div))}</td>}
       {show4w && <td className="px-1 py-0.5 text-right font-bold text-orange-300">{isStub ? '-' : formatCurrency(val(w4.avg, div))}</td>}
-      <td className={`px-1 py-0.5 text-right font-medium sticky z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] right-0 ${val(metrics.netIncome, div) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
+      <td className={`px-1 py-0.5 text-right font-medium sticky z-10 hover:z-[100] bg-zinc-950 group-hover:bg-zinc-900 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] right-0 ${val(metrics.netIncome, div) >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${rowName === 'TPOG' ? 'group/tpogpnl relative cursor-help !overflow-visible' : ''}`} onMouseMove={rowName === 'TPOG' ? handleTooltipMove : undefined}>
         {formatCurrency(val(metrics.netIncome, div))}
+        {rowName === 'TPOG' && (
+          <div className="fixed hidden group-hover/tpogpnl:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+            <span className="font-bold text-emerald-400">TPOG PnL Explanation:</span>
+            The columns in this row display the full amount (100%) including the franchise share. However, the Total PnL represents the net PnL for TPOG, as the franchise share (50%) has already been deducted.
+          </div>
+        )}
       </td>
     </>
     );
@@ -411,6 +419,9 @@ const MasterTable: React.FC<{
                        TPOG with Franchise: <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
                      </div>
                    </div>
+                 </th>
+                 <th onClick={() => requestSort('fuelRebate')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300">
+                   Fuel Reb. {sortConfig?.key === 'fuelRebate' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                  </th>
             <th onClick={() => requestSort('companyPay')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300">
               <div className="flex items-center justify-end gap-1">
@@ -580,11 +591,7 @@ const MasterTable: React.FC<{
                    
                    franchiseW4 = get4wMetrics('TPOG (Franchise PnL)');
 
-                   Object.keys(metrics).forEach(k => {
-                       if (!doNotDivide.includes(k) && typeof (metrics as any)[k] === 'number' && typeof fMetrics[k] === 'number') {
-                           (metrics as any)[k] -= fMetrics[k];
-                       }
-                   });
+                   metrics.netIncome -= fMetrics.netIncome;
                    w4 = { sum: w4.sum - franchiseW4.sum, avg: w4.avg - franchiseW4.avg };
                }
             }
@@ -593,7 +600,7 @@ const MasterTable: React.FC<{
               <React.Fragment key={contractName}>
                 <tr className="group hover:bg-zinc-800/20 transition-colors">
                   <td className="px-1 py-0.5 font-bold text-emerald-400 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{contractName}</td>
-                  {renderRowCells(metrics, w4)}
+                  {renderRowCells(metrics, w4, false, contractName)}
                 </tr>
                 {fMetrics && (
                      <tr key="TPOG_FRANCHISE_ROW" className="group hover:bg-zinc-800/20 transition-colors">
@@ -603,7 +610,7 @@ const MasterTable: React.FC<{
                            <div className="group/fran_info flex items-center cursor-help">
                              <Info size={12} className="text-amber-500/70 hover:text-amber-400 transition-colors" />
                              <div className="fixed hidden group-hover/fran_info:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] whitespace-normal w-56 pointer-events-none ml-4 mt-6 font-normal normal-case text-left">
-                               This row displays the franchise's share of the PnL for TPOG contracts. It is shown for informational purposes only and does not affect the Total PnL, as the adjustments are already accounted for in the main TPOG row above.
+                               This row displays the 50% franchise share of costs and revenues for the TPOG contract. The values represent exclusively the portion paid and earned by the franchise.
                              </div>
                            </div>
                          </div>
@@ -713,7 +720,7 @@ const MasterTable: React.FC<{
             {!isAverageView && Array.from({ length: 3 }).map((_, i) => (
               <td key={`empty-counts-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
             ))}
-            {Array.from({ length: 10 }).map((_, i) => (
+            {Array.from({ length: 11 }).map((_, i) => (
                <td key={`empty-metrics-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
              ))}
             {show4w && <td className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>}
@@ -757,6 +764,7 @@ const MasterTable: React.FC<{
                       </div>
                     </td>
                      <td className="px-1 py-1 text-right text-purple-400">{val(dynamicTotals.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.fuel, div)))}` : formatCurrency(val(dynamicTotals.fuel, div))}</td>
+                     <td className="px-1 py-1 text-right text-purple-400">{formatCurrency(val(dynamicTotals.fuelRebate, div))}</td>
                     <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.companyPay, div))}</td>
                     <td className="px-1 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(val(dynamicTotals.allocatedFixed, div)))}</td>
                     <td className="px-1 py-1 text-right text-blue-400">{val(dynamicTotals.tolls, div) === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(val(dynamicTotals.tolls, div)))}`}</td>
@@ -1661,6 +1669,7 @@ const PnLView: React.FC<PnLViewProps> = ({
           tolls: multipliedTolls,
           fuelCost: Number(d.fuelCost || 0) * companyTakeMulti,
           fuelSavings: Number(d.fuelSavings || 0) * companyTakeMulti,
+          fuelRebate: Number(d.fuelUsed || (d as any).fuel_quantity || 0) * (getActiveAmount('Fuel Rebate', date, d.companyId, uniqueCompsInWeek.length).amount || 0),
           recruitingCost: Number(d.recruitingCost || 0) * companyTakeMulti,
           calculatedFixedCost: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
           fixed_costs: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
@@ -1872,6 +1881,7 @@ const PnLView: React.FC<PnLViewProps> = ({
     const totalPO = initialDrivers.reduce((sum, d) => sum + (d.poAmount || 0), 0);
     const totalEscrow = initialDrivers.reduce((sum, d) => sum + (d.escrowBalance || 0), 0);
     const totalBalance = initialDrivers.reduce((sum, d) => sum + (d.balanceTotal || 0), 0);
+    const fuelRebate = initialDrivers.reduce((sum, d) => sum + ((d as any).fuelRebate || 0), 0);
     const insuranceExp = initialDrivers.reduce((sum, d) => sum + ((d as any).insuranceCost || 0), 0);
     const insLiabAuto = initialDrivers.reduce((sum, d) => sum + ((d as any).insLiabAuto || 0), 0);
     const insLiabGen = initialDrivers.reduce((sum, d) => sum + ((d as any).insLiabGen || 0), 0);
@@ -1943,7 +1953,8 @@ const PnLView: React.FC<PnLViewProps> = ({
       effNonTeams, currentPayDate,
       numOfTrucks, avgTruckPrice, numOfTrailers, avgTrailerPrice, truckUtilization, trailerUtilization,
       rawFinImportData, effNonTeamsForTrucks: effNonTeamsNoOOCount,
-      insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer
+      insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate
+  
     };
   }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems]);
 
