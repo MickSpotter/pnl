@@ -60,14 +60,19 @@ export const saveFixedExpenses = async (expenses: ExpenseItem[]): Promise<boolea
   const toInsert: any[] = [];
 
  expenses.forEach(exp => {
-    const { companyId, id, liability_comp_pct, liability_fran_pct, liability_disp_pct, company_perc, franchise_perc, dispatcher_perc, ...rest } = exp as any;
+    const { companyId, id, liability_comp_pct, liability_fran_pct, liability_disp_pct, company_perc, franchise_perc, dispatcher_perc, disp_mcloo_pay, ...rest } = exp as any;
     const out: any = { 
         ...rest, 
         company_id: companyId || rest.company_id,
         company_perc: company_perc !== undefined ? company_perc : (liability_comp_pct !== undefined && liability_comp_pct !== '' ? Number(liability_comp_pct) : null),
         franchise_perc: franchise_perc !== undefined ? franchise_perc : (liability_fran_pct !== undefined && liability_fran_pct !== '' ? Number(liability_fran_pct) : null),
-        dispatcher_perc: dispatcher_perc !== undefined ? dispatcher_perc : (liability_disp_pct !== undefined && liability_disp_pct !== '' ? Number(liability_disp_pct) : null)
+        dispatcher_perc: dispatcher_perc !== undefined ? dispatcher_perc : (liability_disp_pct !== undefined && liability_disp_pct !== '' ? Number(liability_disp_pct) : null),
+        disp_mcloo_pay: disp_mcloo_pay ? (typeof disp_mcloo_pay === 'string' ? disp_mcloo_pay : JSON.stringify(disp_mcloo_pay)) : null
     };
+
+   if (out.disp_mcloo_pay && typeof out.disp_mcloo_pay !== 'string') {
+        out.disp_mcloo_pay = JSON.stringify(out.disp_mcloo_pay);
+    }
 
     Object.keys(out).forEach(key => {
         if (out[key] === '') {

@@ -9,6 +9,7 @@ interface PnlEditorProps {
 
 const PNL_ITEMS = [
   { id: 'revenue_collected', label: 'Revenue Collected' },
+  { id: 'fuel_rebate', label: 'Fuel Rebate' },
   { id: 'weekly_expenses', label: 'Weekly Expenses' },
   { id: 'po', label: 'PO' },
   { id: 'tolls', label: 'Tolls' },
@@ -81,7 +82,7 @@ const PnlEditor: React.FC<PnlEditorProps> = ({ pnlConfigs, setPnlConfigs, availa
                                              {item.label}
                                           </button>
                                           {index < PNL_ITEMS.length - 1 && (
-                                             <span className="text-zinc-600 font-bold text-[10px]">-</span>
+                                             <span className="text-zinc-600 font-bold text-[10px]">{PNL_ITEMS[index + 1].id === 'fuel_rebate' ? '+' : '-'}</span>
                                           )}
                                        </React.Fragment>
                                     );

@@ -198,6 +198,30 @@ const MasterTable: React.FC<{
         return { sum, avg: sum / 4 };
       };
 
+      const getAdjustedGroupMetrics = (groupDrivers: DriverPerformance[]) => {
+          const metrics = getAggregatedMetrics(groupDrivers);
+          const tpogFranchiseDrivers = groupDrivers.filter(d => d.contractType === 'TPOG' && !!d.franchiseId).map(d => ({
+              ...d,
+              companyPay: (d as any).franchise_revenue_collected || 0,
+              fixed_costs: (d as any).franchise_fixed_costs_full || 0,
+              poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
+              poAmount: (d as any).franchise_po || 0
+          }));
+          if (tpogFranchiseDrivers.length > 0) {
+              const fMetrics: any = getAggregatedMetrics(tpogFranchiseDrivers);
+              const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver'];
+              Object.keys(fMetrics).forEach(k => {
+                  if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
+                      fMetrics[k] = fMetrics[k] / 2;
+                  }
+              });
+              metrics.netIncome -= fMetrics.netIncome;
+              metrics.pnlPerDriver = metrics.effNonTeams > 0 ? metrics.netIncome / metrics.effNonTeams : 0;
+              metrics.isAdjusted = true;
+          }
+          return metrics;
+      };
+
   const groupedDrivers = useMemo(() => {
                  const map = new Map<string, DriverPerformance[]>();
                  drivers.forEach(d => {
@@ -251,6 +275,7 @@ const MasterTable: React.FC<{
 
             t.netIncome -= fMetrics.netIncome;
             t.pnlPerDriver = t.effNonTeams > 0 ? t.netIncome / t.effNonTeams : 0;
+            t.isAdjusted = true;
         }
 
         return { ...t, w4Sum: overallW4.sum, w4Avg: overallW4.avg };
@@ -262,7 +287,7 @@ const MasterTable: React.FC<{
      const computedArr = arr.map(item => {
         let name = type === 'Driver' ? (item.name || 'Unassigned') : (item || 'Unassigned');
         let drvs = type === 'Driver' ? [item] : (groupedDrivers.get(name) || []);
-        const metrics = getAggregatedMetrics(drvs);
+        const metrics = getAdjustedGroupMetrics(drvs);
         const w4 = get4wMetrics(name);
         const div = metrics.effNonTeamsCount > 0 ? metrics.effNonTeamsCount : metrics.effCount;
         return { original: item, name, drvs, metrics, w4, div };
@@ -344,9 +369,9 @@ const MasterTable: React.FC<{
        <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.totalRecruiting, div))}</td>
        {show4w && <td className="px-1 py-0.5 text-right font-medium text-orange-300">{isStub ? '-' : formatCurrency(val(w4.sum, div))}</td>}
       {show4w && <td className="px-1 py-0.5 text-right font-bold text-orange-300">{isStub ? '-' : formatCurrency(val(w4.avg, div))}</td>}
-      <td className={`px-1 py-0.5 text-right font-medium sticky z-10 hover:z-[100] bg-zinc-950 group-hover:bg-zinc-900 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] right-0 ${val(metrics.netIncome, div) >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${rowName === 'TPOG' ? 'group/tpogpnl relative cursor-help !overflow-visible' : ''}`} onMouseMove={rowName === 'TPOG' ? handleTooltipMove : undefined}>
+      <td className={`px-1 py-0.5 text-right font-medium sticky z-10 hover:z-[100] bg-zinc-950 group-hover:bg-zinc-900 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] right-0 ${val(metrics.netIncome, div) >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${metrics.isAdjusted ? 'group/tpogpnl relative cursor-help !overflow-visible' : ''}`} onMouseMove={metrics.isAdjusted ? handleTooltipMove : undefined}>
         {formatCurrency(val(metrics.netIncome, div))}
-        {rowName === 'TPOG' && (
+        {metrics.isAdjusted && (
           <div className="fixed hidden group-hover/tpogpnl:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
             <span className="font-bold text-emerald-400">TPOG PnL Explanation:</span>
             The columns in this row display the full amount (100%) including the franchise share. However, the Total PnL represents the net PnL for TPOG, as the franchise share (50%) has already been deducted.
@@ -539,19 +564,19 @@ const MasterTable: React.FC<{
                    </div>
                  </th>}
                  <th onClick={() => requestSort('netIncome')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right font-bold text-white text-[10px] sticky right-0 z-20 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] cursor-pointer hover:text-emerald-400">
-                   Total PnL {sortConfig?.key === 'netIncome' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[320px] pointer-events-none transform -translate-x-[90%] flex flex-col gap-1.5 whitespace-normal break-words">
-                     <div className="font-bold text-white mb-0.5">Total PnL (Net Income) Calculation:</div>
-                     <div className="text-emerald-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-700">PnL = Revenue Collected - Fixed - PO Co Cov - Recruiting - Tolls</div>
+                   <div className="flex items-center justify-end gap-1">Total PnL {sortConfig?.key === 'netIncome' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</div>
+                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[320px] pointer-events-none transform -translate-x-[80%] flex flex-col gap-1.5 whitespace-normal break-words">
+                     <div className="font-bold text-white mb-0.5">Total PnL (Net Income) Calculation:</div>
+                     <div className="text-emerald-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-700">PnL = Revenue Collected + Fuel Rebate - Fixed - PO Co Cov - Recruiting - Tolls</div>
                      <div className="text-[9px] text-zinc-400 mt-1 italic">* Items included in this formula can be dynamically enabled or disabled per contract in the PNL Calculation settings.</div>
-                   </div>
+                   </div>
                  </th>
                </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/50 font-mono">
           {groupBy === 'Company' && sortArray(uniqueCompanies, 'Company').map(companyName => {
             const compDrivers = groupedDrivers.get(companyName || 'Unassigned') || [];
-            const metrics = getAggregatedMetrics(compDrivers);
+            const metrics = getAdjustedGroupMetrics(compDrivers);
             const w4 = get4wMetrics(companyName);
             return (
               <tr key={companyName} className="group hover:bg-zinc-800/20 transition-colors">
@@ -562,7 +587,7 @@ const MasterTable: React.FC<{
           })}
          {groupBy === 'Contract' && sortArray(uniqueContracts, 'Contract').map(contractName => {
             const compDrivers = groupedDrivers.get(contractName || 'Unassigned') || [];
-            let metrics = getAggregatedMetrics(compDrivers);
+            let metrics = getAdjustedGroupMetrics(compDrivers);
             let w4 = get4wMetrics(contractName);
             
             let fMetrics: any = null;
@@ -591,7 +616,6 @@ const MasterTable: React.FC<{
                    
                    franchiseW4 = get4wMetrics('TPOG (Franchise PnL)');
 
-                   metrics.netIncome -= fMetrics.netIncome;
                    w4 = { sum: w4.sum - franchiseW4.sum, avg: w4.avg - franchiseW4.avg };
                }
             }
@@ -624,7 +648,7 @@ const MasterTable: React.FC<{
          {groupBy === 'Franchise' && sortArray(uniqueFranchises, 'Franchise').map(franchiseName => {
              const displayLabel = (!franchiseName || franchiseName === 'Unassigned') ? 'No Franchise' : franchiseName;
              const franDrivers = groupedDrivers.get(franchiseName || 'Unassigned') || [];
-             const metrics = getAggregatedMetrics(franDrivers);
+             const metrics = getAdjustedGroupMetrics(franDrivers);
              const w4 = get4wMetrics(franchiseName);
              return (
               <tr key={franchiseName} className="group hover:bg-zinc-800/20 transition-colors">
@@ -637,7 +661,7 @@ const MasterTable: React.FC<{
          {groupBy === 'Team' && sortArray(uniqueTeams, 'Team').map(teamName => {
             const displayLabel = (!teamName || teamName === 'Unassigned') ? 'No Team' : teamName;
             const teamDrivers = groupedDrivers.get(teamName || 'Unassigned') || [];
-            const metrics = getAggregatedMetrics(teamDrivers);
+            const metrics = getAdjustedGroupMetrics(teamDrivers);
             const w4 = get4wMetrics(teamName);
             return (
               <tr key={teamName} className="group hover:bg-zinc-800/20 transition-colors">
@@ -649,7 +673,7 @@ const MasterTable: React.FC<{
           {!isAverageView && groupBy === 'Driver' && sortArray(driverRows, 'Driver').map((d, idx) => {
           const displayLabel = (!d.name || d.name === 'Unassigned') ? 'Unknown Driver' : d.name;
           const drvRecords = groupedDrivers.get(d.name || 'Unassigned') || [];
-          const metrics = getAggregatedMetrics([d]);
+          const metrics = getAdjustedGroupMetrics([d]);
           const w4 = get4wMetrics(d.name);
           
           const validRecordsForSwap = drvRecords.filter(r => r.companyId !== 'UNRECONCILED' && (r.effectiveDrivers || 0) > 0);
@@ -880,7 +904,7 @@ const PnLView: React.FC<PnLViewProps> = ({
       else if (upper === 'OO' || upper.includes('OO WITH FRANCHISE')) effContract = 'OO';
 
       const config = pnlConfigs.find(c => c.contract_type === effContract);
-      return config ? config.toggled_items : ['revenue_collected', 'weekly_expenses', 'po', 'tolls', 'recruiting'];
+      return config ? config.toggled_items : ['revenue_collected', 'fuel_rebate', 'weekly_expenses', 'po', 'tolls', 'recruiting'];
   }, [pnlConfigs]);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
@@ -1907,6 +1931,7 @@ const PnLView: React.FC<PnLViewProps> = ({
     let pnlTotalRecruiting = 0;
     let pnlBaseFixed = 0;
     let pnlAdjFixed = 0;
+    let pnlFuelRebate = 0;
 
     initialDrivers.forEach(d => {
         const activeItems = getPnlConfigItems(d.contractType || '');
@@ -1914,6 +1939,9 @@ const PnLView: React.FC<PnLViewProps> = ({
         const dCompanyPay = d.companyPay || 0;
         companyPay += dCompanyPay;
         if (activeItems.includes('revenue_collected')) pnlCompanyPay += dCompanyPay;
+
+        const dFuelRebate = (d as any).fuelRebate || 0;
+        if (activeItems.includes('fuel_rebate')) pnlFuelRebate += dFuelRebate;
 
         const dTolls = Math.abs((d as any).calculatedTolls !== undefined ? (d as any).calculatedTolls : ((d as any).tolls !== undefined ? (d as any).tolls : (d.tollCost || 0)));
         tolls += dTolls;
@@ -1941,9 +1969,9 @@ const PnLView: React.FC<PnLViewProps> = ({
 
     const allocatedFixed = baseFixed + adjFixed;
     const pnlAllocatedFixed = pnlBaseFixed + pnlAdjFixed;
-    const totalFixedPerUnit = effCount > 0 ? (allocatedFixed / effCount) : 0;
+    const totalFixedPerUnit = effCount > 0 ? (allocatedFixed / effCount) : 0;
 
-    const netIncome = pnlCompanyPay - pnlAllocatedFixed - Math.abs(pnlTotalPOCov) - Math.abs(pnlTotalRecruiting) - Math.abs(pnlTolls);
+    const netIncome = pnlCompanyPay + pnlFuelRebate - pnlAllocatedFixed - Math.abs(pnlTotalPOCov) - Math.abs(pnlTotalRecruiting) - Math.abs(pnlTolls);
     const pnlPerDriver = effNonTeams > 0 ? netIncome / effNonTeams : 0;
 
     return {
@@ -3656,7 +3684,7 @@ const finalTrailerInterchangePerUnit = filteredNT > 0 ? finalTrailerInterchangeT
                                              let tpogNt = 0;
                                              let tpogWeekly = 0;
                                              arr.forEach(b => {
-                                                 if (b.company === 'TPOG' || b.company === 'TPOG WITH FRANCHISE') {
+                                                 if (b.company === 'TPOG' || b.company === 'TPOG WITH FRANCHISE' || b.company === 'TPOG (Franchise PnL)') {
                                                      tpogNt += b.nt;
                                                      tpogWeekly += b.weekly;
                                                  } else {

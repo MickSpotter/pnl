@@ -64,6 +64,7 @@ export interface ExpenseItem {
       shared_insurance?: number;
       company_base_for_mcloo?: number;
       mcloo_base_mode?: boolean;
+      disp_mcloo_pay?: any;
 }
 
 

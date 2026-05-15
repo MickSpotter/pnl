@@ -75,6 +75,8 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [customAlert, setCustomAlert] = React.useState<{ isOpen: boolean, message: string, title: string } | null>(null);
   const toggleMclooRule = (id: string) => setExpandedMclooRules(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   const toggleDphRule = (id: string) => setExpandedDphRules(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  const [expandedDispMclooRules, setExpandedDispMclooRules] = React.useState<string[]>([]);
+  const toggleDispMclooRule = (id: string) => setExpandedDispMclooRules(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
 
   const finImportKeys = [
 { name: 'Liability Insurance (Auto)', key: 'liability_insurance', puKey: 'liability' },
@@ -528,7 +530,8 @@ const fixedExpenseNames = Array.from(new Set([
               shared_insurance: ((exp as any).shared_insurance !== undefined && (exp as any).shared_insurance !== null && String((exp as any).shared_insurance).trim() !== '') ? Number((exp as any).shared_insurance) : null,
               company_base_for_mcloo: ((exp as any).company_base_for_mcloo !== undefined && (exp as any).company_base_for_mcloo !== null && String((exp as any).company_base_for_mcloo).trim() !== '') ? Number((exp as any).company_base_for_mcloo) : null,
               franchise_charge: (exp as any).franchise_charge !== undefined && (exp as any).franchise_charge !== null ? Number((exp as any).franchise_charge) : null,
-              revenue_cpm: (exp as any).revenue_cpm !== undefined && (exp as any).revenue_cpm !== null && String((exp as any).revenue_cpm).trim() !== '' ? Number((exp as any).revenue_cpm) : null
+              revenue_cpm: (exp as any).revenue_cpm !== undefined && (exp as any).revenue_cpm !== null && String((exp as any).revenue_cpm).trim() !== '' ? Number((exp as any).revenue_cpm) : null,
+              disp_mcloo_pay: (exp as any).disp_mcloo_pay ? (typeof (exp as any).disp_mcloo_pay === 'string' ? (exp as any).disp_mcloo_pay : JSON.stringify((exp as any).disp_mcloo_pay)) : null
           }));
       if (expensesToSave.length > 0) {
           const { error } = await supabase.from('fixed_expenses').upsert(expensesToSave, { onConflict: 'id' });
@@ -863,17 +866,19 @@ const fixedExpenseNames = Array.from(new Set([
                     <table className="w-full text-left border-collapse table-fixed">
                        <thead>
                           <tr className="border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
-                             <th className="py-2 pr-2 font-bold w-[25%]">Contract</th>
-                             <th className="py-2 px-1 font-bold w-[20%]">Valid From</th>
-                             <th className="py-2 px-1 font-bold w-[20%]">Valid To</th>
-                             <th className="py-2 px-1 font-bold w-[15%]">Gross %</th>
-                             <th className="py-2 px-1 font-bold w-[15%]">Margin %</th>
-                             <th className="w-[5%]"></th>
+                             <th className="py-2 pr-2 font-bold w-[20%]">Contract</th>
+                             <th className="py-2 px-1 font-bold w-[13%]">Valid From</th>
+                             <th className="py-2 px-1 font-bold w-[13%]">Valid To</th>
+                             <th className="py-2 px-1 font-bold w-[10%]">Gross %</th>
+                             <th className="py-2 px-1 font-bold w-[10%]">Margin %</th>
+                             <th className="py-2 px-1 font-bold w-[28%] text-center">MCLOO Pay</th>
+                             <th className="w-[6%]"></th>
                           </tr>
                        </thead>
                        <tbody className="divide-y divide-zinc-800/30">
                           {localFixedExpenses.filter(e => e.name === 'Dispatcher Pay').map((rule) => (
-                             <tr key={rule.id} className="hover:bg-zinc-800/30 transition-colors group/row">
+                             <React.Fragment key={rule.id}>
+                             <tr className="hover:bg-zinc-800/30 transition-colors group/row">
                                 <td className="py-2 pr-2">
                                    <select value={(rule as any).contractType || ''} onChange={(e) => handleCompanyExpenseChange(rule.id, 'contractType' as any, e.target.value)} className="w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold focus:border-purple-500 outline-none h-7">
                                       <option value="" disabled>Select Contract</option>
@@ -899,10 +904,65 @@ const fixedExpenseNames = Array.from(new Set([
                                       <span className="absolute right-2 text-zinc-500 text-[10px] pointer-events-none">%</span>
                                    </div>
                                 </td>
+                                <td className="py-2 px-1 text-center">
+                                   <button onClick={() => toggleDispMclooRule(String(rule.id))} className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all ${expandedDispMclooRules.includes(String(rule.id)) ? 'bg-purple-500 text-white' : 'bg-purple-500/10 text-purple-500 border border-purple-500/30 hover:bg-purple-500/20'}`}>
+                                      {expandedDispMclooRules.includes(String(rule.id)) ? 'Close' : 'MCLOO Pay'}
+                                   </button>
+                                </td>
                                 <td className="py-2 pl-2 text-right">
-                                   <button onClick={() => handleDeleteCompanyExpense(String(rule.id))} className="text-zinc-600 hover:text-rose-500 transition-colors p-1 rounded opacity-0 group-hover/row:opacity-100 flex justify-center items-center w-8 h-7"><Trash2 size={14} /></button>
+                                   <button onClick={() => handleDeleteCompanyExpense(String(rule.id))} className="text-zinc-600 hover:text-rose-500 transition-colors p-1 rounded flex justify-center items-center w-8 h-7"><Trash2 size={14} /></button>
                                 </td>
                              </tr>
+                             {expandedDispMclooRules.includes(String(rule.id)) && (
+                                <tr className="bg-purple-500/5">
+                                   <td colSpan={6} className="px-3 pb-3 pt-0 border-t-0">
+                                      <div className="flex flex-col gap-3 bg-zinc-950/50 p-3 rounded-lg border border-purple-500/20 w-full relative ml-4 mt-2">
+                                         <div className="absolute -top-2.5 -left-3 text-purple-500/30">
+                                            <CornerDownRight size={16} />
+                                         </div>
+                                         {allCompanies.map(company => {
+                                            const dispFrom = rule.valid_from ? new Date(rule.valid_from).getTime() : 0;
+                                            const dispTo = rule.valid_to ? new Date(rule.valid_to).getTime() : 4102444800000;
+
+                                            const findMatch = (cId: string) => localFixedExpenses.find(e => {
+                                               if (e.name !== 'Liability Insurance (Auto)' || e.companyId !== cId) return false;
+                                               const insFrom = e.valid_from ? new Date(e.valid_from).getTime() : 0;
+                                               const insTo = e.valid_to ? new Date(e.valid_to).getTime() : 4102444800000;
+                                               return insFrom >= dispFrom && insTo <= dispTo;
+                                            });
+
+                                            const companyMatch = findMatch(company);
+                                            if (!companyMatch) return null;
+
+                                            const sharedAmt = companyMatch.shared_insurance || 0;
+                                            const currentVal = (companyMatch as any).disp_mcloo_pay || '';
+
+                                            return (
+                                               <div key={company} className="flex items-center gap-4">
+                                                  <div className="w-32 text-xs font-bold text-zinc-300 truncate" title={company}>{company}</div>
+                                                  <div className="w-32 text-xs text-amber-500 font-mono">Shared: ${sharedAmt}</div>
+                                                  <div className="flex items-center gap-2">
+                                                     <label className="text-[10px] text-purple-500/70 font-bold uppercase">Dispatcher Pays:</label>
+                                                     <div className="relative h-7 w-24">
+                                                        <span className="absolute left-2 top-1.5 text-purple-500/50 text-[10px] pointer-events-none">$</span>
+                                                        <input 
+                                                           type="number" 
+                                                           value={currentVal} 
+                                                           onChange={(e) => {
+                                                              handleCompanyExpenseChange(String(companyMatch.id), 'disp_mcloo_pay' as any, e.target.value);
+                                                           }}
+                                                           className="w-full bg-zinc-900 border border-purple-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-purple-500 outline-none h-full"
+                                                        />
+                                                     </div>
+                                                  </div>
+                                               </div>
+                                            );
+                                         })}
+                                      </div>
+                                   </td>
+                                </tr>
+                             )}
+                             </React.Fragment>
                           ))}
                        </tbody>
                     </table>
@@ -1372,11 +1432,6 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                 </div>
                                                                                 {exp.key === 'avg_truck_price' && (
                                                                                              <>
-                                                                                                <span className="text-zinc-500 font-bold text-xs mt-1">+</span>
-                                                                                                <div className="relative flex items-center h-7 w-24 mt-1">
-                                                                                                   <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
-                                                                                                   <input type="number" step="0.01" value={cRule.cpm ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'cpm', e.target.value)} placeholder="CPM" className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                                </div>
                                                                                                 <button onClick={() => {
                                                                                                     if (!expandedDphRules.includes(String(cRule.id))) {
                                                                                                         let fcArr = (cRule as any).franchise_charge;
@@ -1800,27 +1855,6 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                             </div>
                                                                                             {exp.key === 'avg_truck_price' && (
                                                                                                                             <div className="flex items-center gap-2">
-                                                                                                                               <span className="text-zinc-500 font-bold text-xs mt-1">+</span>
-                                                                                                                               <div className="relative flex items-center h-7 w-24 mt-1">
-                                                                                                                                  <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
-                                                                                                                                  {(() => {
-                                                                                                                                     const dObj = new Date(dateStr);
-                                                                                                                                     const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
-                                                                                                                                     const savedOverride = globalOverrides.find(go => go.valid_from === vfObj.toISOString().split('T')[0]);
-                                                                                                                                     const hasStateCustom = (gRule as any)[`is_custom_${exp.key}`] !== undefined;
-                                                                                                                                     const isCustom = hasStateCustom ? !!(gRule as any)[`is_custom_${exp.key}`] : !!savedOverride;
-                                                                                                                                     const cpmVal = hasStateCustom ? ((gRule as any)[`custom_cpm_${exp.key}`] ?? '') : (savedOverride ? (savedOverride.cpm ?? '') : '');
-                                                                                                                                   return (
-                                                                                                                                      <input type="number" step="0.01" value={cpmVal} onChange={(e) => {
-                                                                                                                                         if (isCustom) {
-                                                                                                                                            const val = e.target.value;
-                                                                                                                                            setFinImportData(prev => prev.map(d => d.id === gRule.id ? { ...d, [`is_custom_${exp.key}`]: true, [`custom_cpm_${exp.key}`]: val } : d));
-                                                                                                                                            if (!modifiedFinImportIds.includes(String(gRule.id))) setModifiedFinImportIds(prev => [...prev, String(gRule.id)]);
-                                                                                                                                         }
-                                                                                                                                      }} disabled={!isCustom} placeholder="CPM" className={`w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-emerald-500 outline-none transition-colors h-full ${!isCustom ? 'opacity-50 cursor-not-allowed' : ''}`} />
-                                                                                                                                   );
-                                                                                                                                  })()}
-                                                                                                                               </div>
                                                                                                                                <button onClick={() => {
                                                                                                                                    if (!expandedDphRules.includes(gRule.id)) {
                                                                                                                                        let fcArr = (gRule as any).franchise_charge;
@@ -2112,11 +2146,6 @@ let extraWeeklyAmt = 0;
                                                                                           </div>
                                                                                           {exp.key === 'avg_truck_price' && (
                                                                                              <div className="flex items-center gap-2">
-                                                                                                <span className="text-zinc-500 font-bold text-xs mt-1">+</span>
-                                                                                                <div className="relative flex items-center h-7 w-24 mt-1">
-                                                                                                   <span className="absolute left-2 text-emerald-500/50 text-xs pointer-events-none">$</span>
-                                                                                                   <input type="number" step="0.01" value={cRule.cpm ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'cpm', e.target.value)} placeholder="CPM" className="w-full bg-zinc-950 border border-amber-700/50 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-amber-500 outline-none h-full" />
-                                                                                                </div>
                                                                                                 <button onClick={() => {
                                                                                                     if (!expandedDphRules.includes(String(cRule.id))) {
                                                                                                         let fcArr = (cRule as any).franchise_charge;
