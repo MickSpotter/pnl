@@ -1405,7 +1405,9 @@ const PnLView: React.FC<PnLViewProps> = ({
         let liabilityAuto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
         let sharedInsLiabActive = getActiveAmount('Shared Insurance Liability', date, d.companyId, uniqueCompsInWeek.length);
         let sharedInsLiab = sharedInsLiabActive.amount !== 0 || sharedInsLiabActive.exp ? Math.abs(getWeeklyAmountFromExp(sharedInsLiabActive.amount, sharedInsLiabActive.exp)) : getFcRule('Shared Insurance Liability', 'shared_insurance_liability_custom', 'shared_insurance_liability');
-        liabilityAuto = liabilityAuto > sharedInsLiab ? liabilityAuto - sharedInsLiab : 0;
+        if (d.contractType === 'MCLOO') {
+            liabilityAuto = liabilityAuto - sharedInsLiab;
+        }
         let liabilityGeneral = getFcRule('Liability Insurance (General)', '', '');
         let liabilityGlobal = getFcRule('Liability Insurance (Global)', '', '');
         let liability = liabilityAuto + liabilityGlobal;
@@ -1474,7 +1476,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                              liability = Math.min(totalAmount, limit);
                          } else {
                              const sharedVal = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
-                             liability = totalAmount <= sharedVal ? totalAmount : totalAmount - sharedVal;
+                             liability = totalAmount - sharedVal;
                          }
                      } else {
                          liability = liabilityAuto + liabilityGeneral + liabilityGlobal;
@@ -1483,22 +1485,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                     liability = liabilityAuto + liabilityGeneral + liabilityGlobal;
                  }
 
-         if ((d.name === 'Alonzo Proyer' || d.name === 'Allen Dixon') && d.payDate === '2026-05-07') {
-             console.log(`--- DEBUG LIABILITY: ${d.name} | Pay Date: ${d.payDate} ---`);
-             console.log('Company:', d.companyId);
-             console.log('1. liabilityAuto:', liabilityAuto);
-             console.log('2. liabilityGeneral:', liabilityGeneral);
-             console.log('3. liabilityGlobal:', liabilityGlobal);
-             console.log('4. sharedLiabilityValue:', sharedLiabilityValue);
-             console.log('5. FINAL liability (before effNT):', liability);
-             console.log('--- RAW FC DATA ---');
-             console.log('company_specific_costs:', fc.company_specific_costs);
-             console.log('contract_specific_costs:', fc.contract_specific_costs);
-             console.log('liability_insurance_custom:', fc.liability_insurance_custom);
-             console.log('liability_insurance (global):', fc.liability_insurance);
-             console.log('--- SHARED LIABILITY SEARCH ---');
-             console.log('fixedExpenses examined:', fixedExpenses.filter(e => e.companyId === d.companyId || e.companyId === 'ALL'));
-         }
+         
          
          
         const plates = getFcRule('Plates', 'plates_custom', 'plates');
@@ -1544,7 +1531,6 @@ const PnLView: React.FC<PnLViewProps> = ({
              let l_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
              let s_liab_act = getActiveAmount('Shared Insurance Liability', date, d.companyId, uniqueCompsInWeek.length);
              let s_liab = s_liab_act.amount !== 0 || s_liab_act.exp ? Math.abs(getWeeklyAmountFromExp(s_liab_act.amount, s_liab_act.exp)) : getFcRule('Shared Insurance Liability', 'shared_insurance_liability_custom', 'shared_insurance_liability');
-             l_auto = l_auto > s_liab ? l_auto - s_liab : 0;
              const l_gl = getFcRule('Liability Insurance (Global)', '', '');
              const l_total = l_auto + l_gl;
              const c_cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
@@ -1570,6 +1556,33 @@ const PnLView: React.FC<PnLViewProps> = ({
                          (effTr * (c_trw + (c_phd / 4.0))) +
                          ((driver_gross + margin_amt) * (c_fact / 100.0)) +
                          (c_tcpm * (Number(d.milesDriven) || 0));
+                         if ((d.name === 'Alonzo Proyer' || d.name === 'Allen Dixon') && d.payDate === '2026-05-07' && type !== 'TPOG (Franchise PnL)' && !loggedTpogDrivers.has(`${d.name}_2026-05-07_REAL`)) {
+                 loggedTpogDrivers.add(`${d.name}_2026-05-07_REAL`);
+                 console.log(`--- REAL WEEKLY EXPENSES | DRIVER: ${d.name} | PAY DATE: ${d.payDate} ---`);
+                 console.log('FIXED TOTAL:', total);
+                 console.log('effNT:', effNT);
+                 console.log('effTr:', effTr);
+                 console.log('liability:', l_total * effNT);
+                 console.log('cargo:', c_cargo * effNT);
+                 console.log('leaseGapCoverage:', c_lease_gap * effNT);
+                 console.log('trailerInterchange:', c_ti * effNT);
+                 console.log('lago:', c_lago * effNT);
+                 console.log('phd_premium:', c_phd_p * effNT);
+                 console.log('phd (truck):', c_phd * effNT);
+                 console.log('phd (trailer):', (c_phd / 4.0) * effTr);
+                 console.log('truck_weekly:', c_tw * effNT);
+                 console.log('plates:', c_plates * effNT);
+                 console.log('telematics:', c_tel * effNT);
+                 console.log('phone_and_internet:', c_phone * effNT);
+                 console.log('office_supplies:', c_off * effNT);
+                 console.log('rent_and_parking:', c_rent * effNT);
+                 console.log('backup_mc:', c_bmc * effNT);
+                 console.log('backoffice_reg:', c_boreg * effNT);
+                 console.log('backoffice_tech:', c_botech * effNT);
+                 console.log('truck_cpm:', c_tcpm * (Number(d.milesDriven) || 0));
+                 console.log('trailer_weekly:', c_trw * effTr);
+                 console.log('factoring:', ((driver_gross + margin_amt) * (c_fact / 100.0)));
+             }
              return total;
          };
 
@@ -1594,58 +1607,7 @@ const PnLView: React.FC<PnLViewProps> = ({
          let ins_phd_trailer = (phd / 4.0) * effTr;
          let insurance_costs_calc = ins_liab_auto + ins_liab_gen + ins_cargo + ins_lease_gap + ins_trailer_interchange + ins_phd_premium + ins_phd_truck + ins_phd_trailer;
          
-      if ((d.name === 'Alonzo Proyer' || d.name === 'Allen Dixon') && d.payDate === '2026-05-07' && !loggedTpogDrivers.has(`${d.name}_2026-05-07`)) {
-           loggedTpogDrivers.add(`${d.name}_2026-05-07`);
-           effContractType = d.contractType || '';
-           let dbg_l_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
-           let dbg_s_liab_act = getActiveAmount('Shared Insurance Liability', date, d.companyId, uniqueCompsInWeek.length);
-           let dbg_s_liab = dbg_s_liab_act.amount !== 0 || dbg_s_liab_act.exp ? Math.abs(getWeeklyAmountFromExp(dbg_s_liab_act.amount, dbg_s_liab_act.exp)) : getFcRule('Shared Insurance Liability', 'shared_insurance_liability_custom', 'shared_insurance_liability');
-           dbg_l_auto = dbg_l_auto > dbg_s_liab ? dbg_l_auto - dbg_s_liab : 0;
-           let dbg_l_total = dbg_l_auto + getFcRule('Liability Insurance (Global)', '', '');
-           let dbg_cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance');
-           let dbg_lease_gap = getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage');
-           let dbg_ti = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange');
-           let dbg_lago = getFcRule('LAGO', 'lago_custom', 'lago');
-           let dbg_phd_p = getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium');
-           let dbg_phd = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage');
-           let dbg_plates = getFcRule('Plates', 'plates_custom', 'plates');
-           let dbg_fact = getFcRule('Factoring', 'factoring_custom', 'factoring');
-           let dbg_tel = getFcRule('Telematics', 'telematics_custom', 'telematics');
-           let dbg_phone = getFcRule('Phone & Internet', 'phone_and_internet_custom', 'phone_and_internet');
-           let dbg_off = getFcRule('Office Supplies', 'office_supplies_custom', 'office_supplies');
-           let dbg_rent = getFcRule('Rent & Parking', 'rent_and_parking_custom', 'rent_and_parking');
-           let dbg_bmc = getFcRule('Backup MC', 'backup_mc_custom', 'backup_mc');
-           let dbg_boreg = getFcRule('Back Office Pay', 'backoffice_reg_custom', 'backoffice_reg');
-           let dbg_botech = getFcRule('Tech Pay', 'backoffice_tech_custom', 'backoffice_tech');
-           let dbg_tw = getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly');
-           let dbg_tcpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm');
-           let dbg_trw = getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
-
-           console.log('--- WEEKLY EXPENSES DEBUG | DRIVER:', d.name, ' | TYPE:', effContractType, ' | COMPANY:', d.companyId, ' | PAY DATE:', d.payDate, '---');
-           console.log('FIXED TOTAL:', company_fixed_full);
-           console.log('effNT:', effNT);
-           console.log('effTr:', effTr);
-           console.log('liability:', dbg_l_total * effNT);
-           console.log('cargo:', dbg_cargo * effNT);
-           console.log('leaseGapCoverage:', dbg_lease_gap * effNT);
-           console.log('trailerInterchange:', dbg_ti * effNT);
-           console.log('lago:', dbg_lago * effNT);
-           console.log('phd_premium:', dbg_phd_p * effNT);
-           console.log('phd (truck):', dbg_phd * effNT);
-           console.log('phd (trailer):', (dbg_phd / 4) * effTr);
-           console.log('truck_weekly:', dbg_tw * effNT);
-           console.log('plates:', dbg_plates * effNT);
-           console.log('telematics:', dbg_tel * effNT);
-           console.log('phone_and_internet:', dbg_phone * effNT);
-           console.log('office_supplies:', dbg_off * effNT);
-           console.log('rent_and_parking:', dbg_rent * effNT);
-           console.log('backup_mc:', dbg_bmc * effNT);
-           console.log('backoffice_reg:', dbg_boreg * effNT);
-           console.log('backoffice_tech:', dbg_botech * effNT);
-           console.log('truck_cpm:', dbg_tcpm * (Number(d.milesDriven) || 0));
-           console.log('trailer_weekly:', dbg_trw * effTr);
-           console.log('factoring:', (driver_gross + margin_amt) * (dbg_fact / 100));
-       }
+      
 
         let fixed = company_fixed_full || 0;
 
