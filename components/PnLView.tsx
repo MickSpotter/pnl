@@ -1556,7 +1556,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                          (effTr * (c_trw + (c_phd / 4.0))) +
                          ((driver_gross + margin_amt) * (c_fact / 100.0)) +
                          (c_tcpm * (Number(d.milesDriven) || 0));
-                         if ((d.name === 'Alonzo Proyer' || d.name === 'Allen Dixon') && d.payDate === '2026-05-07' && type !== 'TPOG (Franchise PnL)' && !loggedTpogDrivers.has(`${d.name}_2026-05-07_REAL`)) {
+                         if ((d.name === 'Allen Dixon' || d.name === 'Allen Dixon') && d.payDate === '2026-05-07' && type !== 'TPOG (Franchise PnL)' && !loggedTpogDrivers.has(`${d.name}_2026-05-07_REAL`)) {
                  loggedTpogDrivers.add(`${d.name}_2026-05-07_REAL`);
                  console.log(`--- REAL WEEKLY EXPENSES | DRIVER: ${d.name} | PAY DATE: ${d.payDate} ---`);
                  console.log('FIXED TOTAL:', total);
@@ -1590,14 +1590,43 @@ const PnLView: React.FC<PnLViewProps> = ({
              company_fixed_full = (effNT * (liability + cargo + leaseGap + trailerInterchange + lago + phone_and_internet + office_supplies + rent_and_parking + backup_mc + backoffice_reg + backoffice_tech)) + (effTr * (trailer_weekly + (phd / 4.0))) + ((driver_gross + margin_amt) * (factoring / 100.0)) + (truck_cpm * (Number(d.milesDriven) || 0));
          } else if (d.contractType === 'MCLOO') {
              company_fixed_full = (effNT * (liability + cargo + leaseGap + trailerInterchange + lago + phd_premium + phd + truck_weekly + plates + telematics + phone_and_internet + office_supplies + rent_and_parking + backup_mc + backoffice_reg + backoffice_tech)) + (effTr * (trailer_weekly + (phd / 4.0))) + ((driver_gross + margin_amt) * (factoring / 100.0)) + (truck_cpm * (Number(d.milesDriven) || 0));
+
+             if (d.name === 'Allen Dixon' && d.payDate === '2026-05-14' && !loggedTpogDrivers.has(`${d.name}_2026-05-14_MCLOO`)) {
+                 loggedTpogDrivers.add(`${d.name}_2026-05-14_MCLOO`);
+                 console.log(`--- REAL WEEKLY EXPENSES | DRIVER: ${d.name} | TYPE: MCLOO | PAY DATE: ${d.payDate} ---`);
+                 console.log('FIXED TOTAL:', company_fixed_full);
+                 console.log('effNT:', effNT);
+                 console.log('effTr:', effTr);
+                 console.log('liability:', liability * effNT);
+                 console.log('cargo:', cargo * effNT);
+                 console.log('leaseGapCoverage:', leaseGap * effNT);
+                 console.log('trailerInterchange:', trailerInterchange * effNT);
+                 console.log('lago:', lago * effNT);
+                 console.log('phd_premium:', phd_premium * effNT);
+                 console.log('phd (truck):', phd * effNT);
+                 console.log('phd (trailer):', (phd / 4.0) * effTr);
+                 console.log('truck_weekly:', truck_weekly * effNT);
+                 console.log('plates:', plates * effNT);
+                 console.log('telematics:', telematics * effNT);
+                 console.log('phone_and_internet:', phone_and_internet * effNT);
+                 console.log('office_supplies:', office_supplies * effNT);
+                 console.log('rent_and_parking:', rent_and_parking * effNT);
+                 console.log('backup_mc:', backup_mc * effNT);
+                 console.log('backoffice_reg:', backoffice_reg * effNT);
+                 console.log('backoffice_tech:', backoffice_tech * effNT);
+                 console.log('truck_cpm:', truck_cpm * (Number(d.milesDriven) || 0));
+                 console.log('trailer_weekly:', trailer_weekly * effTr);
+                 console.log('factoring:', ((driver_gross + margin_amt) * (factoring / 100.0)));
+             }
          } else {
              company_fixed_full = calculateFixedForType(d.contractType || '');
              if (isGarland) company_fixed_full -= effNT * (truck_weekly + phd_premium + phd + plates);
              if (isFranchise) franchise_fixed_full = calculateFixedForType('TPOG (Franchise PnL)');
          }
 
-         let ins_liab_auto = (d.contractType === 'MCLOO' ? liability : liabilityAuto) * effNT;
-         let ins_liab_gen = (d.contractType === 'MCLOO' ? liabilityGeneral : (liabilityGeneral + liabilityGlobal)) * effNT;
+         let raw_l_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
+         let ins_liab_auto = raw_l_auto * effNT;
+         let ins_liab_gen = (liabilityGeneral + liabilityGlobal) * effNT;
          let ins_cargo = cargo * effNT;
          let ins_lease_gap = leaseGap * effNT;
          let ins_trailer_interchange = trailerInterchange * effNT;
