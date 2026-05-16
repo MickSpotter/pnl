@@ -69,22 +69,10 @@ const Simulator: React.FC<SimulatorProps> = ({
   const availableContracts = useMemo(() => {
     let baseContracts = Array.from(new Set(driverWithEffectiveContracts.map(d => d.contractType))).filter(Boolean) as string[];
     if (configContracts) {
-      baseContracts = baseContracts.filter(c => c !== 'TPOG WITH FRANCHISE');
-      
-      const ooRule = [...configContracts].filter(c => c.contract_type === 'OO').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-      const ooFranRule = [...configContracts].filter(c => c.contract_type === 'OO WITH FRANCHISE').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-      const areOoRulesSame = ooRule && ooFranRule && 
-                           ooRule.calculation_type === ooFranRule.calculation_type &&
-                           ooRule.mc_gross_percent === ooFranRule.mc_gross_percent &&
-                           ooRule.mc_margin_percent === ooFranRule.mc_margin_percent &&
-                           ooRule.dispatcher_gross_percent === ooFranRule.dispatcher_gross_percent &&
-                           (ooRule as any).dispatcher_margin_percent === (ooFranRule as any).dispatcher_margin_percent;
-      if (areOoRulesSame) {
-        baseContracts = baseContracts.filter(c => c !== 'OO WITH FRANCHISE');
-      }
-    }
-    return baseContracts.filter(c => c !== 'TCPML' && c !== 'CMPL' && c !== 'MCLPOO').sort();
-  }, [driverWithEffectiveContracts, configContracts]);
+      baseContracts = baseContracts.filter(c => c !== 'TPOG WITH FRANCHISE' && c !== 'OO WITH FRANCHISE');
+    }
+    return baseContracts.filter(c => c !== 'TCPML' && c !== 'CMPL' && c !== 'MCLPOO').sort();
+  }, [driverWithEffectiveContracts, configContracts]);
 
   useEffect(() => {
     if (availableContracts.length > 0 && !availableContracts.includes(selectedContractSim)) {
@@ -274,18 +262,8 @@ const Simulator: React.FC<SimulatorProps> = ({
     if (tableContractFilter === 'TPOG') {
          return dateFiltered.filter(d => d.contractType === 'TPOG' || d.contractType === 'TPOG WITH FRANCHISE');
     }
-    if (tableContractFilter === 'OO' && configContracts) {
-         const ooRule = [...configContracts].filter(c => c.contract_type === 'OO').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-         const franRule = [...configContracts].filter(c => c.contract_type === 'OO WITH FRANCHISE').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-         const areRulesSame = ooRule && franRule && 
-                              ooRule.calculation_type === franRule.calculation_type &&
-                              ooRule.mc_gross_percent === franRule.mc_gross_percent &&
-                              ooRule.mc_margin_percent === franRule.mc_margin_percent &&
-                              ooRule.dispatcher_gross_percent === franRule.dispatcher_gross_percent &&
-                              (ooRule as any).dispatcher_margin_percent === (franRule as any).dispatcher_margin_percent;
-         if (areRulesSame || !franRule) {
-             return dateFiltered.filter(d => d.contractType === 'OO' || d.contractType === 'OO WITH FRANCHISE');
-         }
+    if (tableContractFilter === 'OO') {
+         return dateFiltered.filter(d => d.contractType === 'OO' || d.contractType === 'OO WITH FRANCHISE');
     }
     return dateFiltered.filter(d => d.contractType === tableContractFilter);
   }, [driverWithEffectiveContracts, targetDate, tableContractFilter, configContracts]);
@@ -371,19 +349,8 @@ const Simulator: React.FC<SimulatorProps> = ({
         if (selectedContractSim === 'TPOG') {
              isTarget = driver.contractType === 'TPOG' || driver.contractType === 'TPOG WITH FRANCHISE';
         }
-        if (selectedContractSim === 'OO' || selectedContractSim === 'OO WITH FRANCHISE') {
-             const ooRule = currentConfig;
-             const otherContract = selectedContractSim === 'OO' ? 'OO WITH FRANCHISE' : 'OO';
-             const otherRule = [...(configContracts || [])].filter(c => c.contract_type === otherContract).sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
-             const areRulesSame = ooRule && otherRule && 
-                                  ooRule.calculation_type === otherRule.calculation_type &&
-                                  ooRule.mc_gross_percent === otherRule.mc_gross_percent &&
-                                  ooRule.mc_margin_percent === otherRule.mc_margin_percent &&
-                                  ooRule.dispatcher_gross_percent === otherRule.dispatcher_gross_percent &&
-                                  (ooRule as any).dispatcher_margin_percent === (otherRule as any).dispatcher_margin_percent;
-             if (areRulesSame || !otherRule) {
-                 isTarget = driver.contractType === 'OO' || driver.contractType === 'OO WITH FRANCHISE';
-             }
+        if (selectedContractSim === 'OO') {
+             isTarget = driver.contractType === 'OO' || driver.contractType === 'OO WITH FRANCHISE';
         }
         
         if (!isTarget) return { driver, isTarget: false };
@@ -828,7 +795,7 @@ const Simulator: React.FC<SimulatorProps> = ({
           <div className="flex-1 overflow-auto pt-12 p-2">
             <MasterTableComponent
               companyMetrics={companyMetrics}
-              drivers={activeDrivers}
+              drivers={activeDrivers.map(d => ({ ...d, contractType: d.originalContractType || d.contractType }))}
               calculateMetrics={calculateMetrics}
               totalActiveCount={totalActiveCount}
               selectedDate={selectedDate}
@@ -844,7 +811,7 @@ const Simulator: React.FC<SimulatorProps> = ({
           <div className="flex-1 overflow-auto pt-12 p-2">
             <MasterTableComponent
               companyMetrics={companyMetrics}
-              drivers={simulatedDrivers}
+              drivers={simulatedDrivers.map(d => ({ ...d, contractType: d.originalContractType || d.contractType }))}
               calculateMetrics={calculateMetrics}
               totalActiveCount={totalActiveCount}
               selectedDate={selectedDate}

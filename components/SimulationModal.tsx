@@ -98,7 +98,7 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
 { name: 'Tech Pay', key: 'tech_pay', puKey: 'backoffice_tech' }
 ];
 
-const availableContractTypes = Array.from(new Set(['MCLOO', 'LOO', 'LPOO', 'OO', 'MCOO', 'POG', 'TPOG', 'CPM', ...localConfigContracts.map(c => c.contract_type === 'TPOG WITH FRANCHISE' ? 'TPOG' : c.contract_type)])).filter(Boolean);
+const availableContractTypes = Array.from(new Set(['MCLOO', 'LOO', 'LPOO', 'OO', 'MCOO', 'POG', 'TPOG', 'CPM', ...localConfigContracts.map(c => (c.contract_type === 'TPOG WITH FRANCHISE' || c.contract_type === 'OO WITH FRANCHISE') ? c.contract_type.replace(' WITH FRANCHISE', '') : c.contract_type)])).filter(Boolean);
 
 const fixedExpenseNames = Array.from(new Set([
 'CPM', 'Plates', 'Factoring', 
@@ -116,7 +116,7 @@ const fixedExpenseNames = Array.from(new Set([
   React.useEffect(() => {
         if (isOpen) {
           setLocalSimConfig(simulationConfig);
-          setLocalFixedExpenses([...fixedExpenses].filter(e => e.contract_type !== 'TPOG WITH FRANCHISE' && (e as any).contractType !== 'TPOG WITH FRANCHISE').map(e => {
+          setLocalFixedExpenses([...fixedExpenses].filter(e => e.contract_type !== 'TPOG WITH FRANCHISE' && (e as any).contractType !== 'TPOG WITH FRANCHISE' && e.contract_type !== 'OO WITH FRANCHISE' && (e as any).contractType !== 'OO WITH FRANCHISE').map(e => {
               const mapped: any = { ...e, original_valid_from: e.valid_from };
               if (mapped.name === 'Liability Insurance') mapped.name = 'Liability Insurance (Auto)';
               if (mapped.contract_type) {
@@ -130,7 +130,7 @@ const fixedExpenseNames = Array.from(new Set([
               const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0;
               return dateB - dateA;
           }));
-          setLocalConfigContracts((configContracts || []).filter(c => c.contract_type !== 'TPOG WITH FRANCHISE'));
+          setLocalConfigContracts((configContracts || []).filter(c => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE'));
 
           const fetchFinData = async () => {
              const { data: importData } = await supabase.from('finImport').select('*').order('week_ending', { ascending: false });
@@ -145,7 +145,7 @@ const fixedExpenseNames = Array.from(new Set([
              
              const { fetchPnlConfigs } = await import('../lib/supabase');
              const loadedPnlConfigs = await fetchPnlConfigs();
-             setPnlConfigs(loadedPnlConfigs.filter((c: any) => c.contract_type !== 'TPOG WITH FRANCHISE'));
+             setPnlConfigs(loadedPnlConfigs.filter((c: any) => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE'));
           };
           fetchFinData();
     }
@@ -501,10 +501,14 @@ const fixedExpenseNames = Array.from(new Set([
       
       });
       
-      let processedExpandedExpenses = expandedFinalExpenses.filter(e => (e as any).contractType !== 'TPOG WITH FRANCHISE');
+      let processedExpandedExpenses = expandedFinalExpenses.filter(e => (e as any).contractType !== 'TPOG WITH FRANCHISE' && (e as any).contractType !== 'OO WITH FRANCHISE');
       const tpogExps = processedExpandedExpenses.filter(e => (e as any).contractType === 'TPOG');
       tpogExps.forEach(e => {
           processedExpandedExpenses.push({ ...e, id: Math.random().toString(36).substring(2, 11), contractType: 'TPOG WITH FRANCHISE' } as any);
+      });
+      const ooExps = processedExpandedExpenses.filter(e => (e as any).contractType === 'OO');
+      ooExps.forEach(e => {
+          processedExpandedExpenses.push({ ...e, id: Math.random().toString(36).substring(2, 11), contractType: 'OO WITH FRANCHISE' } as any);
       });
 
       const deletedIds = fixedExpenses
@@ -549,18 +553,26 @@ const fixedExpenseNames = Array.from(new Set([
           ...c,
           valid_from: c.valid_from && String(c.valid_from).trim() !== '' ? c.valid_from : null,
           valid_to: c.valid_to && String(c.valid_to).trim() !== '' ? c.valid_to : null
-      })).filter(c => c.contract_type !== 'TPOG WITH FRANCHISE');
+      })).filter(c => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE');
       
       const tpogContracts = cleanContracts.filter(c => c.contract_type === 'TPOG');
       tpogContracts.forEach(c => {
           cleanContracts.push({ ...c, id: Math.random().toString(36).substring(7), contract_type: 'TPOG WITH FRANCHISE' });
       });
+      const ooContracts = cleanContracts.filter(c => c.contract_type === 'OO');
+      ooContracts.forEach(c => {
+          cleanContracts.push({ ...c, id: Math.random().toString(36).substring(7), contract_type: 'OO WITH FRANCHISE' });
+      });
       await saveConfigContracts(cleanContracts);
 
-      let finalPnlConfigs = pnlConfigs.filter(c => c.contract_type !== 'TPOG WITH FRANCHISE');
+      let finalPnlConfigs = pnlConfigs.filter(c => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE');
       const tpogPnl = finalPnlConfigs.filter(c => c.contract_type === 'TPOG');
       tpogPnl.forEach(c => {
           finalPnlConfigs.push({ ...c, id: Math.random().toString(36).substring(7), contract_type: 'TPOG WITH FRANCHISE' });
+      });
+      const ooPnl = finalPnlConfigs.filter(c => c.contract_type === 'OO');
+      ooPnl.forEach(c => {
+          finalPnlConfigs.push({ ...c, id: Math.random().toString(36).substring(7), contract_type: 'OO WITH FRANCHISE' });
       });
       await savePnlConfigs(finalPnlConfigs);
 

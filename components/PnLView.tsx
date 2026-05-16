@@ -133,12 +133,13 @@ const MasterTable: React.FC<{
               if (!driversByName.has(name)) driversByName.set(name, []);
               driversByName.get(name)!.push(d);
           });
-          const t = {
+          const t: any = {
             rawEffCount: 0, effCount: 0, effNonTeamsCount: 0, effTrailersCount: 0, gross: 0, companyPay: 0,
-            margin: 0, fuelSavings: 0, cogs: 0, dispatcherPay: 0, allocatedFixed: 0, baseFixed: 0, adjFixed: 0, totalPO: 0, totalPOCov: 0,
+            margin: 0, fuelSavings: 0, cogs: 0, dispatcherPay: 0, dispGrossAmount: 0, dispMarginAmount: 0, dispSharedLiability: 0, allocatedFixed: 0, baseFixed: 0, adjFixed: 0, totalPO: 0, totalPOCov: 0,
             totalEscrow: 0, totalBalance: 0, totalRecruiting: 0, netIncome: 0, effNonTeams: 0, pnlPerDriver: 0,
             driverPay: 0, fuel: 0, maint: 0, tolls: 0, faults: 0, insuranceExp: 0, fuelRebate: 0,
-            insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0
+            insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0,
+            fcTruck: 0, fcTrailer: 0, fcPlates: 0, fcTelematics: 0, fcPhone: 0, fcOffice: 0, fcRent: 0, fcBackupMc: 0, fcBoReg: 0, fcBoTech: 0, fcFactoring: 0
           };
           driversByName.forEach((drvRecords) => {
             const m = calculateMetrics(drvRecords, true);
@@ -153,6 +154,9 @@ const MasterTable: React.FC<{
             t.fuelSavings += m.fuelSavings;
             t.cogs += m.cogs;
             t.dispatcherPay += m.dispatcherPay;
+            t.dispGrossAmount += m.dispGrossAmount || 0;
+            t.dispMarginAmount += m.dispMarginAmount || 0;
+            t.dispSharedLiability += m.dispSharedLiability || 0;
             t.allocatedFixed += m.allocatedFixed;
             t.baseFixed += m.baseFixed || 0;
             t.adjFixed += m.adjFixed || 0;
@@ -179,6 +183,17 @@ const MasterTable: React.FC<{
             t.insPhdPremium += m.insPhdPremium || 0;
             t.insPhdTruck += m.insPhdTruck || 0;
             t.insPhdTrailer += m.insPhdTrailer || 0;
+            t.fcTruck += m.fcTruck || 0;
+            t.fcTrailer += m.fcTrailer || 0;
+            t.fcPlates += m.fcPlates || 0;
+            t.fcTelematics += m.fcTelematics || 0;
+            t.fcPhone += m.fcPhone || 0;
+            t.fcOffice += m.fcOffice || 0;
+            t.fcRent += m.fcRent || 0;
+            t.fcBackupMc += m.fcBackupMc || 0;
+            t.fcBoReg += m.fcBoReg || 0;
+            t.fcBoTech += m.fcBoTech || 0;
+            t.fcFactoring += m.fcFactoring || 0;
           });
           t.pnlPerDriver = t.effNonTeams > 0 ? t.netIncome / t.effNonTeams : 0;
           return t;
@@ -344,8 +359,16 @@ const MasterTable: React.FC<{
       {!isAverageView && <td className="px-1 py-0.5 text-right text-white">{groupBy === 'Driver' ? `${Number((metrics.effNonTeamsCount * 7).toFixed(1))}/7` : Number(metrics.effNonTeamsCount.toFixed(1))}</td>}
       {!isAverageView && <td className="px-1 py-0.5 text-right text-white">{groupBy === 'Driver' ? `${Number((metrics.effTrailersCount * 7).toFixed(1))}/7` : Number(metrics.effTrailersCount.toFixed(1))}</td>}
       <td className="px-1 py-0.5 text-right text-yellow-400">{formatCurrency(val(metrics.gross, div))}</td>
-      <td className="px-1 py-0.5 text-right text-yellow-400 font-medium">{formatCurrency(val(metrics.margin, div))}</td>
-      <td className="px-1 py-0.5 text-right text-purple-400">-{formatCurrency(Math.abs(val(metrics.dispatcherPay, div)))}</td>
+     <td className="px-1 py-0.5 text-right text-yellow-400 font-medium">{formatCurrency(val(metrics.margin, div))}</td>
+      <td className="group/disp relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
+        -{formatCurrency(Math.abs(val(metrics.dispatcherPay, div)))}
+        <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+          <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
+          <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.dispGrossAmount, div)))}</span></div>
+          <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.dispMarginAmount, div)))}</span></div>
+          <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono">+{formatCurrency(Math.abs(val(metrics.dispSharedLiability, div)))}</span></div>
+        </div>
+      </td>
       <td className="group/ins relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
         -{formatCurrency(Math.abs(val(metrics.insuranceExp, div)))}
         <div className="fixed hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -363,7 +386,34 @@ const MasterTable: React.FC<{
        <td className="px-1 py-0.5 text-right text-purple-400">{val(metrics.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.fuel, div)))}` : formatCurrency(val(metrics.fuel, div))}</td>
        <td className="px-1 py-0.5 text-right text-purple-400">{formatCurrency(val(metrics.fuelRebate, div))}</td>
       <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.companyPay, div))}</td>
-      <td className="px-1 py-0.5 text-right text-blue-400">-{formatCurrency(Math.abs(val(metrics.allocatedFixed, div)))}</td>
+      <td className="group/fixed relative hover:z-[99999] px-1 py-0.5 text-right text-blue-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
+        -{formatCurrency(Math.abs(val(metrics.allocatedFixed, div)))}
+        <div className="fixed hidden group-hover/fixed:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 whitespace-normal break-words dynamic-tooltip">
+          <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Weekly Expenses Breakdown:</div>
+          {val(metrics.insLiabAuto, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Liability (Auto):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabAuto, div)))}</span></div>}
+          {val(metrics.insLiabGen, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabGen, div)))}</span></div>}
+          {val(metrics.insCargo, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Cargo:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insCargo, div)))}</span></div>}
+          {val(metrics.insLeaseGapCoverage, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Lease Gap Coverage:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLeaseGapCoverage, div)))}</span></div>}
+          {val(metrics.insTrailerInterchange, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Trailer Interchange:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insTrailerInterchange, div)))}</span></div>}
+          {val(metrics.insLago, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>LAGO:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLago, div)))}</span></div>}
+          {val(metrics.insPhdPremium, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Premium:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdPremium, div)))}</span></div>}
+          {val(metrics.insPhdTruck, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Truck:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTruck, div)))}</span></div>}
+          {val(metrics.insPhdTrailer, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Trailer:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTrailer, div)))}</span></div>}
+          {val(metrics.fcTruck, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Truck Price:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcTruck, div)))}</span></div>}
+          {val(metrics.fcTrailer, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Trailer Price:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcTrailer, div)))}</span></div>}
+          {val(metrics.fcPlates, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Plates:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcPlates, div)))}</span></div>}
+          {val(metrics.fcTelematics, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Telematics:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcTelematics, div)))}</span></div>}
+          {val(metrics.fcPhone, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Phone & Internet:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcPhone, div)))}</span></div>}
+          {val(metrics.fcOffice, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Office Supplies:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcOffice, div)))}</span></div>}
+          {val(metrics.fcRent, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Rent & Parking:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcRent, div)))}</span></div>}
+          {val(metrics.fcBackupMc, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Backup MC:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcBackupMc, div)))}</span></div>}
+          {val(metrics.fcBoReg, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Back Office Pay:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcBoReg, div)))}</span></div>}
+          {val(metrics.fcBoTech, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Tech Pay:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcBoTech, div)))}</span></div>}
+          {val(metrics.fcFactoring, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Factoring:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.fcFactoring, div)))}</span></div>}
+          {val(metrics.adjFixed, div) !== 0 && <div className="flex justify-between gap-2"><span>Adjustments:</span><span className="font-mono">{val(metrics.adjFixed, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.adjFixed, div)))}</span></div>}
+          <div className="flex justify-between gap-2 border-t border-zinc-600 pt-1 font-bold text-white"><span>Total Wkly Exp:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.allocatedFixed, div)))}</span></div>
+        </div>
+      </td>
       <td className="px-1 py-0.5 text-right text-blue-400">{val(metrics.tolls, div) === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(val(metrics.tolls, div)))}`}</td>
       <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.totalPOCov, div))}</td>
        <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.totalRecruiting, div))}</td>
@@ -752,7 +802,7 @@ const MasterTable: React.FC<{
             <td className="p-0 border-0 pointer-events-none sticky right-0 z-10 bg-zinc-950 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px]" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
           </tr>
         </tbody>
-        <tfoot className="sticky bottom-0 z-40 bg-zinc-950 border-t-2 border-zinc-800 shadow-[0_-1px_0_rgba(255,255,255,0.1)]">
+        <tfoot className="sticky bottom-0 z-40 hover:z-[70] bg-zinc-950 border-t-2 border-zinc-800 shadow-[0_-1px_0_rgba(255,255,255,0.1)]">
           <tr className="font-bold font-mono">
             {(() => {
                 const div = dynamicTotals.effNonTeamsCount > 0 ? dynamicTotals.effNonTeamsCount : dynamicTotals.effCount;
@@ -772,7 +822,15 @@ const MasterTable: React.FC<{
                     {!isAverageView && <td className="px-1 py-1 text-right text-white">{Number(dynamicTotals.effTrailersCount.toFixed(1))}</td>}
                     <td className="px-1 py-1 text-right text-yellow-400">{formatCurrency(val(dynamicTotals.gross, div))}</td>
                     <td className="px-1 py-1 text-right text-yellow-400 font-bold">{formatCurrency(val(dynamicTotals.margin, div))}</td>
-                    <td className="px-1 py-1 text-right text-purple-400 font-medium">-{formatCurrency(Math.abs(val(dynamicTotals.dispatcherPay, div)))}</td>
+                    <td className="group/disp relative hover:z-[99999] px-1 py-1 text-right text-purple-400 font-medium !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
+                      -{formatCurrency(Math.abs(val(dynamicTotals.dispatcherPay, div)))}
+                      <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                        <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
+                        <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.dispGrossAmount, div)))}</span></div>
+                        <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.dispMarginAmount, div)))}</span></div>
+                        <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono">+{formatCurrency(Math.abs(val(dynamicTotals.dispSharedLiability, div)))}</span></div>
+                      </div>
+                    </td>
                     <td className="group/ins relative hover:z-[99999] px-1 py-1 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
                       -{formatCurrency(Math.abs(val(dynamicTotals.insuranceExp, div)))}
                       <div className="fixed hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -790,7 +848,34 @@ const MasterTable: React.FC<{
                      <td className="px-1 py-1 text-right text-purple-400">{val(dynamicTotals.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.fuel, div)))}` : formatCurrency(val(dynamicTotals.fuel, div))}</td>
                      <td className="px-1 py-1 text-right text-purple-400">{formatCurrency(val(dynamicTotals.fuelRebate, div))}</td>
                     <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.companyPay, div))}</td>
-                    <td className="px-1 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(val(dynamicTotals.allocatedFixed, div)))}</td>
+                    <td className="group/fixed relative hover:z-[99999] px-1 py-1 text-right text-blue-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
+                      -{formatCurrency(Math.abs(val(dynamicTotals.allocatedFixed, div)))}
+                      <div className="fixed hidden group-hover/fixed:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 whitespace-normal break-words dynamic-tooltip">
+                        <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Weekly Expenses Breakdown:</div>
+                        {val(dynamicTotals.insLiabAuto, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Liability (Auto):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabAuto, div)))}</span></div>}
+                        {val(dynamicTotals.insLiabGen, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabGen, div)))}</span></div>}
+                        {val(dynamicTotals.insCargo, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Cargo:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insCargo, div)))}</span></div>}
+                        {val(dynamicTotals.insLeaseGapCoverage, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Lease Gap Coverage:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLeaseGapCoverage, div)))}</span></div>}
+                        {val(dynamicTotals.insTrailerInterchange, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Trailer Interchange:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insTrailerInterchange, div)))}</span></div>}
+                        {val(dynamicTotals.insLago, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>LAGO:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLago, div)))}</span></div>}
+                        {val(dynamicTotals.insPhdPremium, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Premium:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdPremium, div)))}</span></div>}
+                        {val(dynamicTotals.insPhdTruck, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Truck:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdTruck, div)))}</span></div>}
+                        {val(dynamicTotals.insPhdTrailer, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Trailer:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdTrailer, div)))}</span></div>}
+                        {val(dynamicTotals.fcTruck, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Truck Price:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcTruck, div)))}</span></div>}
+                        {val(dynamicTotals.fcTrailer, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Trailer Price:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcTrailer, div)))}</span></div>}
+                        {val(dynamicTotals.fcPlates, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Plates:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcPlates, div)))}</span></div>}
+                        {val(dynamicTotals.fcTelematics, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Telematics:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcTelematics, div)))}</span></div>}
+                        {val(dynamicTotals.fcPhone, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Phone & Internet:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcPhone, div)))}</span></div>}
+                        {val(dynamicTotals.fcOffice, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Office Supplies:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcOffice, div)))}</span></div>}
+                        {val(dynamicTotals.fcRent, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Rent & Parking:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcRent, div)))}</span></div>}
+                        {val(dynamicTotals.fcBackupMc, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Backup MC:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcBackupMc, div)))}</span></div>}
+                        {val(dynamicTotals.fcBoReg, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Back Office Pay:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcBoReg, div)))}</span></div>}
+                        {val(dynamicTotals.fcBoTech, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Tech Pay:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcBoTech, div)))}</span></div>}
+                        {val(dynamicTotals.fcFactoring, div) > 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Factoring:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.fcFactoring, div)))}</span></div>}
+                        {val(dynamicTotals.adjFixed, div) !== 0 && <div className="flex justify-between gap-2"><span>Adjustments:</span><span className="font-mono">{val(dynamicTotals.adjFixed, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.adjFixed, div)))}</span></div>}
+                        <div className="flex justify-between gap-2 border-t border-zinc-600 pt-1 font-bold text-white"><span>Total Wkly Exp:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.allocatedFixed, div)))}</span></div>
+                      </div>
+                    </td>
                     <td className="px-1 py-1 text-right text-blue-400">{val(dynamicTotals.tolls, div) === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(val(dynamicTotals.tolls, div)))}`}</td>
                     <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.totalPOCov, div))}</td>
                      <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.totalRecruiting, div))}</td>
@@ -1624,16 +1709,45 @@ const PnLView: React.FC<PnLViewProps> = ({
              if (isFranchise) franchise_fixed_full = calculateFixedForType('TPOG (Franchise PnL)');
          }
 
-         let raw_l_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
-         let ins_liab_auto = raw_l_auto * effNT;
-         let ins_liab_gen = (liabilityGeneral + liabilityGlobal) * effNT;
-         let ins_cargo = cargo * effNT;
-         let ins_lease_gap = leaseGap * effNT;
-         let ins_trailer_interchange = trailerInterchange * effNT;
-         let ins_lago = lago * effNT;
-         let ins_phd_premium = phd_premium * effNT;
-         let ins_phd_truck = isOO ? 0 : (phd * effNT);
-         let ins_phd_trailer = (phd / 4.0) * effTr;
+         let ins_liab_auto = 0;
+         let ins_liab_gen = 0;
+         let ins_cargo = 0;
+         let ins_lease_gap = 0;
+         let ins_trailer_interchange = 0;
+         let ins_lago = 0;
+         let ins_phd_premium = 0;
+         let ins_phd_truck = 0;
+         let ins_phd_trailer = 0;
+
+         if (isOO || d.contractType === 'MCLOO') {
+             ins_liab_auto = liability * effNT;
+             ins_liab_gen = liabilityGeneral * effNT;
+             ins_cargo = cargo * effNT;
+             ins_lease_gap = leaseGap * effNT;
+             ins_trailer_interchange = trailerInterchange * effNT;
+             ins_lago = lago * effNT;
+             ins_phd_premium = phd_premium * effNT;
+             ins_phd_truck = isOO ? 0 : (phd * effNT);
+             ins_phd_trailer = (phd / 4.0) * effTr;
+         } else {
+             effContractType = d.contractType || '';
+             let c_l_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
+             let c_l_gl = getFcRule('Liability Insurance (Global)', '', '');
+             ins_liab_auto = (c_l_auto + c_l_gl) * effNT;
+             ins_liab_gen = 0;
+             ins_cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance') * effNT;
+             ins_lease_gap = getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage') * effNT;
+             ins_trailer_interchange = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange') * effNT;
+             ins_lago = getFcRule('LAGO', 'lago_custom', 'lago') * effNT;
+             ins_phd_premium = getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium') * effNT;
+             ins_phd_truck = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage') * effNT;
+             ins_phd_trailer = (getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage') / 4.0) * effTr;
+             
+             if (isGarland) {
+                 ins_phd_premium = 0;
+                 ins_phd_truck = 0;
+             }
+         }
          let insurance_costs_calc = ins_liab_auto + ins_liab_gen + ins_cargo + ins_lease_gap + ins_trailer_interchange + ins_phd_premium + ins_phd_truck + ins_phd_trailer;
          
       
@@ -1673,11 +1787,80 @@ const PnLView: React.FC<PnLViewProps> = ({
             dispGrossPerc = Number((dispRule as any).disp_gross_perc) || 0;
             dispMarginPerc = Number((dispRule as any).disp_margin_perc) || 0;
         }
-        const calcDispPay = (driver_gross * (dispGrossPerc / 100)) + (margin_amt * (dispMarginPerc / 100));
+        let dispMclooPayAmount = 0;
+        let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === d.companyId && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+        if (!liabRuleForDisp) {
+            liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+        }
+        if (liabRuleForDisp && (liabRuleForDisp as any).disp_mcloo_pay) {
+            dispMclooPayAmount = (Number((liabRuleForDisp as any).disp_mcloo_pay) || 0) * (d.effectiveNonTeams || 0);
+        }
+       const dispGrossAmount = driver_gross * (dispGrossPerc / 100);
+        const dispMarginAmount = margin_amt * (dispMarginPerc / 100);
+        const calcDispPay = dispGrossAmount + dispMarginAmount - dispMclooPayAmount;
+
+        let fc_truck = 0, fc_trailer = 0, fc_plates = 0, fc_telematics = 0, fc_phone = 0, fc_office = 0, fc_rent = 0, fc_backup_mc = 0, fc_bo_reg = 0, fc_bo_tech = 0, fc_factoring = 0;
+
+        if (isOO) {
+            fc_truck = truck_cpm * (Number(d.milesDriven) || 0);
+            fc_trailer = trailer_weekly * effTr;
+            fc_factoring = (driver_gross + margin_amt) * (factoring / 100.0);
+            fc_phone = phone_and_internet * effNT;
+            fc_office = office_supplies * effNT;
+            fc_rent = rent_and_parking * effNT;
+            fc_backup_mc = backup_mc * effNT;
+            fc_bo_reg = backoffice_reg * effNT;
+            fc_bo_tech = backoffice_tech * effNT;
+        } else if (d.contractType === 'MCLOO') {
+            fc_truck = (effNT * truck_weekly) + (truck_cpm * (Number(d.milesDriven) || 0));
+            fc_trailer = trailer_weekly * effTr;
+            fc_plates = plates * effNT;
+            fc_telematics = telematics * effNT;
+            fc_factoring = (driver_gross + margin_amt) * (factoring / 100.0);
+            fc_phone = phone_and_internet * effNT;
+            fc_office = office_supplies * effNT;
+            fc_rent = rent_and_parking * effNT;
+            fc_backup_mc = backup_mc * effNT;
+            fc_bo_reg = backoffice_reg * effNT;
+            fc_bo_tech = backoffice_tech * effNT;
+        } else {
+            fc_truck = (effNT * getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly')) + (getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm') * (Number(d.milesDriven) || 0));
+            fc_trailer = effTr * getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
+            fc_plates = effNT * getFcRule('Plates', 'plates_custom', 'plates');
+            fc_telematics = effNT * getFcRule('Telematics', 'telematics_custom', 'telematics');
+            fc_factoring = (driver_gross + margin_amt) * (getFcRule('Factoring', 'factoring_custom', 'factoring') / 100.0);
+            fc_phone = effNT * getFcRule('Phone & Internet', 'phone_and_internet_custom', 'phone_and_internet');
+            fc_office = effNT * getFcRule('Office Supplies', 'office_supplies_custom', 'office_supplies');
+            fc_rent = effNT * getFcRule('Rent & Parking', 'rent_and_parking_custom', 'rent_and_parking');
+            fc_backup_mc = effNT * getFcRule('Backup MC', 'backup_mc_custom', 'backup_mc');
+            fc_bo_reg = effNT * getFcRule('Back Office Pay', 'backoffice_reg_custom', 'backoffice_reg');
+            fc_bo_tech = effNT * getFcRule('Tech Pay', 'backoffice_tech_custom', 'backoffice_tech');
+            if (isGarland) {
+                fc_truck = 0;
+                fc_plates = 0;
+            }
+        }
+
+        let cTake = isFranchise ? companyTakeMulti : 1;
 
         result.push({
           ...d,
+          fcTruck: fc_truck * cTake,
+          fcTrailer: fc_trailer * cTake,
+          fcPlates: fc_plates * cTake,
+          fcTelematics: fc_telematics * cTake,
+          fcPhone: fc_phone * cTake,
+          fcOffice: fc_office * cTake,
+          fcRent: fc_rent * cTake,
+          fcBackupMc: fc_backup_mc * cTake,
+          fcBoReg: fc_bo_reg * cTake,
+          fcBoTech: fc_bo_tech * cTake,
+          fcFactoring: fc_factoring * cTake,
+          ...d,
           dispatcherCommission: calcDispPay,
+          dispGrossAmount: dispGrossAmount,
+          dispMarginAmount: dispMarginAmount,
+          dispSharedLiability: dispMclooPayAmount,
           companyPay: Number(d.companyPay || 0) * companyTakeMulti,
           tollCost: multipliedTolls,
           calculatedTolls: multipliedTolls,
@@ -1909,6 +2092,9 @@ const PnLView: React.FC<PnLViewProps> = ({
     const insPhdTrailer = initialDrivers.reduce((sum, d) => sum + ((d as any).insPhdTrailer || 0), 0);
     
     const dispatcherPay = initialDrivers.reduce((sum, d) => sum + (d.dispatcherCommission || 0), 0);
+    const dispGrossAmount = initialDrivers.reduce((sum, d) => sum + ((d as any).dispGrossAmount || 0), 0);
+    const dispMarginAmount = initialDrivers.reduce((sum, d) => sum + ((d as any).dispMarginAmount || 0), 0);
+    const dispSharedLiability = initialDrivers.reduce((sum, d) => sum + ((d as any).dispSharedLiability || 0), 0);
 
     let companyPay = 0;
     let tolls = 0;
@@ -1923,8 +2109,21 @@ const PnLView: React.FC<PnLViewProps> = ({
     let pnlBaseFixed = 0;
     let pnlAdjFixed = 0;
     let pnlFuelRebate = 0;
+    
+    let fcTruck = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0;
 
     initialDrivers.forEach(d => {
+        fcTruck += (d as any).fcTruck || 0;
+        fcTrailer += (d as any).fcTrailer || 0;
+        fcPlates += (d as any).fcPlates || 0;
+        fcTelematics += (d as any).fcTelematics || 0;
+        fcPhone += (d as any).fcPhone || 0;
+        fcOffice += (d as any).fcOffice || 0;
+        fcRent += (d as any).fcRent || 0;
+        fcBackupMc += (d as any).fcBackupMc || 0;
+        fcBoReg += (d as any).fcBoReg || 0;
+        fcBoTech += (d as any).fcBoTech || 0;
+        fcFactoring += (d as any).fcFactoring || 0;
         const activeItems = getPnlConfigItems(d.contractType || '');
 
         const dCompanyPay = d.companyPay || 0;
@@ -1967,15 +2166,16 @@ const PnLView: React.FC<PnLViewProps> = ({
 
     return {
       rawEffCount, effCount, effNonTeamsCount, effTrailersCount, gross, margin, fuelSavings, companyPay, cogs, allocatedFixed, baseFixed, adjFixed, netIncome, pnlPerDriver,
-      driverPay, fuel, maint, tolls, faults, dispatcherPay, totalFixedPerUnit,
+      driverPay, fuel, maint, tolls, faults, dispatcherPay, dispGrossAmount, dispMarginAmount, dispSharedLiability, totalFixedPerUnit,
       totalPO, totalPOCov, totalEscrow, totalBalance, totalRecruiting,
       effNonTeams, currentPayDate,
       numOfTrucks, avgTruckPrice, numOfTrailers, avgTrailerPrice, truckUtilization, trailerUtilization,
       rawFinImportData, effNonTeamsForTrucks: effNonTeamsNoOOCount,
-      insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate
+      insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate,
+      fcTruck, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring
   
     };
-  }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems]);
+  }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems]);
 
   const rawTotalActive = displayedDrivers.reduce((sum, d) => sum + (d.effectiveDrivers || 0), 0);
   const totalActiveCount = Number(rawTotalActive.toFixed(2));
