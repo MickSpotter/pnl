@@ -917,9 +917,11 @@ const fixedExpenseNames = Array.from(new Set([
                                    </div>
                                 </td>
                                 <td className="py-2 px-1 text-center">
-                                   <button onClick={() => toggleDispMclooRule(String(rule.id))} className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all ${expandedDispMclooRules.includes(String(rule.id)) ? 'bg-purple-500 text-white' : 'bg-purple-500/10 text-purple-500 border border-purple-500/30 hover:bg-purple-500/20'}`}>
-                                      {expandedDispMclooRules.includes(String(rule.id)) ? 'Close' : 'MCLOO Pay'}
-                                   </button>
+                                   {(!(rule as any).contractType || (rule as any).contractType === 'ALL' || (rule as any).contractType === 'MCLOO') && (
+                                      <button onClick={() => toggleDispMclooRule(String(rule.id))} className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all ${expandedDispMclooRules.includes(String(rule.id)) ? 'bg-purple-500 text-white' : 'bg-purple-500/10 text-purple-500 border border-purple-500/30 hover:bg-purple-500/20'}`}>
+                                         {expandedDispMclooRules.includes(String(rule.id)) ? 'Close' : 'MCLOO Pay'}
+                                      </button>
+                                   )}
                                 </td>
                                 <td className="py-2 pl-2 text-right">
                                    <button onClick={() => handleDeleteCompanyExpense(String(rule.id))} className="text-zinc-600 hover:text-rose-500 transition-colors p-1 rounded flex justify-center items-center w-8 h-7"><Trash2 size={14} /></button>

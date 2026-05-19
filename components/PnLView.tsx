@@ -4,11 +4,12 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { DriverPerformance, DriverStatus, SimulationConfig, ExpenseItem, FinImportRecord } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../utils';
-import { Sliders, LayoutList, PieChart, DollarSign, TrendingUp, BarChart3, LineChart, Maximize2, X, History, Filter, Info, ChevronDown, Check, LayoutDashboard, Activity, Truck, Container, AlertTriangle } from 'lucide-react';
+import { Sliders, LayoutList, PieChart, DollarSign, TrendingUp, BarChart3, LineChart, Maximize2, X, History, Filter, Info, ChevronDown, ChevronRight, Check, LayoutDashboard, Activity, Truck, Container, AlertTriangle } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import SimulationModal from './SimulationModal';
 import HistoricalChart, { ChartSeries } from './HistoricalChart';
 import Simulator from './Simulator';
+import TableFilter, { FilterRule } from './TableFilter';
 
 let hasPlayedInitialAnimations = false;
 
@@ -88,9 +89,11 @@ const MasterTable: React.FC<{
   groupBy: 'Contract' | 'Company' | 'Franchise' | 'Team' | 'Driver',
   chartData?: any[],
   isAverageView?: boolean,
-  searchQuery?: string
-}> = ({ companyMetrics, drivers, calculateMetrics, totalActiveCount, selectedDate, groupBy, chartData = [], isAverageView = false, searchQuery = '' }) => {
+  searchQuery?: string,
+  configContracts?: any[]
+}> = ({ companyMetrics, drivers, calculateMetrics, totalActiveCount, selectedDate, groupBy, chartData = [], isAverageView = false, searchQuery = '', configContracts = [] }) => {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'name', direction: 'asc' });
+  const [isRevColExpanded, setIsRevColExpanded] = useState(false);
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'desc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'desc') {
@@ -140,7 +143,8 @@ const MasterTable: React.FC<{
             driverPay: 0, fuel: 0, maint: 0, tolls: 0, faults: 0, insuranceExp: 0, fuelRebate: 0,
             insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0,
             fcTruck: 0, fcTrailer: 0, fcPlates: 0, fcTelematics: 0, fcPhone: 0, fcOffice: 0, fcRent: 0, fcBackupMc: 0, fcBoReg: 0, fcBoTech: 0, fcFactoring: 0,
-            pnlCompanyPay: 0, pnlFuelRebate: 0, pnlAllocatedFixed: 0, pnlTotalPOCov: 0, pnlTotalRecruiting: 0, pnlTolls: 0
+            pnlCompanyPay: 0, pnlFuelRebate: 0, pnlAllocatedFixed: 0, pnlTotalPOCov: 0, pnlTotalRecruiting: 0, pnlTolls: 0,
+            pnlRevBase: 0, pnlFranchiseBase: 0, pnlPoDeductions: 0, pnlPoSettle: 0, pnlNegNetPay: 0, pnlStrictNegNetPay: 0, pnlBalanceSettle: 0, pnlBalanceChange: 0, pnlTruckFloat: 0, pnlTruckWkly: 0, pnlOccIns: 0, pnlEld: 0, pnlIfta: 0, pnlMaintSupport: 0, pnlLiability: 0, pnlTruckPhd: 0, pnlTrailer: 0, pnlTrailerPhd: 0, pnlEscrowAdj: 0, pnlTollsAdj: 0, pnlCashAdv: 0, pnlCpmAdj: 0, pnlFuelAdj: 0, pnlProrated: 0, pnlZeroMiDrop: 0
           };
           driversByName.forEach((drvRecords) => {
             const m = calculateMetrics(drvRecords, true);
@@ -201,6 +205,31 @@ const MasterTable: React.FC<{
             t.pnlTotalPOCov += m.pnlTotalPOCov || 0;
             t.pnlTotalRecruiting += m.pnlTotalRecruiting || 0;
             t.pnlTolls += m.pnlTolls || 0;
+            t.pnlRevBase += m.pnlRevBase || 0;
+            t.pnlFranchiseBase += m.pnlFranchiseBase || 0;
+            t.pnlPoDeductions += m.pnlPoDeductions || 0;
+            t.pnlPoSettle += m.pnlPoSettle || 0;
+            t.pnlNegNetPay += m.pnlNegNetPay || 0;
+            t.pnlStrictNegNetPay += m.pnlStrictNegNetPay || 0;
+            t.pnlBalanceSettle += m.pnlBalanceSettle || 0;
+            t.pnlBalanceChange += m.pnlBalanceChange || 0;
+            t.pnlTruckFloat += m.pnlTruckFloat || 0;
+            t.pnlTruckWkly += m.pnlTruckWkly || 0;
+            t.pnlOccIns += m.pnlOccIns || 0;
+            t.pnlEld += m.pnlEld || 0;
+            t.pnlIfta += m.pnlIfta || 0;
+            t.pnlMaintSupport += m.pnlMaintSupport || 0;
+            t.pnlLiability += m.pnlLiability || 0;
+            t.pnlTruckPhd += m.pnlTruckPhd || 0;
+            t.pnlTrailer += m.pnlTrailer || 0;
+            t.pnlTrailerPhd += m.pnlTrailerPhd || 0;
+            t.pnlEscrowAdj += m.pnlEscrowAdj || 0;
+            t.pnlTollsAdj += m.pnlTollsAdj || 0;
+            t.pnlCashAdv += m.pnlCashAdv || 0;
+            t.pnlCpmAdj += m.pnlCpmAdj || 0;
+            t.pnlFuelAdj += m.pnlFuelAdj || 0;
+            t.pnlProrated += m.pnlProrated || 0;
+            t.pnlZeroMiDrop += m.pnlZeroMiDrop || 0;
           });
           t.pnlPerDriver = t.effNonTeams > 0 ? t.netIncome / t.effNonTeams : 0;
           return t;
@@ -224,10 +253,11 @@ const MasterTable: React.FC<{
           const metrics = getAggregatedMetrics(groupDrivers);
           const tpogFranchiseDrivers = groupDrivers.filter(d => d.contractType === 'TPOG' && !!d.franchiseId).map(d => ({
               ...d,
-              companyPay: (d as any).franchise_revenue_collected || 0,
+              companyPay: Number((d as any).franchise_revenue_collected ?? 0),
               fixed_costs: (d as any).franchise_fixed_costs_full || 0,
               poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
-              poAmount: (d as any).franchise_po || 0
+              poAmount: (d as any).franchise_po || 0,
+              isFranchiseStub: true
           }));
           if (tpogFranchiseDrivers.length > 0) {
               const fMetrics: any = getAggregatedMetrics(tpogFranchiseDrivers);
@@ -276,7 +306,7 @@ const MasterTable: React.FC<{
         const t = getAggregatedMetrics(activeDrivers);
         let overallW4 = get4wMetrics('COMPANY');
         
-        const tpogFranchiseDrivers = activeDrivers.filter(d => d.contractType === 'TPOG' && !!d.franchiseId).map(d => ({
+       const tpogFranchiseDrivers = activeDrivers.filter(d => d.contractType === 'TPOG' && !!d.franchiseId).map(d => ({
             ...d,
             companyPay: (d as any).franchise_revenue_collected || 0,
             fixed_costs: (d as any).franchise_fixed_costs_full || 0,
@@ -287,7 +317,7 @@ const MasterTable: React.FC<{
         if (tpogFranchiseDrivers.length > 0) {
             const rawF = getAggregatedMetrics(tpogFranchiseDrivers);
             const fMetrics: any = { ...rawF };
-            const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver'];
+            const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj'];
             
             Object.keys(fMetrics).forEach(k => {
                 if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
@@ -358,8 +388,34 @@ const MasterTable: React.FC<{
 
      return computedArr.map(item => item.original);
   };
- const renderRowCells = (metrics: any, w4: any, isStub: boolean = false, rowName?: string) => {
+ const renderRowCells = (metrics: any, w4: any, isStub: boolean = false, rowName?: string, rowDrivers: DriverPerformance[] = []) => {
     const div = metrics.effNonTeamsCount > 0 ? metrics.effNonTeamsCount : metrics.effCount;
+    const rowBalChange = metrics.pnlBalanceChange;
+    const zeroMileDetails = (() => {
+      let count = 0;
+      let revBase = 0;
+      let balChange = 0;
+      let prorated = 0;
+      const uniqueNames = Array.from(new Set((rowDrivers || []).map(d => d.name || 'Unknown')));
+      uniqueNames.forEach(dName => {
+        const drvRecords = rowDrivers.filter(d => d.name === dName);
+        const m = calculateMetrics(drvRecords, true);
+        if (m.pnlZeroMiDrop < 0) {
+          count++;
+          const originalRevBase = Math.abs(m.pnlZeroMiDrop) - m.pnlBalanceChange - m.pnlProrated;
+          if (drvRecords.some(d => (d as any).isFranchiseStub)) {
+            revBase += originalRevBase / 2;
+            balChange += m.pnlBalanceChange / 2;
+            prorated += m.pnlProrated / 2;
+          } else {
+            revBase += originalRevBase;
+            balChange += m.pnlBalanceChange;
+            prorated += m.pnlProrated;
+          }
+        }
+      });
+      return { count, revBase, balChange, prorated };
+    })();
     return (
     <>
       {!isAverageView && <td className="px-1 py-0.5 text-right text-white">{groupBy === 'Driver' ? `${Number((metrics.effCount * 7).toFixed(1))}/7` : Number(metrics.effCount.toFixed(1))}</td>}
@@ -368,12 +424,12 @@ const MasterTable: React.FC<{
       <td className="px-1 py-0.5 text-right text-yellow-400">{formatCurrency(val(metrics.gross, div))}</td>
      <td className="px-1 py-0.5 text-right text-yellow-400 font-medium">{formatCurrency(val(metrics.margin, div))}</td>
       <td className="group/disp relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
-        -{formatCurrency(Math.abs(val(metrics.dispatcherPay, div)))}
+        <span>{val(metrics.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(metrics.dispatcherPay, div))}</span>
         <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
           <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
-          <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.dispGrossAmount, div)))}</span></div>
-          <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.dispMarginAmount, div)))}</span></div>
-          <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono">+{formatCurrency(Math.abs(val(metrics.dispSharedLiability, div)))}</span></div>
+          <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">{formatCurrency(val(metrics.dispGrossAmount, div))}</span></div>
+          <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">{formatCurrency(val(metrics.dispMarginAmount, div))}</span></div>
+          <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(val(metrics.dispSharedLiability, div)))}</span></div>
         </div>
       </td>
       <td className="group/ins relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
@@ -391,7 +447,155 @@ const MasterTable: React.FC<{
         </div>
       </td>
        <td className="px-1 py-0.5 text-right text-purple-400">{val(metrics.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.fuel, div)))}` : formatCurrency(val(metrics.fuel, div))}</td>
-      <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.companyPay, div))}</td>
+      <td className="px-1 py-0.5 text-right text-blue-400">
+        {formatCurrency(val(metrics.companyPay, div))}
+      </td>
+{isRevColExpanded && (
+          <>
+            <td className="group/revbase relative hover:z-[99999] px-1 py-0.5 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+              {val(metrics.pnlRevBase, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlRevBase, div)))}
+              <div className="fixed hidden group-hover/revbase:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[280px] pointer-events-none dynamic-tooltip">
+                <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Revenue Base Calculation:</div>
+                
+                {rowDrivers.length > 0 ? (
+                    Array.from(new Set(rowDrivers.map(d => d.contractType || 'Unknown'))).map(cType => {
+                        const rule = configContracts?.find(c => c.contract_type === cType);
+                        const gPerc = rule && rule.mc_gross_percent !== undefined ? Number(rule.mc_gross_percent) * 100 : null;
+                        const mPerc = rule && rule.mc_margin_percent !== undefined ? Number(rule.mc_margin_percent) * 100 : null;
+                        const dGrossPerc = rule && rule.dispatcher_gross_percent !== undefined ? Number(rule.dispatcher_gross_percent) * 100 : 0;
+                        const dMargPerc = rule && (rule as any).dispatcher_margin_percent !== undefined ? Number((rule as any).dispatcher_margin_percent) * 100 : 0;
+                        const calcType = rule?.calculation_type || 'STANDARD';
+                        
+                        const subset = rowDrivers.filter(d => (d.contractType || 'Unknown') === cType);
+                        const cGross = subset.reduce((sum, d) => sum + (d.grossRevenue || 0), 0);
+                        const cMargin = subset.reduce((sum, d) => sum + (d.marginAmount || 0), 0);
+
+                        const cTotal = subset.reduce((sum, d) => {
+                            const rBase = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0);
+                            const revWithoutFuelVal = Number((d as any).rev_without_fuel ?? (d as any).revWithoutFuel ?? 0);
+                            const dMiles = Number((d as any).total_miles ?? d.milesDriven ?? 0);
+                            const mileCapFactor = (revWithoutFuelVal > 0 && dMiles === 0) ? 0 : 1;
+                            let companyTakeMulti = 1;
+                            if ((d.contractType === 'TPOG WITH FRANCHISE' || (d.contractType === 'TPOG' && d.franchiseId)) && configContracts && configContracts.length > 0) {
+                                const tpogFranRule = [...configContracts].filter((c:any) => c.contract_type === 'TPOG WITH FRANCHISE').sort((a:any,b:any) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
+                                if (tpogFranRule && tpogFranRule.calculation_type === 'TPOG_FRANCHISE') {
+                                    companyTakeMulti = tpogFranRule.mc_gross_percent !== undefined ? Number(tpogFranRule.mc_gross_percent) : 1;
+                                }
+                            }
+                            if (d.name === 'Garland Jermaine Norris') {
+                                return sum + ((d.grossRevenue || 0) * 0.2) * mileCapFactor * companyTakeMulti;
+                            }
+                            return sum + rBase * mileCapFactor * companyTakeMulti;
+                        }, 0);
+                        
+                        if (cTotal === 0 && cGross === 0 && cMargin === 0) return null;
+                        
+                        let formulaStr = '';
+                        if (cType === 'CPM' && subset.some(d => d.name === 'Garland Jermaine Norris')) {
+                            formulaStr = `Gross * 20% (Garland Exception)`;
+                        } else if (calcType === 'MCLOO_STYLE') {
+                            formulaStr = `(Gross * ${gPerc ?? 8}%) + (Margin * ${mPerc ?? 0}%)`;
+                        } else if (calcType === 'OO_NONF') {
+                            formulaStr = `(Gross * ${gPerc ?? 7.5}%) + (Margin * ${mPerc ?? 70}%)`;
+                        } else if (calcType === 'OO_FRANCHISE') {
+                            formulaStr = `(Gross * ${gPerc ?? 4}%) + (Margin * ${mPerc ?? 35}%)`;
+                        } else if (calcType === 'TPOG_NONF' || calcType === 'POG_STYLE' || calcType === 'TPOG_FRANCHISE') {
+                            formulaStr = `(Gross * (100% - Drv% - ${dGrossPerc ?? 2.5}%)) + (Margin * ${mPerc ?? 70}%)`;
+                        } else if (calcType === 'NEW_FORMULA') {
+                            formulaStr = `(${gPerc ?? 0}% * (Gross + Margin - (Margin * ${mPerc ?? 0}%))) - (Drv% * Gross) - ((Gross * ${dGrossPerc ?? 0}%) + (Margin * ${dMargPerc ?? 0}%))`;
+                        } else if (calcType === 'NEW_CPM_FORMULA') {
+                            formulaStr = `Gross - GrossPay - (Gross * ${gPerc ?? 0}%)`;
+                        } else if (calcType === 'CPM_STYLE') {
+                            formulaStr = `(Gross + (Margin * ${mPerc ?? 70}%)) - Net Pay`;
+                        } else if (gPerc !== null && mPerc !== null) {
+                            if (gPerc > 0 && mPerc > 0) formulaStr = `(Gross * ${gPerc}%) + (Margin * ${mPerc}%)`;
+                            else if (gPerc > 0) formulaStr = `Gross * ${gPerc}%`;
+                            else if (mPerc > 0) formulaStr = `Margin * ${mPerc}%`;
+                            else formulaStr = `Custom / Flat`;
+                        } else {
+                            formulaStr = `Standard Base Formula`;
+                        }
+
+                        return (
+                            <div key={cType} className="mb-1.5 last:mb-0">
+                                <div className="text-emerald-400 font-bold text-[9px]">{cType}</div>
+                                <div className="flex flex-col gap-0.5 text-[9px] pl-1 border-l border-zinc-700 ml-1">
+                                    <div className="text-zinc-300">Gross: {formatCurrency(val(cGross, div))} | Margin: {formatCurrency(val(cMargin, div))}</div>
+                                    <div className="text-zinc-400 italic text-[8px]">Formula: {formulaStr}</div>
+                                </div>
+                            </div>
+                        );
+                    })
+                ) : null}
+                <div className="flex justify-between border-t border-zinc-600 mt-1 pt-1 font-bold text-white">
+                    <span>Total Rev Base:</span><span className="font-mono">{formatCurrency(val(metrics.pnlRevBase, div))}</span>
+                </div>
+              </div>
+            </td>
+          <td className="group/balchange relative hover:z-[99999] px-1 py-0.5 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+            {val(rowBalChange, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(rowBalChange, div)))}
+            <div className="fixed hidden group-hover/balchange:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+              <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Balance Change Breakdown:</div>
+              <div className="flex justify-between"><span>PO Deductions:</span><span className="font-mono">{formatCurrency(val(metrics.pnlPoDeductions, div))}</span></div>
+              <div className="flex justify-between"><span>PO Settle:</span><span className="font-mono">{formatCurrency(val(metrics.pnlPoSettle, div))}</span></div>
+              <div className="flex justify-between"><span>Net Pay:</span><span className="font-mono">{val(groupBy === 'Driver' ? (metrics.netPay || metrics.driverPay) : metrics.pnlStrictNegNetPay, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(groupBy === 'Driver' ? (metrics.netPay || metrics.driverPay) : metrics.pnlStrictNegNetPay, div)))}</span></div>
+              {groupBy !== 'Driver' && <div className="text-[9px] text-zinc-400 italic mt-0.5 leading-tight">* Shows only negative net pay.</div>}
+              <div className="flex justify-between mt-0.5"><span>Balance Settle:</span><span className="font-mono">{formatCurrency(val(metrics.pnlBalanceSettle, div))}</span></div>
+              {rowDrivers.some(d => d.contractType === 'MCLOO') && (
+                <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1">
+                  * MCLOO contract: Multiplied by 0.3
+                </div>
+              )}
+              {rowName !== 'TPOG (Franchise PnL)' && rowDrivers.some(d => d.contractType === 'TPOG') && (
+                <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1">
+                  * TPOG: Applies to non-franchise only
+                </div>
+              )}
+              <div className="flex justify-between border-t border-zinc-600 mt-1 pt-1 font-bold text-white">
+                <span>Total:</span>
+                <span className="font-mono">{formatCurrency(val(rowBalChange, div))}</span>
+              </div>
+            </div>
+          </td>
+          <td className="group/prorated relative hover:z-[99999] px-1 py-0.5 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+            {val(metrics.pnlProrated, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlProrated, div)))}
+            <div className="fixed hidden group-hover/prorated:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+              <div className="font-bold text-emerald-300 border-b border-zinc-600 pb-1 mb-1">Prorated Fixed Costs{rowName === 'TPOG (Franchise PnL)' ? ' (/ 2)' : ''}:</div>
+              <div className="flex justify-between"><span>Truck Float:</span><span className="font-mono">{formatCurrency(val(metrics.pnlTruckFloat, div))}</span></div>
+              <div className="flex justify-between"><span>Truck Weekly:</span><span className="font-mono">{formatCurrency(val(metrics.pnlTruckWkly, div))}</span></div>
+              <div className="flex justify-between"><span>Occ Ins:</span><span className="font-mono">{formatCurrency(val(metrics.pnlOccIns, div))}</span></div>
+              <div className="flex justify-between"><span>ELD:</span><span className="font-mono">{formatCurrency(val(metrics.pnlEld, div))}</span></div>
+              <div className="flex justify-between"><span>IFTA:</span><span className="font-mono">{formatCurrency(val(metrics.pnlIfta, div))}</span></div>
+              <div className="flex justify-between"><span>Maint Support:</span><span className="font-mono">{formatCurrency(val(metrics.pnlMaintSupport, div))}</span></div>
+              <div className="flex justify-between"><span>Liability:</span><span className="font-mono">{formatCurrency(val(metrics.pnlLiability, div))}</span></div>
+              <div className="flex justify-between"><span>Truck PHD:</span><span className="font-mono">{formatCurrency(val(metrics.pnlTruckPhd, div))}</span></div>
+              <div className="flex justify-between"><span>Trailer:</span><span className="font-mono">{formatCurrency(val(metrics.pnlTrailer, div))}</span></div>
+              <div className="flex justify-between"><span>Trailer PHD:</span><span className="font-mono">{formatCurrency(val(metrics.pnlTrailerPhd, div))}</span></div>
+            </div>
+          </td>
+          <td className="group/zeromicap relative hover:z-[99999] px-1 py-0.5 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+            {val(metrics.pnlZeroMiDrop, div) < 0 ? '-' : (val(metrics.pnlZeroMiDrop, div) > 0 ? '+' : '')}{formatCurrency(Math.abs(val(metrics.pnlZeroMiDrop, div)))}
+            {zeroMileDetails.count > 0 && (
+              <div className="fixed hidden group-hover/zeromicap:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+                <div className="font-bold text-amber-400 border-b border-zinc-600 pb-1 mb-1">0 Mi Cap Drop:</div>
+                {groupBy !== 'Driver' && <div className="flex justify-between"><span>Drivers with 0 miles:</span><span className="font-mono font-bold text-white">{zeroMileDetails.count}</span></div>}
+                <div className="flex justify-between mt-1"><span>Revenue Base:</span><span className="font-mono">-{formatCurrency(val(zeroMileDetails.revBase, div))}</span></div>
+                <div className="flex justify-between"><span>Balance Change:</span><span className="font-mono">{val(zeroMileDetails.balChange, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(zeroMileDetails.balChange, div)))}</span></div>
+                <div className="flex justify-between"><span>Revenue Prorated:</span><span className="font-mono">-{formatCurrency(val(zeroMileDetails.prorated, div))}</span></div>
+                <div className="flex justify-between border-t border-zinc-600 mt-1 pt-1 font-bold text-white">
+                  <span>Total Drop:</span>
+                  <span className="font-mono">-{formatCurrency(Math.abs(val(metrics.pnlZeroMiDrop, div)))}</span>
+                </div>
+              </div>
+            )}
+          </td>
+          <td className="px-1 py-0.5 text-right text-zinc-400 font-mono">{val(metrics.pnlEscrowAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlEscrowAdj, div)))}</td>
+          <td className="px-1 py-0.5 text-right text-zinc-400 font-mono">+{formatCurrency(Math.abs(val(metrics.pnlTollsAdj, div)))}</td>
+          <td className="px-1 py-0.5 text-right text-zinc-400 font-mono">{val(metrics.pnlCashAdv, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlCashAdv, div)))}</td>
+          <td className="px-1 py-0.5 text-right text-zinc-400 font-mono">{val(metrics.pnlCpmAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlCpmAdj, div)))}</td>
+          <td className="px-1 py-0.5 text-right text-zinc-400 font-mono">{val(metrics.pnlFuelAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlFuelAdj, div)))}</td>
+        </>
+      )}
        <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.fuelRebate, div))}</td>
       <td className="group/fixed relative hover:z-[99999] px-1 py-0.5 text-right text-blue-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
         -{formatCurrency(Math.abs(val(metrics.allocatedFixed, div)))}
@@ -505,6 +709,9 @@ const MasterTable: React.FC<{
                  <th onClick={() => requestSort('companyPay')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300">
               <div className="flex items-center justify-end gap-1">
                 Rev. Col. {sortConfig?.key === 'companyPay' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                <button onClick={(e) => { e.stopPropagation(); setIsRevColExpanded(!isRevColExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1">
+                  <ChevronRight size={10} className={`transition-transform ${isRevColExpanded ? 'rotate-180' : ''}`} />
+                </button>
               </div>
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[450px] pointer-events-none transform -translate-x-[80%] flex flex-col gap-2 whitespace-normal break-words">
                 <div className="font-bold text-white text-[11px] border-b border-zinc-600 pb-1">Revenue Collected Calculation:</div>
@@ -514,35 +721,55 @@ const MasterTable: React.FC<{
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="font-semibold text-blue-300">Step 2: Balance Change</span>
-                  <div className="pl-2">If Balance Change &lt; 0, adds it to Revenue Base. Balance Change = -PO Deducts + PO Settle + Neg. Net Pay + Bal. Settle.</div>
+                  <div className="pl-2">Added to Revenue Base. Balance Change = -PO Deducts + PO Settle + Neg. Net Pay + Bal. Settle.</div>
                   <ul className="list-disc pl-6 text-[9px] flex flex-col gap-0.5">
-                    <li><span className="font-semibold text-zinc-300">MCLOO:</span> Multiplied by 0.3.</li>
+                    <li><span className="font-semibold text-emerald-400">MCLOO:</span> Multiplied by 0.3.</li>
+                    <li><span className="font-semibold text-rose-400">TPOG w/ Franchise:</span> Excluded for Company share, but included for Franchise share.</li>
                   </ul>
                 </div>
                 <div className="flex flex-col gap-1">
                   <span className="font-semibold text-blue-300">Step 3: Add Prorated Fixed Costs</span>
-                  <div className="pl-2">Adds: ((Truck Float + Truck Weekly + Occ Ins + ELD + IFTA + Maintenance Support + Liability + Truck PHD) * Effective Non Teams) + ((Trailer + Trailer PHD) * Effective Trailers).</div>
+                  <div className="pl-2">Adds: ((Truck Float + Wkly + Occ Ins + ELD + IFTA + Maint + Liab + Trk PHD) * Eff Non-Teams) + ((Trl + Trl PHD) * Eff Trl).</div>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-blue-300">Step 4: Fuel Adjustments</span>
+                  <span className="font-semibold text-amber-400">Step 4: Zero-Mile Cap</span>
+                  <div className="pl-2">If Total Miles = 0 and the sum of Steps 1-3 is &gt; 0, the total so far is reset to 0.</div>
+                </div>
+                <div className="flex flex-col gap-1">
+                  <span className="font-semibold text-blue-300">Step 5: Post-Cap Adjustments</span>
                   <ul className="list-disc pl-4 text-[9px] flex flex-col gap-0.5">
-                    <li><span className="font-semibold text-zinc-300">MCLOO, OO, LOO, LPOO, MCOO:</span> Adds Fuel Saved. Fuel Saved is calculated by taking (Retail Price - Discounted Price) * Quantity.</li>
-                    <li><span className="font-semibold text-zinc-300">TPOG, POG, CPM &amp; Others:</span> Subtracts Fuel Spent. Fuel Spent is calculated by taking Discounted Price * Quantity.</li>
+                    <li><span className="font-semibold text-zinc-300">Escrow:</span> If Net Pay &lt; 0, adds Escrow Deduct to cover debt (Skipped for MCLOO & TPOG w/ Franchise - Company Share).</li>
+                    <li><span className="font-semibold text-zinc-300">Tolls:</span> Added 100% for OO, LOO, LPOO. Added 30% for MCLOO.</li>
+                    <li><span className="font-semibold text-zinc-300">Cash Advance:</span> Added 100% (Excluded for MCLOO).</li>
+                    <li><span className="font-semibold text-zinc-300">Revenue CPM:</span> Added Rev CPM * Total Miles.</li>
                   </ul>
                 </div>
                 <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-blue-300">Step 5: Zero-Mile Cap</span>
-                  <div className="pl-2">If Total Miles = 0 and previous result &gt; 0, it is set to 0.</div>
+                  <span className="font-semibold text-blue-300">Step 6: Fuel Adjustments</span>
+                  <ul className="list-disc pl-4 text-[9px] flex flex-col gap-0.5">
+                    <li><span className="font-semibold text-emerald-400">MCLOO, OO, LOO, LPOO, MCOO:</span> Adds Fuel Saved (Retail - Discount).</li>
+                    <li><span className="font-semibold text-rose-400">Others:</span> Subtracts Fuel Spent.</li>
+                  </ul>
                 </div>
-                <div className="flex flex-col gap-1">
-                  <span className="font-semibold text-blue-300">Step 6: Escrow Addition (Skipped for MCLOO)</span>
-                  <div className="pl-2">Covers negative driver pay using their escrow deduction. Triggers ONLY if Net Pay is less than 0. Adds the negative Net Pay amount OR the Escrow Deduct amount, whichever is smaller (covers the debt up to the escrow limit).</div>
-                </div>
-                <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                  TPOG with Franchise: <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
+                <div className="mt-2 text-amber-400 font-semibold border-t border-zinc-600 pt-1 flex flex-col gap-0.5">
+                  <span>TPOG (Franchise PnL):</span>
+                  <span className="text-zinc-300 font-normal text-[9px]">The franchise share row fully applies Steps 1-3 (including all balances), is subjected to the Zero-Mile Cap, and then receives post-cap adjustments. The final calculated total is then divided by 2 (50/50 split).</span>
                 </div>
               </div>
             </th>
+            {isRevColExpanded && (
+              <>
+                <th onClick={() => requestSort('pnlRevBase')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Rev Base {sortConfig?.key === 'pnlRevBase' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('pnlBalanceChange')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Bal Change {sortConfig?.key === 'pnlBalanceChange' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('pnlProrated')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Rev Prorated {sortConfig?.key === 'pnlProrated' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('pnlZeroMiDrop')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">0 Mi Cap {sortConfig?.key === 'pnlZeroMiDrop' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('pnlEscrowAdj')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Escrow Adj {sortConfig?.key === 'pnlEscrowAdj' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('pnlTollsAdj')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Tolls Adj {sortConfig?.key === 'pnlTollsAdj' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('pnlCashAdv')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Cash Adv {sortConfig?.key === 'pnlCashAdv' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('pnlCpmAdj')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">CPM Adj {sortConfig?.key === 'pnlCpmAdj' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('pnlFuelAdj')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Fuel Adj {sortConfig?.key === 'pnlFuelAdj' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+              </>
+            )}
                  <th onClick={() => requestSort('fuelRebate')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300">
                    Fuel Reb. {sortConfig?.key === 'fuelRebate' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                  </th>
@@ -638,7 +865,7 @@ const MasterTable: React.FC<{
             return (
               <tr key={companyName} className="group hover:bg-zinc-800/20 transition-colors">
                 <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{companyName}</td>
-                {renderRowCells(metrics, w4)}
+                {renderRowCells(metrics, w4, false, companyName, compDrivers)}
               </tr>
             );
           })}
@@ -649,21 +876,23 @@ const MasterTable: React.FC<{
             
             let fMetrics: any = null;
             let franchiseW4: any = null;
+            let franchiseStubs: any[] = [];
 
             if (contractName === 'TPOG') {
-               const tpogFranchiseDrivers = compDrivers.filter(d => !!d.franchiseId).map(d => ({
+               franchiseStubs = compDrivers.filter(d => !!d.franchiseId).map(d => ({
                    ...d,
                    companyPay: (d as any).franchise_revenue_collected || 0,
                    fixed_costs: (d as any).franchise_fixed_costs_full || 0,
                    poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
-                   poAmount: (d as any).franchise_po || 0
+                   poAmount: (d as any).franchise_po || 0,
+                   isFranchiseStub: true
                }));
                
-               if (tpogFranchiseDrivers.length > 0) {
-                   const rawMetrics = getAggregatedMetrics(tpogFranchiseDrivers);
+               if (franchiseStubs.length > 0) {
+                   const rawMetrics = getAggregatedMetrics(franchiseStubs);
                    fMetrics = { ...rawMetrics };
                    
-                   const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver'];
+                   const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj'];
                    
                    Object.keys(fMetrics).forEach(k => {
                        if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
@@ -681,7 +910,7 @@ const MasterTable: React.FC<{
               <React.Fragment key={contractName}>
                 <tr className="group hover:bg-zinc-800/20 transition-colors">
                   <td className="px-1 py-0.5 font-bold text-emerald-400 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{contractName}</td>
-                  {renderRowCells(metrics, w4, false, contractName)}
+                  {renderRowCells(metrics, w4, false, contractName, compDrivers)}
                 </tr>
                 {fMetrics && (
                      <tr key="TPOG_FRANCHISE_ROW" className="group hover:bg-zinc-800/20 transition-colors">
@@ -696,7 +925,7 @@ const MasterTable: React.FC<{
                            </div>
                          </div>
                        </td>
-                       {renderRowCells(fMetrics, franchiseW4)}
+                       {renderRowCells(fMetrics, franchiseW4, false, 'TPOG (Franchise PnL)', franchiseStubs)}
                      </tr>
                 )}
               </React.Fragment>
@@ -709,8 +938,8 @@ const MasterTable: React.FC<{
              const w4 = get4wMetrics(franchiseName);
              return (
               <tr key={franchiseName} className="group hover:bg-zinc-800/20 transition-colors">
-                <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{displayLabel}</td>
-                {renderRowCells(metrics, w4)}
+               <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{displayLabel}</td>
+                {renderRowCells(metrics, w4, false, displayLabel, franDrivers)}
               </tr>
              );
           })}
@@ -723,7 +952,7 @@ const MasterTable: React.FC<{
             return (
               <tr key={teamName} className="group hover:bg-zinc-800/20 transition-colors">
                 <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{displayLabel}</td>
-                {renderRowCells(metrics, w4)}
+                {renderRowCells(metrics, w4, false, displayLabel, teamDrivers)}
               </tr>
             );
           })}
@@ -788,7 +1017,7 @@ const MasterTable: React.FC<{
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.teamId || '-'}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.franchiseId || '-'}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.contractType || '-'}</td>
-                {renderRowCells(metrics, w4, isStub)}
+                {renderRowCells(metrics, w4, isStub, displayLabel, [d])}
               </tr>
             );
           })}
@@ -801,7 +1030,7 @@ const MasterTable: React.FC<{
             {!isAverageView && Array.from({ length: 3 }).map((_, i) => (
               <td key={`empty-counts-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
             ))}
-            {Array.from({ length: 11 }).map((_, i) => (
+            {Array.from({ length: isRevColExpanded ? 20 : 11 }).map((_, i) => (
                <td key={`empty-metrics-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
              ))}
             {show4w && <td className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>}
@@ -813,6 +1042,26 @@ const MasterTable: React.FC<{
           <tr className="font-bold font-mono">
             {(() => {
                 const div = dynamicTotals.effNonTeamsCount > 0 ? dynamicTotals.effNonTeamsCount : dynamicTotals.effCount;
+                const footerBalChange = dynamicTotals.pnlBalanceChange;
+                const footerZeroMileDetails = (() => {
+                  let count = 0;
+                  let revBase = 0;
+                  let balChange = 0;
+                  let prorated = 0;
+                  const uniqueNames = Array.from(new Set((drivers || []).map(d => d.name || 'Unknown')));
+                  uniqueNames.forEach(dName => {
+                    const drvRecords = drivers.filter(d => d.name === dName);
+                    const m = calculateMetrics(drvRecords, true);
+                    if (m.pnlZeroMiDrop < 0) {
+                      count++;
+                      const originalRevBase = Math.abs(m.pnlZeroMiDrop) - m.pnlBalanceChange - m.pnlProrated;
+                      revBase += originalRevBase;
+                      balChange += m.pnlBalanceChange;
+                      prorated += m.pnlProrated;
+                    }
+                  });
+                  return { count, revBase, balChange, prorated };
+                })();
                 return (
                   <>
                     <td className="px-1 py-1 text-white font-sans text-[10px] sticky left-0 z-50 bg-zinc-950 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">TOTAL</td>
@@ -830,12 +1079,12 @@ const MasterTable: React.FC<{
                     <td className="px-1 py-1 text-right text-yellow-400">{formatCurrency(val(dynamicTotals.gross, div))}</td>
                     <td className="px-1 py-1 text-right text-yellow-400 font-bold">{formatCurrency(val(dynamicTotals.margin, div))}</td>
                     <td className="group/disp relative hover:z-[99999] px-1 py-1 text-right text-purple-400 font-medium !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
-                      -{formatCurrency(Math.abs(val(dynamicTotals.dispatcherPay, div)))}
+                      <span>{val(dynamicTotals.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(dynamicTotals.dispatcherPay, div))}</span>
                       <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                         <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
-                        <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.dispGrossAmount, div)))}</span></div>
-                        <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.dispMarginAmount, div)))}</span></div>
-                        <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono">+{formatCurrency(Math.abs(val(dynamicTotals.dispSharedLiability, div)))}</span></div>
+                        <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.dispGrossAmount, div))}</span></div>
+                        <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.dispMarginAmount, div))}</span></div>
+                        <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(val(dynamicTotals.dispSharedLiability, div)))}</span></div>
                       </div>
                     </td>
                     <td className="group/ins relative hover:z-[99999] px-1 py-1 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
@@ -853,7 +1102,149 @@ const MasterTable: React.FC<{
                       </div>
                     </td>
                      <td className="px-1 py-1 text-right text-purple-400">{val(dynamicTotals.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.fuel, div)))}` : formatCurrency(val(dynamicTotals.fuel, div))}</td>
-                    <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.pnlCompanyPay !== undefined ? dynamicTotals.pnlCompanyPay : dynamicTotals.companyPay, div))}</td>
+                    <td className="px-1 py-1 text-right text-blue-400">
+                      {formatCurrency(val(dynamicTotals.pnlCompanyPay !== undefined ? dynamicTotals.pnlCompanyPay : dynamicTotals.companyPay, div))}
+                    </td>
+                    {isRevColExpanded && (
+                      <>
+                        <td className="group/revbase relative hover:z-[99999] px-1 py-1 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+                          {val(dynamicTotals.pnlRevBase, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlRevBase, div)))}
+                          <div className="fixed hidden group-hover/revbase:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[280px] pointer-events-none dynamic-tooltip">
+                            <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Revenue Base Calculation:</div>
+                            
+                            {drivers.length > 0 ? (
+                                Array.from(new Set(drivers.map(d => d.contractType || 'Unknown'))).map(cType => {
+                                    const rule = configContracts?.find(c => c.contract_type === cType);
+                                    const gPerc = rule && rule.mc_gross_percent !== undefined ? Number(rule.mc_gross_percent) * 100 : null;
+                                    const mPerc = rule && rule.mc_margin_percent !== undefined ? Number(rule.mc_margin_percent) * 100 : null;
+                                    const dGrossPerc = rule && rule.dispatcher_gross_percent !== undefined ? Number(rule.dispatcher_gross_percent) * 100 : 0;
+                                    const dMargPerc = rule && (rule as any).dispatcher_margin_percent !== undefined ? Number((rule as any).dispatcher_margin_percent) * 100 : 0;
+                                    const calcType = rule?.calculation_type || 'STANDARD';
+                                    
+                                    const subset = drivers.filter(d => (d.contractType || 'Unknown') === cType);
+                                    const cGross = subset.reduce((sum, d) => sum + (d.grossRevenue || 0), 0);
+                                    const cMargin = subset.reduce((sum, d) => sum + (d.marginAmount || 0), 0);
+
+                                    const cTotal = subset.reduce((sum, d) => {
+                                        const rBase = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0);
+                                        const revWithoutFuelVal = Number((d as any).rev_without_fuel ?? (d as any).revWithoutFuel ?? 0);
+                                        const dMiles = Number((d as any).total_miles ?? d.milesDriven ?? 0);
+                                        const mileCapFactor = (revWithoutFuelVal > 0 && dMiles === 0) ? 0 : 1;
+                                        let companyTakeMulti = 1;
+                                        if ((d.contractType === 'TPOG WITH FRANCHISE' || (d.contractType === 'TPOG' && d.franchiseId)) && configContracts && configContracts.length > 0) {
+                                            const tpogFranRule = [...configContracts].filter((c:any) => c.contract_type === 'TPOG WITH FRANCHISE').sort((a:any,b:any) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
+                                            if (tpogFranRule && tpogFranRule.calculation_type === 'TPOG_FRANCHISE') {
+                                                companyTakeMulti = tpogFranRule.mc_gross_percent !== undefined ? Number(tpogFranRule.mc_gross_percent) : 1;
+                                            }
+                                        }
+                                        if (d.name === 'Garland Jermaine Norris') {
+                                            return sum + ((d.grossRevenue || 0) * 0.2) * mileCapFactor * companyTakeMulti;
+                                        }
+                                        return sum + rBase * mileCapFactor * companyTakeMulti;
+                                    }, 0);
+                                    
+                                    if (cTotal === 0 && cGross === 0 && cMargin === 0) return null;
+                                    
+                                    let formulaStr = '';
+                                    if (cType === 'CPM' && subset.some(d => d.name === 'Garland Jermaine Norris')) {
+                                        formulaStr = `Gross * 20% (Garland Exception)`;
+                                    } else if (calcType === 'MCLOO_STYLE') {
+                                        formulaStr = `(Gross * ${gPerc ?? 8}%) + (Margin * ${mPerc ?? 0}%)`;
+                                    } else if (calcType === 'OO_NONF') {
+                                        formulaStr = `(Gross * ${gPerc ?? 7.5}%) + (Margin * ${mPerc ?? 70}%)`;
+                                    } else if (calcType === 'OO_FRANCHISE') {
+                                        formulaStr = `(Gross * ${gPerc ?? 4}%) + (Margin * ${mPerc ?? 35}%)`;
+                                    } else if (calcType === 'TPOG_NONF' || calcType === 'POG_STYLE' || calcType === 'TPOG_FRANCHISE') {
+                                        formulaStr = `(Gross * (100% - Drv% - ${dGrossPerc ?? 2.5}%)) + (Margin * ${mPerc ?? 70}%)`;
+                                    } else if (calcType === 'NEW_FORMULA') {
+                                        formulaStr = `(${gPerc ?? 0}% * (Gross + Margin - (Margin * ${mPerc ?? 0}%))) - (Drv% * Gross) - ((Gross * ${dGrossPerc ?? 0}%) + (Margin * ${dMargPerc ?? 0}%))`;
+                                    } else if (calcType === 'NEW_CPM_FORMULA') {
+                                        formulaStr = `Gross - GrossPay - (Gross * ${gPerc ?? 0}%)`;
+                                    } else if (calcType === 'CPM_STYLE') {
+                                        formulaStr = `(Gross + (Margin * ${mPerc ?? 70}%)) - Net Pay`;
+                                    } else if (gPerc !== null && mPerc !== null) {
+                                        if (gPerc > 0 && mPerc > 0) formulaStr = `(Gross * ${gPerc}%) + (Margin * ${mPerc}%)`;
+                                        else if (gPerc > 0) formulaStr = `Gross * ${gPerc}%`;
+                                        else if (mPerc > 0) formulaStr = `Margin * ${mPerc}%`;
+                                        else formulaStr = `Custom / Flat`;
+                                    } else {
+                                        formulaStr = `Standard Base Formula`;
+                                    }
+
+                                    return (
+                                        <div key={cType} className="mb-1.5 last:mb-0">
+                                            <div className="text-emerald-400 font-bold text-[9px]">{cType}</div>
+                                            <div className="flex flex-col gap-0.5 text-[9px] pl-1 border-l border-zinc-700 ml-1">
+                                                <div className="text-zinc-300">Gross: {formatCurrency(val(cGross, div))} | Margin: {formatCurrency(val(cMargin, div))}</div>
+                                                <div className="text-zinc-400 italic text-[8px]">Formula: {formulaStr}</div>
+                                            </div>
+                                        </div>
+                                    );
+                                })
+                            ) : null}
+                            <div className="flex justify-between border-t border-zinc-600 mt-1 pt-1 font-bold text-white">
+                                <span>Total Rev Base:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlRevBase, div))}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="group/balchange relative hover:z-[99999] px-1 py-1 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+                          {val(footerBalChange, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(footerBalChange, div)))}
+                          <div className="fixed hidden group-hover/balchange:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+                            <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Balance Change Breakdown:</div>
+                            <div className="flex justify-between"><span>PO Deductions:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlPoDeductions, div))}</span></div>
+                            <div className="flex justify-between"><span>PO Settle:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlPoSettle, div))}</span></div>
+                            <div className="flex justify-between"><span>Net Pay:</span><span className="font-mono">{val(groupBy === 'Driver' ? (dynamicTotals.netPay || dynamicTotals.driverPay) : dynamicTotals.pnlStrictNegNetPay, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(groupBy === 'Driver' ? (dynamicTotals.netPay || dynamicTotals.driverPay) : dynamicTotals.pnlStrictNegNetPay, div)))}</span></div>
+                            {groupBy !== 'Driver' && <div className="text-[9px] text-zinc-400 italic mt-0.5 leading-tight">* Shows only negative net pay.</div>}
+                            <div className="flex justify-between mt-0.5"><span>Balance Settle:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlBalanceSettle, div))}</span></div>
+                            <div className="text-[9px] text-zinc-400 mt-1 italic border-t border-zinc-700 pt-1">
+                              * Includes 0.3x reduction for MCLOO rows
+                            </div>
+                            <div className="flex justify-between border-t border-zinc-600 mt-1 pt-1 font-bold text-white">
+                              <span>Total:</span>
+                              <span className="font-mono">{formatCurrency(val(footerBalChange, div))}</span>
+                            </div>
+                          </div>
+                        </td>
+                        <td className="group/prorated relative hover:z-[99999] px-1 py-1 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+                          {val(dynamicTotals.pnlProrated, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlProrated, div)))}
+                          <div className="fixed hidden group-hover/prorated:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+                            <div className="font-bold text-emerald-300 border-b border-zinc-600 pb-1 mb-1">Prorated Fixed Costs:</div>
+                            <div className="flex justify-between"><span>Truck Float:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlTruckFloat, div))}</span></div>
+                            <div className="flex justify-between"><span>Truck Weekly:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlTruckWkly, div))}</span></div>
+                            <div className="flex justify-between"><span>Occ Ins:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlOccIns, div))}</span></div>
+                            <div className="flex justify-between"><span>ELD:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlEld, div))}</span></div>
+                            <div className="flex justify-between"><span>IFTA:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlIfta, div))}</span></div>
+                            <div className="flex justify-between"><span>Maint Support:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlMaintSupport, div))}</span></div>
+                            <div className="flex justify-between"><span>Liability:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlLiability, div))}</span></div>
+                            <div className="flex justify-between"><span>Truck PHD:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlTruckPhd, div))}</span></div>
+                            <div className="flex justify-between"><span>Trailer:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlTrailer, div))}</span></div>
+                            <div className="flex justify-between"><span>Trailer PHD:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlTrailerPhd, div))}</span></div>
+                          </div>
+                        </td>
+                        <td className="group/footerzeromicap relative hover:z-[99999] px-1 py-1 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+                          {val(dynamicTotals.pnlZeroMiDrop, div) < 0 ? '-' : (val(dynamicTotals.pnlZeroMiDrop, div) > 0 ? '+' : '')}{formatCurrency(Math.abs(val(dynamicTotals.pnlZeroMiDrop, div)))}
+                          {footerZeroMileDetails.count > 0 && (
+                            <div className="fixed hidden group-hover/footerzeromicap:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+                              <div className="font-bold text-amber-400 border-b border-zinc-600 pb-1 mb-1">Total 0 Mi Cap Drop:</div>
+                              {groupBy !== 'Driver' && <div className="flex justify-between"><span>Drivers with 0 miles:</span><span className="font-mono font-bold text-white">{footerZeroMileDetails.count}</span></div>}
+                              <div className="flex justify-between mt-1"><span>Revenue Base:</span><span className="font-mono">-{formatCurrency(val(footerZeroMileDetails.revBase, div))}</span></div>
+                              <div className="flex justify-between"><span>Balance Change:</span><span className="font-mono">{val(footerZeroMileDetails.balChange, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(footerZeroMileDetails.balChange, div)))}</span></div>
+                              <div className="flex justify-between"><span>Balance Change:</span><span className="font-mono">{val(footerZeroMileDetails.balChange, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(footerZeroMileDetails.balChange, div)))}</span></div>
+                              <div className="flex justify-between"><span>Revenue Prorated:</span><span className="font-mono">-{formatCurrency(val(footerZeroMileDetails.prorated, div))}</span></div>
+                              <div className="flex justify-between border-t border-zinc-600 mt-1 pt-1 font-bold text-white">
+                                <span>Total Drop:</span>
+                                <span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.pnlZeroMiDrop, div)))}</span>
+                              </div>
+                            </div>
+                          )}
+                        </td>
+                        <td className="px-1 py-1 text-right text-zinc-400 font-mono">{val(dynamicTotals.pnlEscrowAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlEscrowAdj, div)))}</td>
+                        <td className="px-1 py-1 text-right text-zinc-400 font-mono">+{formatCurrency(Math.abs(val(dynamicTotals.pnlTollsAdj, div)))}</td>
+                        <td className="px-1 py-1 text-right text-zinc-400 font-mono">{val(dynamicTotals.pnlCashAdv, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlCashAdv, div)))}</td>
+                        <td className="px-1 py-1 text-right text-zinc-400 font-mono">{val(dynamicTotals.pnlCpmAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlCpmAdj, div)))}</td>
+                        <td className="px-1 py-1 text-right text-zinc-400 font-mono">{val(dynamicTotals.pnlFuelAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlFuelAdj, div)))}</td>
+                      </>
+                    )}
                      <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.pnlFuelRebate !== undefined ? dynamicTotals.pnlFuelRebate : dynamicTotals.fuelRebate, div))}</td>
                     <td className="group/fixed relative hover:z-[99999] px-1 py-1 text-right text-blue-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
                       -{formatCurrency(Math.abs(val(dynamicTotals.pnlAllocatedFixed !== undefined ? dynamicTotals.pnlAllocatedFixed : dynamicTotals.allocatedFixed, div)))}
@@ -1014,10 +1405,7 @@ const PnLView: React.FC<PnLViewProps> = ({
   const [entitiesSearchQuery, setEntitiesSearchQuery] = useState('');
   const metricsRef = useRef<HTMLDivElement>(null);
   const entitiesRef = useRef<HTMLDivElement>(null);
-  const [isMainTableFilterOpen, setIsMainTableFilterOpen] = useState(false);
-  const mainTableFilterRef = useRef<HTMLDivElement>(null);
-  const [isExpandedTableFilterOpen, setIsExpandedTableFilterOpen] = useState(false);
-  const expandedTableFilterRef = useRef<HTMLDivElement>(null);
+  const [tableFilters, setTableFilters] = useState<FilterRule[]>([]);
   const [selectedEntities, setSelectedEntities] = useState<string[]>(['COMPANY']);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['netIncome']);
@@ -1731,7 +2119,7 @@ const PnLView: React.FC<PnLViewProps> = ({
          if (isOO || d.contractType === 'MCLOO') {
              if (isOO) {
                  ins_liab_gen = orig_gen * effNT;
-                 ins_liab_auto = Math.max(0, liability - orig_gen) * effNT;
+                 ins_liab_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') * effNT;
              } else {
                  if (liabilityGeneral === 0) {
                      let orig_auto = Math.max(0, getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') - sharedInsLiab + getFcRule('Liability Insurance (Global)', '', ''));
@@ -1755,7 +2143,7 @@ const PnLView: React.FC<PnLViewProps> = ({
              let c_l_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
              let c_l_gl = getFcRule('Liability Insurance (Global)', '', '');
              let c_l_gen = getFcRule('Liability Insurance (General)', '', '');
-             ins_liab_auto = (c_l_auto + c_l_gl) * effNT;
+             ins_liab_auto = c_l_auto * effNT;
              ins_liab_gen = c_l_gen * effNT;
              ins_cargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance') * effNT;
              ins_lease_gap = getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage') * effNT;
@@ -1783,8 +2171,11 @@ const PnLView: React.FC<PnLViewProps> = ({
                 companyTakeMulti = tpogFranRule.mc_gross_percent !== undefined ? Number(tpogFranRule.mc_gross_percent) : 1;
             }
         }
+        if ((d as any).isFranchiseStub) {
+            companyTakeMulti = 1;
+        }
 
-       const orgTolls = d.tollCost !== undefined ? d.tollCost : (d as any).tolls;
+       const orgTolls = (d as any).tolls_amount !== undefined ? (d as any).tolls_amount : ((d as any).tollsAmount !== undefined ? (d as any).tollsAmount : (d.tollCost || 0));
         const multipliedTolls = Number(orgTolls || 0) * companyTakeMulti;
 
         let dispGrossPerc = 0;
@@ -1810,16 +2201,19 @@ const PnLView: React.FC<PnLViewProps> = ({
             dispMarginPerc = Number((dispRule as any).disp_margin_perc) || 0;
         }
         let dispMclooPayAmount = 0;
-        let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === d.companyId && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
-        if (!liabRuleForDisp) {
-            liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+        if (d.contractType === 'MCLOO') {
+            let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === d.companyId && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+            if (!liabRuleForDisp) {
+                liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+            }
+            if (liabRuleForDisp && (liabRuleForDisp as any).disp_mcloo_pay) {
+                dispMclooPayAmount = (Number((liabRuleForDisp as any).disp_mcloo_pay) || 0) * (d.effectiveNonTeams || 0);
+            }
         }
-        if (liabRuleForDisp && (liabRuleForDisp as any).disp_mcloo_pay) {
-            dispMclooPayAmount = (Number((liabRuleForDisp as any).disp_mcloo_pay) || 0) * (d.effectiveNonTeams || 0);
-        }
-       const dispGrossAmount = driver_gross * (dispGrossPerc / 100);
-        const dispMarginAmount = margin_amt * (dispMarginPerc / 100);
-        const calcDispPay = dispGrossAmount + dispMarginAmount - dispMclooPayAmount;
+       const dispGrossAmount = -Math.abs(driver_gross * (dispGrossPerc / 100));
+        const dispMarginAmount = -Math.abs(margin_amt * (dispMarginPerc / 100));
+        const dispSharedLiab = Math.abs(dispMclooPayAmount);
+        const calcDispPay = dispGrossAmount + dispMarginAmount + dispSharedLiab;
 
         let fc_truck = 0, fc_trailer = 0, fc_plates = 0, fc_telematics = 0, fc_phone = 0, fc_office = 0, fc_rent = 0, fc_backup_mc = 0, fc_bo_reg = 0, fc_bo_tech = 0, fc_factoring = 0;
 
@@ -1882,11 +2276,12 @@ const PnLView: React.FC<PnLViewProps> = ({
           dispatcherCommission: calcDispPay,
           dispGrossAmount: dispGrossAmount,
           dispMarginAmount: dispMarginAmount,
-          dispSharedLiability: dispMclooPayAmount,
+          dispSharedLiability: dispSharedLiab,
           companyPay: Number(d.companyPay || 0) * companyTakeMulti,
           tollCost: multipliedTolls,
           calculatedTolls: multipliedTolls,
           tolls: multipliedTolls,
+          originalDbTolls: (d as any).tolls,
           fuelCost: Number(d.fuelCost || 0) * companyTakeMulti,
           fuelSavings: Number(d.fuelSavings || 0) * companyTakeMulti,
           fuelRebate: Number(d.fuelUsed || (d as any).fuel_quantity || 0) * (getActiveAmount('Fuel Rebate', date, d.companyId, uniqueCompsInWeek.length).amount || 0),
@@ -1921,6 +2316,73 @@ const PnLView: React.FC<PnLViewProps> = ({
     return enrichedDrivers.filter(d => d.payDate === selectedDate);
   }, [enrichedDrivers, selectedDate, latestPayDate]);
 
+  const filteredTableDrivers = useMemo(() => {
+      if (!tableFilters || tableFilters.length === 0) return displayedDrivers;
+      return displayedDrivers.filter(d => {
+          return tableFilters.every(rule => {
+              if (!rule.field || !rule.operator) return true;
+              let fieldValue: any;
+              switch (rule.field) {
+                      case 'Contract': fieldValue = d.contractType; break;
+                      case 'Company': fieldValue = d.companyId; break;
+                      case 'Team': fieldValue = d.teamId; break;
+                      case 'Franchise': fieldValue = d.franchiseId; break;
+                      case 'Driver': fieldValue = d.name; break;
+                      case 'Eff Drivers': fieldValue = d.effectiveDrivers; break;
+                      case 'Eff Non Teams': fieldValue = d.effectiveNonTeams; break;
+                      case 'Eff Trailers': fieldValue = (d as any).effectiveTrailers; break;
+                      case 'Gross': fieldValue = d.grossRevenue; break;
+                      case 'Margin': fieldValue = d.marginAmount; break;
+                      case 'Miles': fieldValue = Number(d.milesDriven) || 0; break;
+                      case 'Disp. Pay': fieldValue = d.dispatcherCommission || 0; break;
+                      case 'Ins. Exp.': fieldValue = (d as any).insuranceCost || 0; break;
+                      case 'Fuel': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : Math.abs(d.fuelSavings || 0); break;
+                      case 'Rev. Col.': fieldValue = d.companyPay || 0; break;
+                      case 'Rev Base': fieldValue = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0); break;
+                      case 'Bal Change': fieldValue = Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0) + Number((d as any).po_settle ?? (d as any).poSettle ?? 0) - Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0); break;
+                      case 'Rev Prorated': fieldValue = 0; break;
+                      case '0 Mi Cap': fieldValue = 0; break;
+                      case 'Escrow Adj': fieldValue = Number((d as any).escrow_deduction ?? (d as any).escrowDeduct ?? 0); break;
+                      case 'Tolls Adj': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
+                      case 'Cash Adv': fieldValue = Number((d as any).cash_advance_percent ?? (d as any).cashAdvancePercent ?? 0); break;
+                      case 'CPM Adj': fieldValue = Number((d as any).revenue_cpm ?? (d as any).revenueCpm ?? 0) * (Number(d.milesDriven) || 0); break;
+                      case 'Fuel Adj': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : Math.abs(d.fuelSavings || 0); break;
+                      case 'Fuel Reb.': fieldValue = (d as any).fuelRebate || 0; break;
+                      case 'Wkly Exp.': fieldValue = (d as any).calculatedFixedCost || 0; break;
+                      case 'Tolls': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
+                      case 'PO': fieldValue = Math.abs(d.poCoverage || 0); break;
+                      case 'Recruiting': fieldValue = Math.abs(d.recruitingCost || 0); break;
+                      case 'PnL 4w': fieldValue = 0; break;
+                      case '4w Avg': fieldValue = 0; break;
+                      case 'Total PnL': fieldValue = (d.companyPay || 0) + ((d as any).fuelRebate || 0) - ((d as any).calculatedFixedCost || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tolls || d.tollCost || 0); break;
+                      default: return true;
+                  }
+
+              const isCategorical = ['Contract', 'Company', 'Team', 'Franchise', 'Driver'].includes(rule.field);
+              
+              if (isCategorical) {
+                  const safeVal = String(fieldValue || 'Unassigned');
+                  const selectedValues = Array.isArray(rule.value) ? rule.value : [];
+                  if (rule.operator === 'is one of') return selectedValues.includes(safeVal);
+                  if (rule.operator === 'is not one of') return !selectedValues.includes(safeVal);
+                  if (rule.operator === 'is') return selectedValues.length > 0 && selectedValues[0] === safeVal;
+                  if (rule.operator === 'is not') return selectedValues.length > 0 && selectedValues[0] !== safeVal;
+                  return true;
+              } else {
+                  const numVal = Number(fieldValue) || 0;
+                  const filterNum = Number(rule.value) || 0;
+                  if (rule.operator === 'is equal') return numVal === filterNum;
+                  if (rule.operator === 'is not equal') return numVal !== filterNum;
+                  if (rule.operator === 'is less than') return numVal < filterNum;
+                  if (rule.operator === 'is more than') return numVal > filterNum;
+                  if (rule.operator === 'is less or equal') return numVal <= filterNum;
+                  if (rule.operator === 'is more or equal') return numVal >= filterNum;
+                  return true;
+              }
+          });
+      });
+  }, [displayedDrivers, tableFilters]);
+
 
   const uniqueTeams = useMemo(() => Array.from(new Set(displayedDrivers.map(d => d.teamId))).filter(Boolean).sort(), [displayedDrivers]);
   const uniqueFranchises = useMemo(() => Array.from(new Set(displayedDrivers.map(d => d.franchiseId))).filter(Boolean).sort(), [displayedDrivers]);
@@ -1939,12 +2401,7 @@ const PnLView: React.FC<PnLViewProps> = ({
       if (entitiesRef.current && !entitiesRef.current.contains(event.target as Node)) {
         setIsEntitiesOpen(false);
       }
-      if (mainTableFilterRef.current && !mainTableFilterRef.current.contains(event.target as Node)) {
-        setIsMainTableFilterOpen(false);
-      }
-      if (expandedTableFilterRef.current && !expandedTableFilterRef.current.contains(event.target as Node)) {
-        setIsExpandedTableFilterOpen(false);
-      }
+      
     }
     document.addEventListener("mousedown", handleClickOutside);
     return () => {
@@ -2134,6 +2591,32 @@ const PnLView: React.FC<PnLViewProps> = ({
     
     let fcTruck = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0;
 
+    let pnlRevBase = 0;
+    let pnlFranchiseBase = 0;
+    let pnlPoDeductions = 0;
+    let pnlPoSettle = 0;
+    let pnlNegNetPay = 0;
+    let pnlStrictNegNetPay = 0;
+    let pnlBalanceSettle = 0;
+    let pnlBalanceChange = 0;
+    let pnlTruckFloat = 0;
+    let pnlTruckWkly = 0;
+    let pnlOccIns = 0;
+    let pnlEld = 0;
+    let pnlIfta = 0;
+    let pnlMaintSupport = 0;
+    let pnlLiability = 0;
+    let pnlTruckPhd = 0;
+    let pnlTrailer = 0;
+    let pnlTrailerPhd = 0;
+    let pnlEscrowAdj = 0;
+    let pnlTollsAdj = 0;
+    let pnlCashAdv = 0;
+    let pnlCpmAdj = 0;
+    let pnlFuelAdj = 0;
+    let pnlProrated = 0;
+    let pnlZeroMiDrop = 0;
+    
     initialDrivers.forEach(d => {
         fcTruck += (d as any).fcTruck || 0;
         fcTrailer += (d as any).fcTrailer || 0;
@@ -2146,6 +2629,7 @@ const PnLView: React.FC<PnLViewProps> = ({
         fcBoReg += (d as any).fcBoReg || 0;
         fcBoTech += (d as any).fcBoTech || 0;
         fcFactoring += (d as any).fcFactoring || 0;
+
         const activeItems = getPnlConfigItems(d.contractType || '');
 
         const dCompanyPay = d.companyPay || 0;
@@ -2155,6 +2639,7 @@ const PnLView: React.FC<PnLViewProps> = ({
         const dFuelRebate = (d as any).fuelRebate || 0;
         if (activeItems.includes('fuel_rebate')) pnlFuelRebate += dFuelRebate;
 
+        const dTollsRaw = Number((d as any).originalDbTolls !== undefined ? (d as any).originalDbTolls : ((d as any).rawTolls !== undefined ? (d as any).rawTolls : ((d as any).tolls || 0)));
         const dTolls = Math.abs((d as any).calculatedTolls !== undefined ? (d as any).calculatedTolls : ((d as any).tolls !== undefined ? (d as any).tolls : (d.tollCost || 0)));
         tolls += dTolls;
         if (activeItems.includes('tolls')) pnlTolls += dTolls;
@@ -2175,6 +2660,202 @@ const PnLView: React.FC<PnLViewProps> = ({
             pnlBaseFixed += dBaseFixed;
             pnlAdjFixed += dAdjFixed;
         }
+
+        let companyTakeMulti = 1;
+        if ((d.contractType === 'TPOG WITH FRANCHISE' || (d.contractType === 'TPOG' && d.franchiseId)) && configContracts && configContracts.length > 0) {
+            const tpogFranRule = [...configContracts].filter(c => c.contract_type === 'TPOG WITH FRANCHISE').sort((a,b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
+            if (tpogFranRule && tpogFranRule.calculation_type === 'TPOG_FRANCHISE') {
+                companyTakeMulti = tpogFranRule.mc_gross_percent !== undefined ? Number(tpogFranRule.mc_gross_percent) : 1;
+            }
+        }
+
+        const isFranchise = d.contractType === 'TPOG' && !!d.franchiseId;
+        const effNT = d.effectiveNonTeams || 0;
+        const effTr = (d as any).effectiveTrailers || 0;
+
+        const rBase = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0);
+        const poDed = Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0);
+        const poSet = Number((d as any).po_settle ?? (d as any).poSettle ?? 0);
+        const balSet = Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0);
+        const nPay = Number((d as any).net_pay ?? d.netPay ?? 0);
+        const escDed = Number((d as any).escrow_deduction ?? (d as any).escrowDeduct ?? 0);
+        
+        const tFloat = Number((d as any).truck_float ?? (d as any).truckFloat ?? 0);
+        const tWkly = Number((d as any).truck_wkly ?? (d as any).truckWkly ?? 0);
+        const oIns = Number((d as any).occ_ins ?? (d as any).occIns ?? 0);
+        const dEld = Number((d as any).eld ?? 0);
+        const dIfta = Number((d as any).ifta ?? 0);
+        const mSup = Number((d as any).maintenance_support ?? (d as any).maintenanceSupport ?? 0);
+        const liab = Number((d as any).liability ?? 0);
+        const tPhd = Number((d as any).truck_phd ?? (d as any).truckPhd ?? 0);
+        const dTrl = Number((d as any).trailer ?? 0);
+        const dTrlPhd = Number((d as any).trailer_phd ?? (d as any).trailerPhd ?? 0);
+        
+        const dCash = Number((d as any).cash_advance_percent ?? (d as any).cashAdvancePercent ?? 0);
+        const dRevCpm = Number((d as any).revenue_cpm ?? (d as any).revenueCpm ?? 0);
+        const dMiles = Number((d as any).total_miles ?? d.milesDriven ?? 0);
+        const fSaved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
+        const fSpent = Number((d as any).fuel_spent ?? (d as any).fuelCost ?? 0);
+
+        const revWithoutFuelVal = Number((d as any).rev_without_fuel ?? (d as any).revWithoutFuel ?? 0);
+        const mileCapFactor = (revWithoutFuelVal > 0 && dMiles === 0) ? 0 : 1;
+
+        let drvRevBase = 0;
+        let drvFranchiseBase = 0;
+        let drvPoDeductions = 0;
+        let drvPoSettle = 0;
+        let drvNegNetPay = 0;
+        let drvBalanceSettle = 0;
+        let drvBalanceChange = 0;
+        let drvTruckFloat = 0;
+        let drvTruckWkly = 0;
+        let drvOccIns = 0;
+        let drvEld = 0;
+        let drvIfta = 0;
+        let drvMaintSupport = 0;
+        let drvLiability = 0;
+        let drvTruckPhd = 0;
+        let drvTrailer = 0;
+        let drvTrailerPhd = 0;
+        let drvEscrowAdj = 0;
+        let drvTollsAdj = 0;
+        let drvCashAdv = 0;
+        let drvCpmAdj = 0;
+        let drvFuelAdj = 0;
+        let drvZeroMiDrop = 0;
+
+      if (isFranchise) {
+            const franRevCapped = Number((d as any).franchise_rev_capped_bal ?? (d as any).franchiseRevCappedBal ?? 0);
+            const cappedBase = (franRevCapped > 0 && dMiles === 0) ? 0 : franRevCapped;
+            drvFranchiseBase = cappedBase;
+
+            drvTruckFloat = tFloat * effNT;
+            drvTruckWkly = tWkly * effNT;
+            drvOccIns = oIns * effNT;
+            drvEld = dEld * effNT;
+            drvIfta = dIfta * effNT;
+            drvMaintSupport = mSup * effNT;
+            drvLiability = liab * effNT;
+            drvTruckPhd = tPhd * effNT;
+            drvTrailer = dTrl * effTr;
+            drvTrailerPhd = dTrlPhd * effTr;
+            
+            if ((d as any).isFranchiseStub) {
+                drvPoDeductions = -poDed;
+                drvPoSettle = poSet;
+                drvNegNetPay = nPay < 0 ? nPay : 0;
+                drvBalanceSettle = balSet;
+                drvBalanceChange = drvPoDeductions + drvPoSettle + drvNegNetPay + drvBalanceSettle;
+                
+                drvEscrowAdj = nPay < 0 ? Math.min(Math.abs(nPay), Math.abs(escDed)) : 0;
+                drvCashAdv = dCash;
+                drvCpmAdj = dRevCpm * dMiles;
+                drvFuelAdj = (d.name === 'Garland Jermaine Norris' ? 0 : -fSpent);
+                drvTollsAdj = 0;
+
+                drvRevBase = rBase;
+            } else {
+                drvPoDeductions = 0;
+                drvPoSettle = 0;
+                drvNegNetPay = 0;
+                drvBalanceSettle = 0;
+                drvBalanceChange = 0;
+                
+                drvEscrowAdj = 0;
+                drvCashAdv = dCash;
+                drvCpmAdj = dRevCpm * dMiles;
+                drvFuelAdj = (d.name === 'Garland Jermaine Norris' ? 0 : -fSpent);
+                drvTollsAdj = 0;
+
+                if (d.name === 'Garland Jermaine Norris') {
+                    drvRevBase = (d.grossRevenue || 0) * 0.2;
+                } else {
+                    drvRevBase = rBase;
+                }
+            }
+        
+        }  else {
+            if (d.name === 'Garland Jermaine Norris') {
+                drvRevBase = (d.grossRevenue || 0) * 0.2;
+            } else {
+                drvRevBase = rBase;
+                const balFactor = d.contractType === 'MCLOO' ? 0.3 : 1;
+                drvPoDeductions = -poDed;
+                drvPoSettle = poSet;
+                drvNegNetPay = nPay < 0 ? nPay : 0;
+                drvBalanceSettle = balSet;
+                drvBalanceChange = (drvPoDeductions + drvPoSettle + drvNegNetPay + drvBalanceSettle) * balFactor;
+                
+                drvTruckFloat = tFloat * effNT;
+                drvTruckWkly = tWkly * effNT;
+                drvOccIns = oIns * effNT;
+                drvEld = dEld * effNT;
+                drvIfta = dIfta * effNT;
+                drvMaintSupport = mSup * effNT;
+                drvLiability = liab * effNT;
+                drvTruckPhd = tPhd * effNT;
+                drvTrailer = dTrl * effTr;
+                drvTrailerPhd = dTrlPhd * effTr;
+            }
+
+            if (d.contractType !== 'MCLOO') {
+                drvEscrowAdj = (nPay < 0 ? Math.min(Math.abs(nPay), Math.abs(escDed)) : 0);
+                drvTollsAdj = (['OO', 'LOO', 'LPOO'].includes(d.contractType || '') ? dTollsRaw : 0);
+                drvCashAdv = dCash;
+                drvCpmAdj = dRevCpm * dMiles;
+                drvFuelAdj = (d.name === 'Garland Jermaine Norris' ? 0 : (['MCLOO', 'OO', 'LOO', 'LPOO', 'MCOO'].includes(d.contractType || '') ? fSaved : -fSpent));
+            } else {
+                drvEscrowAdj = 0;
+                drvTollsAdj = Math.abs(dTollsRaw) * 0.3;
+                drvCpmAdj = dRevCpm * dMiles;
+                drvFuelAdj = fSaved;
+            }
+        }
+
+        drvZeroMiDrop = 0;
+        if (dMiles === 0) {
+            const prorated = drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd;
+            const preDrop = (d as any).isFranchiseStub ? (rBase + drvBalanceChange + prorated) : (drvRevBase + drvBalanceChange + prorated);
+            if (preDrop > 0) {
+                drvZeroMiDrop = -preDrop;
+            }
+        }
+
+        drvRevBase *= mileCapFactor;
+
+        pnlRevBase += drvRevBase * companyTakeMulti;
+        pnlFranchiseBase += drvFranchiseBase * companyTakeMulti;
+        pnlPoDeductions += drvPoDeductions * companyTakeMulti;
+        pnlPoSettle += drvPoSettle * companyTakeMulti;
+        pnlNegNetPay += drvNegNetPay * companyTakeMulti;
+        let drvStrictNegNetPay = 0;
+        if (isFranchise) {
+            if ((d as any).isFranchiseStub) drvStrictNegNetPay = nPay < 0 ? nPay : 0;
+            else drvStrictNegNetPay = 0;
+        } else {
+            drvStrictNegNetPay = nPay < 0 ? nPay : 0;
+        }
+        pnlStrictNegNetPay += drvStrictNegNetPay * companyTakeMulti;
+        pnlBalanceSettle += drvBalanceSettle * companyTakeMulti;
+        pnlBalanceChange += drvBalanceChange * companyTakeMulti;
+        pnlTruckFloat += drvTruckFloat * companyTakeMulti;
+        pnlTruckWkly += drvTruckWkly * companyTakeMulti;
+        pnlOccIns += drvOccIns * companyTakeMulti;
+        pnlEld += drvEld * companyTakeMulti;
+        pnlIfta += drvIfta * companyTakeMulti;
+        pnlMaintSupport += drvMaintSupport * companyTakeMulti;
+        pnlLiability += drvLiability * companyTakeMulti;
+        pnlTruckPhd += drvTruckPhd * companyTakeMulti;
+        pnlTrailer += drvTrailer * companyTakeMulti;
+        pnlTrailerPhd += drvTrailerPhd * companyTakeMulti;
+        pnlEscrowAdj += drvEscrowAdj * companyTakeMulti;
+        pnlTollsAdj += drvTollsAdj * companyTakeMulti;
+        pnlCashAdv += drvCashAdv * companyTakeMulti;
+        pnlCpmAdj += drvCpmAdj * companyTakeMulti;
+        pnlFuelAdj += drvFuelAdj * companyTakeMulti;
+        pnlZeroMiDrop += drvZeroMiDrop * companyTakeMulti;
+        
+        pnlProrated += (drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd) * companyTakeMulti;
     });
 
     const cogs = driverPay + fuel + maint + tolls + faults;
@@ -2195,9 +2876,10 @@ const PnLView: React.FC<PnLViewProps> = ({
       rawFinImportData, effNonTeamsForTrucks: effNonTeamsNoOOCount,
       insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate,
       fcTruck, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring,
-      pnlCompanyPay, pnlFuelRebate, pnlAllocatedFixed, pnlTotalPOCov, pnlTotalRecruiting, pnlTolls
+      pnlCompanyPay, pnlFuelRebate, pnlAllocatedFixed, pnlTotalPOCov, pnlTotalRecruiting, pnlTolls,
+      pnlRevBase, pnlFranchiseBase, pnlPoDeductions, pnlPoSettle, pnlNegNetPay, pnlStrictNegNetPay, pnlBalanceSettle, pnlBalanceChange, pnlTruckFloat, pnlTruckWkly, pnlOccIns, pnlEld, pnlIfta, pnlMaintSupport, pnlLiability, pnlTruckPhd, pnlTrailer, pnlTrailerPhd, pnlEscrowAdj, pnlTollsAdj, pnlCashAdv, pnlCpmAdj, pnlFuelAdj, pnlProrated, pnlZeroMiDrop
     };
-  }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems]);
+  }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems, configContracts]);
 
   const rawTotalActive = displayedDrivers.reduce((sum, d) => sum + (d.effectiveDrivers || 0), 0);
   const totalActiveCount = Number(rawTotalActive.toFixed(2));
@@ -2340,7 +3022,8 @@ const PnLView: React.FC<PnLViewProps> = ({
                   companyPay: (d as any).franchise_revenue_collected || 0,
                   fixed_costs: (d as any).franchise_fixed_costs_full || 0,
                   poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
-                  poAmount: (d as any).franchise_po || 0
+                  poAmount: (d as any).franchise_po || 0,
+                  isFranchiseStub: true
               }));
 
               let fNetIncome = 0;
@@ -2483,7 +3166,8 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
               companyPay: (d as any).franchise_revenue_collected || 0,
               fixed_costs: (d as any).franchise_fixed_costs_full || 0,
               poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
-              poAmount: (d as any).franchise_po || 0
+              poAmount: (d as any).franchise_po || 0,
+              isFranchiseStub: true
           }));
           if (tpogFranchiseDrivers.length > 0) {
               let fNetIncome = 0;
@@ -2539,7 +3223,8 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
           companyPay: d.franchise_revenue_collected || 0,
           fixed_costs: d.franchise_fixed_costs_full || 0,
           poCoverage: d.franchise_po ? -Math.abs(Number(d.franchise_po)) : 0,
-          poAmount: d.franchise_po || 0
+          poAmount: d.franchise_po || 0,
+          isFranchiseStub: true
         }));
         if (franDrivers.length > 0) {
           let tNet = 0;
@@ -2743,30 +3428,17 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                     />
                  </div>
                  <div className="flex items-center gap-3">
-                   {currentRole === 'Company Admin' && setGlobalFilter && (
-                     <div className="relative" ref={expandedTableFilterRef}>
-                       <button
-                         onClick={() => setIsExpandedTableFilterOpen(!isExpandedTableFilterOpen)}
-                         className={`flex items-center gap-2 bg-zinc-950 border ${isExpandedTableFilterOpen ? 'border-zinc-600 text-white' : 'border-zinc-800 text-zinc-400'} rounded px-2 py-1 text-xs hover:bg-zinc-900 transition-colors`}
-                       >
-                         <Filter size={12} />
-                         <span>Filter</span>
-                         <ChevronDown size={12} className={`transition-transform ${isExpandedTableFilterOpen ? 'rotate-180' : ''}`} />
-                       </button>
-                       {isExpandedTableFilterOpen && (
-                         <div className="absolute top-full right-0 mt-1 w-56 bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl z-[9999] p-2 flex flex-col gap-2">
-                           <div className="flex justify-between items-center px-1 mb-1 border-b border-zinc-800 pb-1">
-                             <span className="text-[10px] font-bold text-zinc-500 uppercase">Filters</span>
-                             <button onClick={clearAllFilters} className="text-[9px] text-rose-400 hover:text-rose-300 font-bold">Clear Filters</button>
-                           </div>
-                           <MultiSelectDropdown label="Contract" options={getDependentOptions('contracts')} selected={globalFilter?.contracts || []} onChange={(val: string[]) => updateGlobalFilter('contracts', val)} />
-                           <MultiSelectDropdown label="Company" options={getDependentOptions('companies')} selected={globalFilter?.companies || []} onChange={(val: string[]) => updateGlobalFilter('companies', val)} />
-                           <MultiSelectDropdown label="Team" options={getDependentOptions('teams')} selected={globalFilter?.teams || []} onChange={(val: string[]) => updateGlobalFilter('teams', val)} />
-                           <MultiSelectDropdown label="Driver" options={getDependentOptions('drivers')} selected={globalFilter?.drivers || []} onChange={(val: string[]) => updateGlobalFilter('drivers', val)} />
-                         </div>
-                       )}
-                     </div>
-                   )}
+                   <TableFilter 
+                     filters={tableFilters} 
+                     setFilters={setTableFilters} 
+                     optionsMap={{
+                       'Contract': uniqueContracts,
+                       'Company': uniqueCompanies,
+                       'Team': uniqueTeams,
+                       'Franchise': uniqueFranchises,
+                       'Driver': uniqueDrivers
+                     }}
+                   />
                    <select
                      value={groupBy}
                      onChange={(e) => setGroupBy(e.target.value as any)}
@@ -2798,7 +3470,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
               <div className="flex-1 overflow-hidden p-2">
                  <MasterTable 
                     companyMetrics={companyMetrics} 
-                    drivers={displayedDrivers} 
+                    drivers={filteredTableDrivers} 
                     calculateMetrics={calculateMetrics}
                     totalActiveCount={totalActiveCount}
                     selectedDate={selectedDate}
@@ -2806,6 +3478,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                     chartData={chartData}
                     isAverageView={isAverageView}
                     searchQuery={searchQuery}
+                    configContracts={configContracts}
                  />
               </div>
            </div>
@@ -2866,30 +3539,17 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                  />
               </div>
                <div className="flex items-center gap-2">
-                   {currentRole === 'Company Admin' && setGlobalFilter && (
-                     <div className="relative" ref={mainTableFilterRef}>
-                       <button
-                         onClick={() => setIsMainTableFilterOpen(!isMainTableFilterOpen)}
-                         className={`flex items-center gap-2 bg-zinc-950 border ${isMainTableFilterOpen ? 'border-zinc-600 text-white' : 'border-zinc-800 text-zinc-400'} rounded px-2 py-0.5 text-[10px] hover:bg-zinc-900 transition-colors`}
-                       >
-                         <Filter size={10} />
-                         <span>Filter</span>
-                         <ChevronDown size={10} className={`transition-transform ${isMainTableFilterOpen ? 'rotate-180' : ''}`} />
-                       </button>
-                       {isMainTableFilterOpen && (
-                         <div className="absolute top-full right-0 mt-1 w-48 bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl z-[9999] p-2 flex flex-col gap-2">
-                           <div className="flex justify-between items-center px-1 mb-1 border-b border-zinc-800 pb-1">
-                             <span className="text-[10px] font-bold text-zinc-500 uppercase">Filters</span>
-                             <button onClick={clearAllFilters} className="text-[9px] text-rose-400 hover:text-rose-300 font-bold">Clear Filters</button>
-                           </div>
-                           <MultiSelectDropdown label="Contract" options={getDependentOptions('contracts')} selected={globalFilter?.contracts || []} onChange={(val: string[]) => updateGlobalFilter('contracts', val)} />
-                           <MultiSelectDropdown label="Company" options={getDependentOptions('companies')} selected={globalFilter?.companies || []} onChange={(val: string[]) => updateGlobalFilter('companies', val)} />
-                           <MultiSelectDropdown label="Team" options={getDependentOptions('teams')} selected={globalFilter?.teams || []} onChange={(val: string[]) => updateGlobalFilter('teams', val)} />
-                           <MultiSelectDropdown label="Driver" options={getDependentOptions('drivers')} selected={globalFilter?.drivers || []} onChange={(val: string[]) => updateGlobalFilter('drivers', val)} />
-                         </div>
-                       )}
-                     </div>
-                   )}
+                   <TableFilter 
+                     filters={tableFilters} 
+                     setFilters={setTableFilters} 
+                     optionsMap={{
+                       'Contract': uniqueContracts,
+                       'Company': uniqueCompanies,
+                       'Team': uniqueTeams,
+                       'Franchise': uniqueFranchises,
+                       'Driver': uniqueDrivers
+                     }}
+                   />
                    <select
                      value={groupBy}
                      onChange={(e) => setGroupBy(e.target.value as any)}
@@ -2921,7 +3581,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
             </div>
             <MasterTable 
                 companyMetrics={companyMetrics} 
-                drivers={displayedDrivers} 
+                drivers={filteredTableDrivers} 
                 calculateMetrics={calculateMetrics}
                 totalActiveCount={totalActiveCount}
                 selectedDate={selectedDate}
@@ -2929,6 +3589,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                 chartData={chartData}
                 isAverageView={isAverageView}
                 searchQuery={searchQuery}
+                configContracts={configContracts}
             />
           </div>
           <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col min-h-0 overflow-hidden">
