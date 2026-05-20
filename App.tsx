@@ -291,6 +291,8 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
             poAmount: 0,
             poCoverage: Number(row.total_po_comp_covered || 0),
             driverPoCoverage: Number(row.total_po_comp_covered || 0),
+            po_breakdown: typeof row.po_breakdown === 'string' ? (()=>{try{return JSON.parse(row.po_breakdown);}catch(e){return {};}})() : (row.po_breakdown || {}),
+            franchise_po_breakdown: typeof row.franchise_po_breakdown === 'string' ? (()=>{try{return JSON.parse(row.franchise_po_breakdown);}catch(e){return {};}})() : (row.franchise_po_breakdown || {}),
             balanceTotal: Number(row.balance || 0),
             recruitingCost: Number(row.recruiting || 0),
             effectiveDrivers: Number(row.effective_drivers || 0),

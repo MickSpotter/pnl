@@ -119,6 +119,8 @@ export interface DriverPerformance {
   poAmount: number;
   poCoverage: number;
   driverPoCoverage?: number;
+  po_breakdown?: any;
+  franchise_po_breakdown?: any;
   balanceTotal: number;
   effectiveDrivers: number;
   recruitingCost?: number;
