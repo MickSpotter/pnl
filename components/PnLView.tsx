@@ -271,7 +271,7 @@ const MasterTable: React.FC<{
           }));
           if (tpogFranchiseDrivers.length > 0) {
               const fMetrics: any = getAggregatedMetrics(tpogFranchiseDrivers);
-              const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver'];
+              const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'driverPay', 'tolls'];
               Object.keys(fMetrics).forEach(k => {
                   if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
                       fMetrics[k] = fMetrics[k] / 2;
@@ -328,7 +328,7 @@ const MasterTable: React.FC<{
         if (tpogFranchiseDrivers.length > 0) {
             const rawF = getAggregatedMetrics(tpogFranchiseDrivers);
             const fMetrics: any = { ...rawF };
-            const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj'];
+            const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj', 'driverPay', 'tolls'];
             
             Object.keys(fMetrics).forEach(k => {
                 if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
@@ -375,6 +375,10 @@ const MasterTable: React.FC<{
         else if (sortConfig.key === 'franchiseId') { 
             aVal = a.original.franchiseId || ''; 
             bVal = b.original.franchiseId || ''; 
+        }
+        else if (sortConfig.key === 'dispatcherId') { 
+            aVal = a.original.dispatcherId || ''; 
+            bVal = b.original.dispatcherId || ''; 
         }
         else if (sortConfig.key === 'contractType') { 
             aVal = a.original.contractType || ''; 
@@ -433,7 +437,19 @@ const MasterTable: React.FC<{
       {!isAverageView && <td className="px-1 py-0.5 text-right text-white">{groupBy === 'Driver' ? `${Number((metrics.effNonTeamsCount * 7).toFixed(1))}/7` : Number(metrics.effNonTeamsCount.toFixed(1))}</td>}
       {!isAverageView && <td className="px-1 py-0.5 text-right text-white">{groupBy === 'Driver' ? `${Number((metrics.effTrailersCount * 7).toFixed(1))}/7` : Number(metrics.effTrailersCount.toFixed(1))}</td>}
       <td className="px-1 py-0.5 text-right text-yellow-400">{formatCurrency(val(metrics.gross, div))}</td>
-     <td className="px-1 py-0.5 text-right text-yellow-400 font-medium">{formatCurrency(val(metrics.margin, div))}</td>
+      <td className="px-1 py-0.5 text-right text-yellow-400 font-medium">{formatCurrency(val(metrics.margin, div))}</td>
+      <td className="px-1 py-0.5 text-right text-purple-400">{formatCurrency(val(metrics.driverPay, div))}</td>
+      {groupBy !== 'Driver' && (
+        <td className="px-1 py-0.5 text-right text-purple-400 font-medium">
+          {(() => {
+            const netPays = rowDrivers.map(d => Number(d.netPay ?? 0)).sort((a, b) => a - b);
+            if (netPays.length === 0) return formatCurrency(0);
+            const mid = Math.floor(netPays.length / 2);
+            const med = netPays.length % 2 !== 0 ? netPays[mid] : (netPays[mid - 1] + netPays[mid]) / 2;
+            return formatCurrency(med);
+          })()}
+        </td>
+      )}
       <td className="group/disp relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
         <span>{val(metrics.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(metrics.dispatcherPay, div))}</span>
         <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -916,6 +932,7 @@ const MasterTable: React.FC<{
                 <th onClick={() => requestSort('companyId')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-left text-zinc-400 text-[10px] cursor-pointer hover:text-white">Company {sortConfig?.key === 'companyId' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
                 <th onClick={() => requestSort('teamId')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-left text-zinc-400 text-[10px] cursor-pointer hover:text-white">Team {sortConfig?.key === 'teamId' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
                 <th onClick={() => requestSort('franchiseId')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-left text-zinc-400 text-[10px] cursor-pointer hover:text-white">Franchise {sortConfig?.key === 'franchiseId' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('dispatcherId')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-left text-zinc-400 text-[10px] cursor-pointer hover:text-white">Dispatcher {sortConfig?.key === 'dispatcherId' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
                 <th onClick={() => requestSort('contractType')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-left text-zinc-400 text-[10px] cursor-pointer hover:text-white">Contract {sortConfig?.key === 'contractType' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
               </>
             )}
@@ -961,6 +978,20 @@ const MasterTable: React.FC<{
                 <div>This displays the margin taken from the driver.</div>
               </div>
             </th>
+            <th onClick={() => requestSort('driverPay')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
+              Net Pay {sortConfig?.key === 'driverPay' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+              <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                <div className="font-bold text-white mb-0.5">Net Pay:</div>
+                <div>Represents the actual net earnings paid out to the driver after all deductions and adjustments.</div>
+              </div>
+            </th>
+            {groupBy !== 'Driver' && <th onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
+              Med. Net Pay
+              <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                <div className="font-bold text-white mb-0.5">Median Net Pay:</div>
+                <div>The middle value of net earnings across the group, providing a more accurate representation of typical driver pay by eliminating extreme highs or lows.</div>
+              </div>
+            </th>}
             <th onClick={() => requestSort('dispatcherPay')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
               Disp. Pay {sortConfig?.key === 'dispatcherPay' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -1179,7 +1210,7 @@ const MasterTable: React.FC<{
                    const rawMetrics = getAggregatedMetrics(franchiseStubs);
                    fMetrics = { ...rawMetrics };
                    
-                   const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj'];
+                   const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj', 'driverPay', 'tolls'];
                    
                    Object.keys(fMetrics).forEach(k => {
                        if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
@@ -1303,6 +1334,7 @@ const MasterTable: React.FC<{
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[100px]">{d.companyId === 'UNRECONCILED' || isStub ? '-' : (d.companyId || '-')}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.teamId || '-'}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.franchiseId || '-'}</td>
+                <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.dispatcherId || '-'}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{d.contractType || '-'}</td>
                 {renderRowCells(metrics, w4, isStub, displayLabel, [d])}
               </tr>
@@ -1311,13 +1343,13 @@ const MasterTable: React.FC<{
                      
           <tr className="h-full">
             <td className="p-0 border-0 pointer-events-none sticky left-0 z-10 bg-zinc-950 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
-            {!isAverageView && groupBy === 'Driver' && Array.from({ length: 4 }).map((_, i) => (
+            {!isAverageView && groupBy === 'Driver' && Array.from({ length: 5 }).map((_, i) => (
               <td key={`empty-driver-cols-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
             ))}
             {!isAverageView && Array.from({ length: 3 }).map((_, i) => (
               <td key={`empty-counts-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
             ))}
-            {Array.from({ length: isRevColExpanded ? 20 : 11 }).map((_, i) => (
+            {Array.from({ length: isRevColExpanded ? (groupBy === 'Driver' ? 21 : 22) : (groupBy === 'Driver' ? 12 : 13) }).map((_, i) => (
                <td key={`empty-metrics-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
              ))}
             {show4w && <td className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>}
@@ -1358,6 +1390,7 @@ const MasterTable: React.FC<{
                         <td className="px-1 py-1 bg-zinc-950"></td>
                         <td className="px-1 py-1 bg-zinc-950"></td>
                         <td className="px-1 py-1 bg-zinc-950"></td>
+                        <td className="px-1 py-1 bg-zinc-950"></td>
                       </>
                     )}
                     {!isAverageView && <td className="px-1 py-1 text-right text-white">{Number(dynamicTotals.effCount.toFixed(1))}</td>}
@@ -1365,6 +1398,18 @@ const MasterTable: React.FC<{
                     {!isAverageView && <td className="px-1 py-1 text-right text-white">{Number(dynamicTotals.effTrailersCount.toFixed(1))}</td>}
                     <td className="px-1 py-1 text-right text-yellow-400">{formatCurrency(val(dynamicTotals.gross, div))}</td>
                     <td className="px-1 py-1 text-right text-yellow-400 font-bold">{formatCurrency(val(dynamicTotals.margin, div))}</td>
+                    <td className="px-1 py-1 text-right text-purple-400 font-bold">{formatCurrency(val(dynamicTotals.driverPay, div))}</td>
+                    {groupBy !== 'Driver' && (
+                      <td className="px-1 py-1 text-right text-purple-400 font-bold">
+                        {(() => {
+                          const netPays = drivers.map(d => Number(d.netPay ?? 0)).sort((a, b) => a - b);
+                          if (netPays.length === 0) return formatCurrency(0);
+                          const mid = Math.floor(netPays.length / 2);
+                          const med = netPays.length % 2 !== 0 ? netPays[mid] : (netPays[mid - 1] + netPays[mid]) / 2;
+                          return formatCurrency(med);
+                        })()}
+                      </td>
+                    )}
                     <td className="group/disp relative hover:z-[99999] px-1 py-1 text-right text-purple-400 font-medium !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
                       <span>{val(dynamicTotals.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(dynamicTotals.dispatcherPay, div))}</span>
                       <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -2119,7 +2164,8 @@ const PnLView: React.FC<PnLViewProps> = ({
               if (contractCosts && Array.isArray(contractCosts)) {
                   const contractRule = contractCosts.find((el: any) =>
                       (el.contract_type || '').replace(/\s+/g, '').toLowerCase() === effContractType.replace(/\s+/g, '').toLowerCase() &&
-                      (el.expense_name || '').toLowerCase().includes(expenseNameKeyword.toLowerCase())
+                      (el.expense_name || '').toLowerCase().includes(expenseNameKeyword.toLowerCase()) &&
+                      (!(el.company_id) || el.company_id === 'ALL' || el.company_id === '' || (el.company_id || '').replace(/\s+/g, '').toLowerCase() === (d.companyId || '').replace(/\s+/g, '').toLowerCase())
                   );
                   if (contractRule && contractRule.amount !== undefined && contractRule.amount !== null) {
                       amount = Math.abs(Number(contractRule.amount));
@@ -2158,7 +2204,8 @@ const PnLView: React.FC<PnLViewProps> = ({
               if (contractCosts && Array.isArray(contractCosts)) {
                   const contractRule = contractCosts.find((el: any) =>
                       (el.contract_type || '').replace(/\s+/g, '').toLowerCase() === effContractType.replace(/\s+/g, '').toLowerCase() &&
-                      (el.expense_name || '').toLowerCase().includes(expenseNameKeyword.toLowerCase())
+                      (el.expense_name || '').toLowerCase().includes(expenseNameKeyword.toLowerCase()) &&
+                      (!(el.company_id) || el.company_id === 'ALL' || el.company_id === '' || (el.company_id || '').replace(/\s+/g, '').toLowerCase() === (d.companyId || '').replace(/\s+/g, '').toLowerCase())
                   );
                   if (contractRule && contractRule.amount !== undefined && contractRule.amount !== null) {
                       cpm = Math.abs(Number(contractRule.amount));
@@ -2283,9 +2330,18 @@ const PnLView: React.FC<PnLViewProps> = ({
         const backup_mc = getFcRule('Backup MC', 'backup_mc_custom', 'backup_mc');
         const backoffice_reg = getFcRule('Back Office Pay', 'backoffice_reg_custom', 'backoffice_reg');
         const backoffice_tech = getFcRule('Tech Pay', 'backoffice_tech_custom', 'backoffice_tech');
-         const truck_weekly = getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly');
+         const getRed = (eName: string, rKey: string, cId: string, cType: string) => {
+             const cTime = (date ? new Date(date).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
+             const rls = fixedExpenses.filter(e => e.name === eName && (e as any)[rKey] && (!e.valid_from || new Date(e.valid_from).getTime() <= cTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= cTime));
+             const gls = rls.filter(e => e.companyId === 'ALL' && (!e.contractType || e.contractType === '' || e.contractType === 'ALL'));
+             const sps = rls.filter(e => (e.companyId === cId && (!e.contractType || e.contractType === '' || e.contractType === 'ALL')) || (e.contractType === cType && (!e.companyId || e.companyId === 'ALL' || e.companyId === '')) || (e.companyId === cId && e.contractType === cType));
+             const gl = gls.length > 0 ? Math.max(...gls.map(e => Number((e as any)[rKey]) || 0)) : 0;
+             const sp = sps.length > 0 ? Math.max(...sps.map(e => Number((e as any)[rKey]) || 0)) : 0;
+             return gl + sp;
+         };
+         const truck_weekly = Math.max(0, getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly') - getRed('Truck Price', 'truck_reduction', d.companyId || '', effContractType));
          const truck_cpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm');
-         const trailer_weekly = getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
+         const trailer_weekly = Math.max(0, getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly') - getRed('Trailer Price', 'trailer_reduction', d.companyId || '', effContractType));
          
          const isOO = d.contractType === 'OO';
          const isGarland = d.contractType === 'CPM' && d.name === 'Garland Jermaine Norris';
@@ -2335,9 +2391,9 @@ const PnLView: React.FC<PnLViewProps> = ({
              const c_bmc = getFcRule('Backup MC', 'backup_mc_custom', 'backup_mc');
              const c_boreg = getFcRule('Back Office Pay', 'backoffice_reg_custom', 'backoffice_reg');
              const c_botech = getFcRule('Tech Pay', 'backoffice_tech_custom', 'backoffice_tech');
-             const c_tw = getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly');
+             const c_tw = Math.max(0, getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly') - getRed('Truck Price', 'truck_reduction', d.companyId || '', type));
              const c_tcpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm');
-             const c_trw = getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
+             const c_trw = Math.max(0, getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly') - getRed('Trailer Price', 'trailer_reduction', d.companyId || '', type));
 
              let total = (effNT * (l_total + c_cargo + c_lease_gap + c_ti + c_lago + c_phd_p + c_phd + c_tw + c_plates + c_tel + c_phone + c_off + c_rent + c_bmc + c_boreg + c_botech)) +
                          (effTr * (c_trw + (c_phd / 4.0))) +
@@ -3470,15 +3526,15 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
          row[`${key}_effCount`] = m.effCount;
          row[`${key}_effNonTeamsCount`] = m.effNonTeamsCount;
          row[`${key}_effTrailersCount`] = m.effTrailersCount;
-         row[`${key}_companyPay`] = m.companyPay;
+         row[`${key}_companyPay`] = m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : m.companyPay;
          row[`${key}_cogs`] = m.cogs;
          row[`${key}_dispatcherPay`] = m.dispatcherPay;
-         row[`${key}_allocatedFixed`] = m.allocatedFixed;
-         row[`${key}_tolls`] = m.tolls;
+         row[`${key}_allocatedFixed`] = m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : m.allocatedFixed;
+         row[`${key}_tolls`] = m.pnlTolls !== undefined ? m.pnlTolls : m.tolls;
          row[`${key}_totalPO`] = m.totalPO;
-         row[`${key}_totalPOCov`] = m.totalPOCov;
+         row[`${key}_totalPOCov`] = m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : m.totalPOCov;
          row[`${key}_totalEscrow`] = m.totalEscrow;
-         row[`${key}_totalRecruiting`] = m.totalRecruiting;
+         row[`${key}_totalRecruiting`] = m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : m.totalRecruiting;
       };
 
       const neededEntities = new Set(selectedEntities);
@@ -3508,7 +3564,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
               });
               driversByName.forEach(drvRecords => {
                   const m = calculateMetrics(drvRecords, true);
-                  fNetIncome += ((m.companyPay || 0) / 2) - ((m.allocatedFixed || 0) / 2) - Math.abs((m.totalPOCov || 0) / 2) - Math.abs((m.totalRecruiting || 0) / 2) - Math.abs((m.tolls || 0) / 2);
+                  fNetIncome += m.netIncome / 2;
               });
               row['COMPANY_netIncome'] -= fNetIncome;
           }
@@ -3569,14 +3625,21 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
             const m = calculateMetrics(recs, true);
             fGross += m.gross / 2;
             fMargin += m.margin / 2;
-            fCompanyPay += (m.companyPay || 0) / 2;
-            fAllocatedFixed += (m.allocatedFixed || 0) / 2;
-            fTolls += Math.abs(m.tolls || 0) / 2;
-            fTotalPOCov += Math.abs(m.totalPOCov || 0) / 2;
-            fTotalRecruiting += Math.abs(m.totalRecruiting || 0) / 2;
+            fCompanyPay += (m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay || 0)) / 2;
+            fAllocatedFixed += (m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed || 0)) / 2;
+            fTolls += Math.abs(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls || 0)) / 2;
+            fTotalPOCov += Math.abs(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov || 0)) / 2;
+            fTotalRecruiting += Math.abs(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting || 0)) / 2;
             tNet += m.netIncome / 2;
           });
           row['TPOG (Franchise PnL)_netIncome'] = tNet;
+          row['TPOG (Franchise PnL)_gross'] = fGross;
+          row['TPOG (Franchise PnL)_margin'] = fMargin;
+          row['TPOG (Franchise PnL)_companyPay'] = fCompanyPay;
+          row['TPOG (Franchise PnL)_allocatedFixed'] = fAllocatedFixed;
+          row['TPOG (Franchise PnL)_tolls'] = fTolls;
+          row['TPOG (Franchise PnL)_totalPOCov'] = fTotalPOCov;
+          row['TPOG (Franchise PnL)_totalRecruiting'] = fTotalRecruiting;
           
         }
       }
@@ -4868,6 +4931,14 @@ const finalTrailerInterchangePerUnit = filteredNT > 0 ? finalTrailerInterchangeT
                                              if (amount === null && sidebarAvgTruckPrice) {
                                                  amount = Math.abs(Number(sidebarAvgTruckPrice));
                                              }
+
+                                             const cTimeTr = (sidebarTargetDate ? new Date(sidebarTargetDate as string).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
+                                             const rlsTr = fixedExpenses.filter(e => e.name === 'Truck Price' && (e as any).truck_reduction && (!e.valid_from || new Date(e.valid_from).getTime() <= cTimeTr) && (!e.valid_to || new Date(e.valid_to).getTime() >= cTimeTr));
+                                             const glsTr = rlsTr.filter(e => e.companyId === 'ALL' && (!e.contractType || e.contractType === '' || e.contractType === 'ALL'));
+                                             const spsTr = rlsTr.filter(e => (e.contractType === cType && (!e.companyId || e.companyId === 'ALL' || e.companyId === '')));
+                                             const glTr = glsTr.length > 0 ? Math.max(...glsTr.map(e => Number((e as any).truck_reduction) || 0)) : 0;
+                                             const spTr = spsTr.length > 0 ? Math.max(...spsTr.map(e => Number((e as any).truck_reduction) || 0)) : 0;
+                                             amount = Math.max(0, (amount || 0) - glTr - spTr);
 
                                              totalTruckWeeklyCost += (amount || 0) * stats.nt;
                                              truckWeeklyBreakdown.push({

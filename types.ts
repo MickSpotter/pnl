@@ -45,6 +45,10 @@ export interface ExpenseItem {
   id: string;
   category: 'Fixed' | 'Variable' | 'OneTime';
   revenue_cpm?: number;
+  truck_reduction?: number | null;
+  trailer_reduction?: number | null;
+  truck_reduction_note?: string | null;
+  trailer_reduction_note?: string | null;
   name: string;
   companyId?: string;
   amount: number;
