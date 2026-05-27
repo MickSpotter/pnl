@@ -1313,7 +1313,7 @@ const fixedExpenseNames = Array.from(new Set([
                     <Filter size={14} />
                     Filter
                  </button>
-                 <button onClick={() => setHideOverriddenRules(!hideOverriddenRules)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-bold uppercase transition-colors ml-auto" title={hideOverriddenRules ? "View default overrides" : "Hide default overrides"}>
+                 <button onClick={() => setHideOverriddenRules(!hideOverriddenRules)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-bold uppercase transition-colors" title={hideOverriddenRules ? "View default overrides" : "Hide default overrides"}>
                 {hideOverriddenRules ? <EyeOff size={14} /> : <Eye size={14} />}
                 {hideOverriddenRules ? 'Show Overrides' : 'Hide Overrides'}
              </button>
