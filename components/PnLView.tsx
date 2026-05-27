@@ -124,8 +124,32 @@ const MasterTable: React.FC<{
   };
 
   const val = (amount: number, divisor: number) => isAverageView ? (divisor > 0 ? amount / divisor : 0) : amount;
+    const getContractRuleForDate = (contractType: string, refDate?: string | null) => {
+    const rules = (configContracts || []).filter((c: any) => c.contract_type === contractType);
+    const targetTime = refDate && refDate !== 'ALL' && refDate !== 'LATEST' ? new Date(refDate).getTime() : null;
+
+    if (rules.length === 0) return undefined;
+
+    if (targetTime !== null && !Number.isNaN(targetTime)) {
+      const activeRule = rules.filter((c: any) => {
+        const fromTime = c.valid_from ? new Date(c.valid_from).getTime() : -Infinity;
+        const toTime = c.valid_to ? new Date(c.valid_to).getTime() : Infinity;
+        return targetTime >= fromTime && targetTime <= toTime;
+      }).sort((a: any, b: any) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+
+      if (activeRule) return activeRule;
+
+      const latestPastRule = rules.filter((c: any) => {
+        return !c.valid_from || new Date(c.valid_from).getTime() <= targetTime;
+      }).sort((a: any, b: any) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+
+      if (latestPastRule) return latestPastRule;
+    }
+
+    return [...rules].sort((a: any, b: any) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+  };
   const uniqueContracts = Array.from(new Set(drivers.map(d => d.contractType || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const uniqueCompanies = Array.from(new Set(drivers.map(d => d.companyId || 'Unassigned'))).filter(c => c !== 'Unassigned' && c !== 'UNRECONCILED' && !/^Company\s*\d*$/i.test(String(c))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueCompanies = Array.from(new Set(drivers.map(d => (d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueFranchises = Array.from(new Set(drivers.map(d => d.franchiseId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueTeams = Array.from(new Set(drivers.map(d => d.teamId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueDrivers = Array.from(new Set(drivers.map(d => d.name || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
@@ -165,6 +189,7 @@ const MasterTable: React.FC<{
             t.dispGrossAmount += m.dispGrossAmount || 0;
             t.dispMarginAmount += m.dispMarginAmount || 0;
             t.dispSharedLiability += m.dispSharedLiability || 0;
+            t.fullSharedLiability = (t.fullSharedLiability || 0) + (m.fullSharedLiability || 0);
             t.allocatedFixed += m.allocatedFixed;
             t.baseFixed += m.baseFixed || 0;
             t.adjFixed += m.adjFixed || 0;
@@ -271,7 +296,7 @@ const MasterTable: React.FC<{
           }));
           if (tpogFranchiseDrivers.length > 0) {
               const fMetrics: any = getAggregatedMetrics(tpogFranchiseDrivers);
-              const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'driverPay', 'tolls'];
+              const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'driverPay'];
               Object.keys(fMetrics).forEach(k => {
                   if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
                       fMetrics[k] = fMetrics[k] / 2;
@@ -328,7 +353,7 @@ const MasterTable: React.FC<{
         if (tpogFranchiseDrivers.length > 0) {
             const rawF = getAggregatedMetrics(tpogFranchiseDrivers);
             const fMetrics: any = { ...rawF };
-            const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj', 'driverPay', 'tolls'];
+            const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj', 'driverPay'];
             
             Object.keys(fMetrics).forEach(k => {
                 if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
@@ -442,7 +467,7 @@ const MasterTable: React.FC<{
       {groupBy !== 'Driver' && (
         <td className="px-1 py-0.5 text-right text-purple-400 font-medium">
           {(() => {
-            const netPays = rowDrivers.map(d => Number(d.netPay ?? 0)).sort((a, b) => a - b);
+            const netPays = rowDrivers.filter(d => (rowName === 'TPOG (Franchise PnL)' || !(d as any).isFranchiseStub) && d.companyId !== 'UNRECONCILED' && (d.effectiveDrivers || 0) > 0).map(d => Number(d.netPay ?? 0)).sort((a, b) => a - b);
             if (netPays.length === 0) return formatCurrency(0);
             const mid = Math.floor(netPays.length / 2);
             const med = netPays.length % 2 !== 0 ? netPays[mid] : (netPays[mid - 1] + netPays[mid]) / 2;
@@ -462,8 +487,9 @@ const MasterTable: React.FC<{
       <td className="group/ins relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
         -{formatCurrency(Math.abs(val(metrics.insuranceExp, div)))}
         <div className="fixed hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-          <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Insurance Breakdown:</div>
+                    <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Insurance Breakdown:</div>
           <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabAuto, div)))}</span></div>
+          {val(metrics.fullSharedLiability, div) !== 0 && <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(val(metrics.fullSharedLiability, div)))}</span></div>}
           <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLiabGen, div)), 2)}</span></div>
           <div className="flex justify-between gap-4"><span>Cargo:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insCargo, div)))}</span></div>
           <div className="flex justify-between gap-4"><span>Lease Gap Coverage:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insLeaseGapCoverage, div)))}</span></div>
@@ -486,14 +512,14 @@ const MasterTable: React.FC<{
                 
                 {rowDrivers.length > 0 ? (
                     Array.from(new Set(rowDrivers.map(d => d.contractType || 'Unknown'))).map(cType => {
-                        const rule = configContracts?.find(c => c.contract_type === cType);
+                                                const subset = rowDrivers.filter(d => (d.contractType || 'Unknown') === cType);
+                        const ruleDate = subset.find(d => d.payDate)?.payDate || (selectedDate !== 'ALL' && selectedDate !== 'LATEST' ? selectedDate : null);
+                        const rule = getContractRuleForDate(cType, ruleDate);
                         const gPerc = rule && rule.mc_gross_percent !== undefined ? Number(rule.mc_gross_percent) * 100 : null;
                         const mPerc = rule && rule.mc_margin_percent !== undefined ? Number(rule.mc_margin_percent) * 100 : null;
                         const dGrossPerc = rule && rule.dispatcher_gross_percent !== undefined ? Number(rule.dispatcher_gross_percent) * 100 : 0;
                         const dMargPerc = rule && (rule as any).dispatcher_margin_percent !== undefined ? Number((rule as any).dispatcher_margin_percent) * 100 : 0;
                         const calcType = rule?.calculation_type || 'STANDARD';
-                        
-                        const subset = rowDrivers.filter(d => (d.contractType || 'Unknown') === cType);
                         const cGross = subset.reduce((sum, d) => sum + (d.grossRevenue || 0), 0);
                         const cMargin = subset.reduce((sum, d) => sum + (d.marginAmount || 0), 0);
 
@@ -504,7 +530,7 @@ const MasterTable: React.FC<{
                             const mileCapFactor = (revWithoutFuelVal > 0 && dMiles === 0) ? 0 : 1;
                             let companyTakeMulti = 1;
                             if ((d.contractType === 'TPOG WITH FRANCHISE' || (d.contractType === 'TPOG' && d.franchiseId)) && configContracts && configContracts.length > 0) {
-                                const tpogFranRule = [...configContracts].filter((c:any) => c.contract_type === 'TPOG WITH FRANCHISE').sort((a:any,b:any) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
+                                const tpogFranRule = getContractRuleForDate('TPOG WITH FRANCHISE', d.payDate || ruleDate);
                                 if (tpogFranRule && tpogFranRule.calculation_type === 'TPOG_FRANCHISE') {
                                     companyTakeMulti = tpogFranRule.mc_gross_percent !== undefined ? Number(tpogFranRule.mc_gross_percent) : 1;
                                 }
@@ -656,20 +682,33 @@ const MasterTable: React.FC<{
       <td className="group/pobreakdown relative hover:z-[99999] px-1 py-0.5 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
         {formatCurrency(val(metrics.totalPOCov, div))}
         {metrics.poBreakdown && Object.keys(metrics.poBreakdown).length > 0 && (
-          <div className="fixed hidden group-hover/pobreakdown:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-auto min-w-[200px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+          <div className="fixed hidden group-hover/pobreakdown:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[240px] pointer-events-none flex flex-col gap-1 dynamic-tooltip whitespace-normal break-words">
             <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">PO Breakdown:</div>
             {Object.entries(metrics.poBreakdown).map(([reason, amount]: any) => {
-                 const finalAmount = rowName === 'TPOG (Franchise PnL)' ? Number(amount) / 2 : Number(amount);
+                 let finalAmount = Number(amount);
+                 if (rowDrivers.some(d => d.contractType === 'MCLOO')) {
+                     finalAmount = finalAmount / 0.3;
+                 }
                  if (finalAmount === 0) return null;
                  return (
                    <div key={reason} className="flex justify-between gap-4">
                      <span>{reason}:</span>
-                     <span className="font-mono text-zinc-300">
+                     <span className="font-mono text-zinc-300 shrink-0">
                         {finalAmount < 0 ? '-' : ''}{formatCurrency(Math.abs(val(finalAmount, div)))}
                      </span>
                    </div>
                  );
               })}
+            {rowDrivers.some(d => d.contractType === 'MCLOO') && (
+              <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1 leading-tight">
+                * Note: Shown values are 100%. The total column figure is obtained by multiplying these by 0.3.
+              </div>
+            )}
+            {rowName === 'TPOG (Franchise PnL)' && (
+              <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1 leading-tight">
+                * Note: Shown values are 100%. The total column figure is obtained by multiplying these by 0.5.
+              </div>
+            )}
           </div>
         )}
       </td>
@@ -702,7 +741,6 @@ const MasterTable: React.FC<{
       const rowData: any[] = [];
 
       entities.forEach((entity: string) => {
-          if (entity === 'Unassigned' || entity === 'UNRECONCILED') return;
           let drvs: any[] = [];
           if (groupBy === 'Driver') {
               const drvObj = driverRows.find(d => (d.name || 'Unassigned') === entity);
@@ -732,19 +770,15 @@ const MasterTable: React.FC<{
               po_breakdown: (d as any).franchise_po_breakdown,
               isFranchiseStub: true
           }));
-          if (tpogFranchiseDrivers.length > 0) {
-              const fMetrics = getAggregatedMetrics(tpogFranchiseDrivers);
-              const pb = fMetrics.poBreakdown || {};
-              const pbDivided: any = {};
-              Object.keys(pb).forEach(k => {
-                  if (k.toLowerCase().includes('toll')) {
-                      pbDivided[k] = Number(pb[k]);
-                  } else {
+         if (tpogFranchiseDrivers.length > 0) {
+                  const fMetrics = getAggregatedMetrics(tpogFranchiseDrivers);
+                  const pb = fMetrics.poBreakdown || {};
+                  const pbDivided: any = {};
+                  Object.keys(pb).forEach(k => {
                       pbDivided[k] = Number(pb[k]) / 2;
-                  }
-                  allReasons.add(k);
-              });
-              const div = (fMetrics.effNonTeamsCount > 0 ? fMetrics.effNonTeamsCount : fMetrics.effCount) / 2;
+                      allReasons.add(k);
+                  });
+                  const div = (fMetrics.effNonTeamsCount > 0 ? fMetrics.effNonTeamsCount : fMetrics.effCount) / 2;
               rowData.push({
                   name: 'TPOG (Franchise PnL)',
                   breakdown: pbDivided,
@@ -780,7 +814,6 @@ const MasterTable: React.FC<{
         const rowData: any[] = [];
 
         entities.forEach((entity: string) => {
-            if (entity === 'Unassigned' || entity === 'UNRECONCILED') return;
             let drvs: any[] = [];
             if (groupBy === 'Driver') {
                 const drvObj = driverRows.find(d => (d.name || 'Unassigned') === entity);
@@ -997,6 +1030,9 @@ const MasterTable: React.FC<{
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                 <div className="font-bold text-white mb-0.5">Dispatcher Pay:</div>
                 <div>Displays the amount paid to the dispatcher from gross and margin. For MCLOO contracts, it also includes the dispatcher's share of Liability Insurance (Auto).</div>
+                <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
+                  TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
+                </div>
               </div>
             </th>
            <th onClick={() => requestSort('insuranceExp')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
@@ -1004,6 +1040,9 @@ const MasterTable: React.FC<{
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                 <div className="font-bold text-white mb-0.5">Insurance Expenses:</div>
                 <div>Shows the company's expenses on insurances.</div>
+                <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
+                  TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
+                </div>
               </div>
            </th>
                  <th onClick={() => requestSort('fuel')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300">
@@ -1015,7 +1054,7 @@ const MasterTable: React.FC<{
                        <li><span className="font-semibold text-rose-400">Negative Values (Fuel Spent):</span> For TPOG, POG, CPM &amp; Others. <br/>Calculation: <span className="font-mono text-[9px]">Discounted Price * Quantity</span></li>
                      </ul>
                      <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                       TPOG with Franchise: <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
+                       TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
                      </div>
                    </div>
                  </th>
@@ -1086,8 +1125,14 @@ const MasterTable: React.FC<{
                  <th onClick={() => requestSort('fuelRebate')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
                    Fuel Reb. {sortConfig?.key === 'fuelRebate' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                    <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-                     <div className="font-bold text-white mb-0.5">Fuel Rebate:</div>
-                     <div>Company earnings from fuel, calculated by multiplying quantity by the percentage from Settings.</div>
+                                         <div className="font-bold text-white mb-0.5">Fuel Rebate:</div>
+                     <div>Company earnings from fuel, calculated by multiplying fuel quantity by the $ amount from Settings.</div>
+                     <div className="text-zinc-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-700">
+                       Fuel Rebate = Fuel Quantity × $ Amount
+                     </div>
+                     <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
+                       TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
+                     </div>
                    </div>
                  </th>
            <th onClick={() => requestSort('allocatedFixed')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
@@ -1106,7 +1151,7 @@ const MasterTable: React.FC<{
                   <div className="pl-2 mt-0.5">Once the Base Fixed Cost is calculated, it is prorated based on the days worked:<br/><span className="text-emerald-400 font-mono">Result = Base Fixed Cost * (Days Worked / 7.0)</span></div>
                 </div>
                 <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                  TPOG with Franchise: <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
+                  TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
                 </div>
               </div>
             
@@ -1122,7 +1167,7 @@ const MasterTable: React.FC<{
                           <li><span className="font-semibold text-blue-300">All Other Contracts:</span> The full toll amount is applied.<br/><span className="text-emerald-400 font-mono text-[9px]">Result = Toll Amount</span></li>
                         </ul>
                         <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                          TPOG with Franchise: <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
+                          TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
                         </div>
                       </div>
                     </th>
@@ -1146,7 +1191,7 @@ const MasterTable: React.FC<{
                      <div className="font-bold text-white mb-0.5">Recruiting Cost Calculation:</div>
                      <div>Total recruiting cost from financial import for the specific contract type (CPM, MCLOO, OO, POG) divided by total effective non-teams for that contract, then multiplied by the individual driver's effective non-teams count.</div>
                      <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                       TPOG with Franchise: <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
+                       TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
                      </div>
                    </div>
                  </th>
@@ -1207,16 +1252,16 @@ const MasterTable: React.FC<{
                }));
                
                if (franchiseStubs.length > 0) {
-                   const rawMetrics = getAggregatedMetrics(franchiseStubs);
-                   fMetrics = { ...rawMetrics };
-                   
-                   const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj', 'driverPay', 'tolls'];
-                   
-                   Object.keys(fMetrics).forEach(k => {
-                       if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
-                           fMetrics[k] = fMetrics[k] / 2;
-                       }
-                   });
+                       const rawMetrics = getAggregatedMetrics(franchiseStubs);
+                       fMetrics = { ...rawMetrics };
+                       
+                       const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj', 'driverPay'];
+                       
+                       Object.keys(fMetrics).forEach(k => {
+                           if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
+                               fMetrics[k] = fMetrics[k] / 2;
+                           }
+                       });
                    
                    franchiseW4 = get4wMetrics('TPOG (Franchise PnL)');
 
@@ -1402,7 +1447,7 @@ const MasterTable: React.FC<{
                     {groupBy !== 'Driver' && (
                       <td className="px-1 py-1 text-right text-purple-400 font-bold">
                         {(() => {
-                          const netPays = drivers.map(d => Number(d.netPay ?? 0)).sort((a, b) => a - b);
+                          const netPays = drivers.filter(d => !(d as any).isFranchiseStub && d.companyId !== 'UNRECONCILED' && (d.effectiveDrivers || 0) > 0).map(d => Number(d.netPay ?? 0)).sort((a, b) => a - b);
                           if (netPays.length === 0) return formatCurrency(0);
                           const mid = Math.floor(netPays.length / 2);
                           const med = netPays.length % 2 !== 0 ? netPays[mid] : (netPays[mid - 1] + netPays[mid]) / 2;
@@ -1422,9 +1467,10 @@ const MasterTable: React.FC<{
                     <td className="group/ins relative hover:z-[99999] px-1 py-1 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
                       -{formatCurrency(Math.abs(val(dynamicTotals.insuranceExp, div)))}
                       <div className="fixed hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-                        <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Insurance Breakdown:</div>
+                                                <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Insurance Breakdown:</div>
                         <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabAuto, div)))}</span></div>
-                        <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabGen, div)))}</span></div>
+                        {val(dynamicTotals.fullSharedLiability, div) !== 0 && <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(val(dynamicTotals.fullSharedLiability, div)))}</span></div>}
+                        <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLiabGen, div)), 2)}</span></div>
                         <div className="flex justify-between gap-4"><span>Cargo:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insCargo, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>Lease Gap Coverage:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insLeaseGapCoverage, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>Trailer Interchange:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insTrailerInterchange, div)))}</span></div>
@@ -1446,14 +1492,14 @@ const MasterTable: React.FC<{
                             
                             {drivers.length > 0 ? (
                                 Array.from(new Set(drivers.map(d => d.contractType || 'Unknown'))).map(cType => {
-                                    const rule = configContracts?.find(c => c.contract_type === cType);
+                                                                        const subset = drivers.filter(d => (d.contractType || 'Unknown') === cType);
+                                    const ruleDate = subset.find(d => d.payDate)?.payDate || (selectedDate !== 'ALL' && selectedDate !== 'LATEST' ? selectedDate : null);
+                                    const rule = getContractRuleForDate(cType, ruleDate);
                                     const gPerc = rule && rule.mc_gross_percent !== undefined ? Number(rule.mc_gross_percent) * 100 : null;
                                     const mPerc = rule && rule.mc_margin_percent !== undefined ? Number(rule.mc_margin_percent) * 100 : null;
                                     const dGrossPerc = rule && rule.dispatcher_gross_percent !== undefined ? Number(rule.dispatcher_gross_percent) * 100 : 0;
                                     const dMargPerc = rule && (rule as any).dispatcher_margin_percent !== undefined ? Number((rule as any).dispatcher_margin_percent) * 100 : 0;
                                     const calcType = rule?.calculation_type || 'STANDARD';
-                                    
-                                    const subset = drivers.filter(d => (d.contractType || 'Unknown') === cType);
                                     const cGross = subset.reduce((sum, d) => sum + (d.grossRevenue || 0), 0);
                                     const cMargin = subset.reduce((sum, d) => sum + (d.marginAmount || 0), 0);
 
@@ -1464,7 +1510,7 @@ const MasterTable: React.FC<{
                                         const mileCapFactor = (revWithoutFuelVal > 0 && dMiles === 0) ? 0 : 1;
                                         let companyTakeMulti = 1;
                                         if ((d.contractType === 'TPOG WITH FRANCHISE' || (d.contractType === 'TPOG' && d.franchiseId)) && configContracts && configContracts.length > 0) {
-                                            const tpogFranRule = [...configContracts].filter((c:any) => c.contract_type === 'TPOG WITH FRANCHISE').sort((a:any,b:any) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
+                                            const tpogFranRule = getContractRuleForDate('TPOG WITH FRANCHISE', d.payDate || ruleDate);
                                             if (tpogFranRule && tpogFranRule.calculation_type === 'TPOG_FRANCHISE') {
                                                 companyTakeMulti = tpogFranRule.mc_gross_percent !== undefined ? Number(tpogFranRule.mc_gross_percent) : 1;
                                             }
@@ -2483,15 +2529,14 @@ const PnLView: React.FC<PnLViewProps> = ({
                  ins_liab_gen = orig_gen * effNT;
                  ins_liab_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') * effNT;
              } else {
+                 ins_liab_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') * effNT;
                  if (liabilityGeneral === 0) {
                      let orig_auto = Math.max(0, getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') - sharedInsLiab + getFcRule('Liability Insurance (Global)', '', ''));
                      let tot = orig_auto + orig_gen;
-                     ins_liab_auto = tot > 0 ? liability * (orig_auto / tot) * effNT : liability * effNT;
                      ins_liab_gen = tot > 0 ? liability * (orig_gen / tot) * effNT : 0;
                 } else {
-                                 ins_liab_auto = liability * effNT;
-                                 ins_liab_gen = liabilityGeneral * effNT;
-                             }
+                     ins_liab_gen = liabilityGeneral * effNT;
+                 }
              }
              ins_cargo = cargo * effNT;
              ins_lease_gap = leaseGap * effNT;
@@ -2562,19 +2607,33 @@ const PnLView: React.FC<PnLViewProps> = ({
             dispGrossPerc = Number((dispRule as any).disp_gross_perc) || 0;
             dispMarginPerc = Number((dispRule as any).disp_margin_perc) || 0;
         }
-        let dispMclooPayAmount = 0;
+        let fullSharedLiabAmount = 0;
+        let actualDispMclooPayAmount = 0;
         if (d.contractType === 'MCLOO') {
             let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === d.companyId && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
             if (!liabRuleForDisp) {
                 liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
             }
-            if (liabRuleForDisp && (liabRuleForDisp as any).disp_mcloo_pay) {
-                dispMclooPayAmount = (Number((liabRuleForDisp as any).disp_mcloo_pay) || 0) * (d.effectiveNonTeams || 0);
+            if (liabRuleForDisp) {
+                let sharedVal = 0;
+                if ((liabRuleForDisp as any).shared_insurance !== undefined && (liabRuleForDisp as any).shared_insurance !== null && String((liabRuleForDisp as any).shared_insurance).trim() !== '') {
+                    sharedVal = Number((liabRuleForDisp as any).shared_insurance);
+                } else if ((liabRuleForDisp as any).shared_liability !== undefined && (liabRuleForDisp as any).shared_liability !== null && String((liabRuleForDisp as any).shared_liability).trim() !== '') {
+                    sharedVal = Number((liabRuleForDisp as any).shared_liability);
+                }
+                fullSharedLiabAmount = sharedVal * (d.effectiveNonTeams || 0);
+
+                let dispSharedVal = 0;
+                if ((liabRuleForDisp as any).disp_mcloo_pay !== undefined && (liabRuleForDisp as any).disp_mcloo_pay !== null && String((liabRuleForDisp as any).disp_mcloo_pay).trim() !== '') {
+                    dispSharedVal = Number((liabRuleForDisp as any).disp_mcloo_pay);
+                }
+                actualDispMclooPayAmount = dispSharedVal * (d.effectiveNonTeams || 0);
             }
         }
-       const dispGrossAmount = -Math.abs(driver_gross * (dispGrossPerc / 100));
-        const dispMarginAmount = -Math.abs(margin_amt * (dispMarginPerc / 100));
-        const dispSharedLiab = Math.abs(dispMclooPayAmount);
+        const dispGrossAmount = -(driver_gross * (dispGrossPerc / 100));
+        const dispMarginAmount = -(margin_amt * (dispMarginPerc / 100));
+        const dispSharedLiab = Math.abs(actualDispMclooPayAmount);
+        const fullSharedLiab = Math.abs(fullSharedLiabAmount);
         const calcDispPay = dispGrossAmount + dispMarginAmount + dispSharedLiab;
 
         let fc_truck = 0, fc_trailer = 0, fc_plates = 0, fc_telematics = 0, fc_phone = 0, fc_office = 0, fc_rent = 0, fc_backup_mc = 0, fc_bo_reg = 0, fc_bo_tech = 0, fc_factoring = 0;
@@ -2639,6 +2698,7 @@ const PnLView: React.FC<PnLViewProps> = ({
           dispGrossAmount: dispGrossAmount,
           dispMarginAmount: dispMarginAmount,
           dispSharedLiability: dispSharedLiab,
+          fullSharedLiability: fullSharedLiab,
           companyPay: Number(d.companyPay || 0) * companyTakeMulti,
           tollCost: multipliedTolls,
           calculatedTolls: multipliedTolls,
@@ -2651,7 +2711,7 @@ const PnLView: React.FC<PnLViewProps> = ({
           calculatedFixedCost: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
           fixed_costs: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
           franchise_fixed_costs_full: franchise_fixed_full,
-          insuranceCost: insurance_costs_calc,
+          insuranceCost: insurance_costs_calc - fullSharedLiab,
           insLiabAuto: ins_liab_auto * cTake,
           insLiabGen: ins_liab_gen * cTake,
           insCargo: ins_cargo * cTake,
@@ -2674,6 +2734,74 @@ const PnLView: React.FC<PnLViewProps> = ({
               return adjusted;
           })() : null,
         });
+      });
+
+      const allExpenseComps = Array.from(new Set(fixedExpenses.map(e => e.companyId))).filter(c => c && c !== 'ALL' && c !== 'UNRECONCILED');
+      const orphanComps = allExpenseComps.filter(c => !uniqueCompsInWeek.includes(c));
+      const currTimeOrph = (date ? new Date(date).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
+
+      orphanComps.forEach(compId => {
+          const getOrphExp = (n: string) => {
+              const exps = fixedExpenses.filter(e => e.name.toLowerCase().includes(n.toLowerCase()) && e.companyId === compId && (!e.valid_from || new Date(e.valid_from).getTime() <= currTimeOrph) && (!e.valid_to || new Date(e.valid_to).getTime() >= currTimeOrph));
+              if (!exps.length) return 0;
+              return getWeeklyAmountFromExp(exps[0].amount || 0, exps[0]);
+          };
+
+          const o_insLiabAuto = getOrphExp('Liability Insurance (Auto)') || getOrphExp('Liability Insurance');
+          const o_insLiabGen = getOrphExp('Liability Insurance (General)');
+          const o_insCargo = getOrphExp('Cargo Insurance');
+          const o_insLeaseGap = getOrphExp('Lease Gap Coverage');
+          const o_insTrailerInterchange = getOrphExp('Trailer Interchange');
+          const o_insLago = getOrphExp('LAGO');
+          const o_insPhdPremium = getOrphExp('PD Premium');
+          const o_insPhdTruck = getOrphExp('Physical Damage (Truck)') || getOrphExp('Physical Damage');
+          const o_insPhdTrailer = getOrphExp('Physical Damage (Trailer)') || (o_insPhdTruck / 4);
+          const o_fcPlates = getOrphExp('Plates');
+          const o_fcTelematics = getOrphExp('Telematics') || getOrphExp('ELD & Telematics');
+          const o_fcPhone = getOrphExp('Phone & Internet');
+          const o_fcOffice = getOrphExp('Office Supplies');
+          const o_fcRent = getOrphExp('Rent & Parking');
+          const o_fcBackupMc = getOrphExp('Backup MC');
+          const o_fcBoReg = getOrphExp('Back Office Pay') || getOrphExp('Backoffice Reg');
+          const o_fcBoTech = getOrphExp('Tech Pay') || getOrphExp('Backoffice Tech');
+
+          const o_fixed = o_insLiabAuto + o_insLiabGen + o_insCargo + o_insLeaseGap + o_insTrailerInterchange + o_insLago + o_insPhdPremium + o_insPhdTruck + o_insPhdTrailer + o_fcPlates + o_fcTelematics + o_fcPhone + o_fcOffice + o_fcRent + o_fcBackupMc + o_fcBoReg + o_fcBoTech;
+
+          if (o_fixed > 0) {
+              result.push({
+                  id: `orphan_${date}_${compId}`,
+                  name: `Orphan Expenses - ${compId}`,
+                  companyId: compId,
+                  payDate: date,
+                  contractType: 'Unassigned',
+                  calculatedFixedCost: o_fixed,
+                  fixed_costs: o_fixed,
+                  insuranceCost: o_insLiabAuto + o_insLiabGen + o_insCargo + o_insLeaseGap + o_insTrailerInterchange + o_insLago + o_insPhdPremium + o_insPhdTruck + o_insPhdTrailer,
+                  insLiabAuto: o_insLiabAuto,
+                  insLiabGen: o_insLiabGen,
+                  insCargo: o_insCargo,
+                  insLeaseGapCoverage: o_insLeaseGap,
+                  insTrailerInterchange: o_insTrailerInterchange,
+                  insLago: o_insLago,
+                  insPhdPremium: o_insPhdPremium,
+                  insPhdTruck: o_insPhdTruck,
+                  insPhdTrailer: o_insPhdTrailer,
+                  fcPlates: o_fcPlates,
+                  fcTelematics: o_fcTelematics,
+                  fcPhone: o_fcPhone,
+                  fcOffice: o_fcOffice,
+                  fcRent: o_fcRent,
+                  fcBackupMc: o_fcBackupMc,
+                  fcBoReg: o_fcBoReg,
+                  fcBoTech: o_fcBoTech,
+                  effectiveDrivers: 0,
+                  effectiveNonTeams: 0,
+                  grossRevenue: 0,
+                  marginAmount: 0,
+                  isFranchiseStub: false,
+                  isStub: true
+              } as any);
+          }
       });
     });
 
@@ -2731,9 +2859,13 @@ const PnLView: React.FC<PnLViewProps> = ({
                   }
 
               const isCategorical = ['Contract', 'Company', 'Team', 'Franchise', 'Driver'].includes(rule.field);
-              
-              if (isCategorical) {
-                  const safeVal = String(fieldValue || 'Unassigned');
+const isEmptyValue = fieldValue === undefined || fieldValue === null || String(fieldValue).trim() === '' || String(fieldValue).trim() === 'Unassigned';
+
+if (rule.operator === 'is empty') return isEmptyValue;
+if (rule.operator === 'is not empty') return !isEmptyValue;
+
+if (isCategorical) {
+    const safeVal = String(fieldValue || 'Unassigned');
                   const selectedValues = Array.isArray(rule.value) ? rule.value : [];
                   if (rule.operator === 'is one of') return selectedValues.includes(safeVal);
                   if (rule.operator === 'is not one of') return !selectedValues.includes(safeVal);
@@ -2761,7 +2893,7 @@ const PnLView: React.FC<PnLViewProps> = ({
   const uniqueContracts = useMemo(() => Array.from(new Set(displayedDrivers.map(d => d.contractType))).filter(Boolean).sort(), [displayedDrivers]);
   const uniqueCompanies = useMemo(() => {
     const companies = Array.from(new Set(displayedDrivers.map(d => (d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId)));
-    return companies.filter(c => c && c !== 'Unknown' && !/^Company\s*\d*$/i.test(String(c))).sort() as string[];
+    return companies.filter(c => c && c !== 'Unknown').sort() as string[];
   }, [displayedDrivers]);
   const uniqueDrivers = useMemo(() => Array.from(new Set(displayedDrivers.map(d => d.name))).filter(Boolean).sort(), [displayedDrivers]);
 
@@ -2959,6 +3091,7 @@ const PnLView: React.FC<PnLViewProps> = ({
     const dispGrossAmount = initialDrivers.reduce((sum, d) => sum + ((d as any).dispGrossAmount || 0), 0);
     const dispMarginAmount = initialDrivers.reduce((sum, d) => sum + ((d as any).dispMarginAmount || 0), 0);
     const dispSharedLiability = initialDrivers.reduce((sum, d) => sum + ((d as any).dispSharedLiability || 0), 0);
+    const fullSharedLiability = initialDrivers.reduce((sum, d) => sum + ((d as any).fullSharedLiability || 0), 0);
 
     let companyPay = 0;
     let tolls = 0;
@@ -3254,7 +3387,7 @@ const PnLView: React.FC<PnLViewProps> = ({
 
     return {
       rawEffCount, effCount, effNonTeamsCount, effTrailersCount, gross, margin, fuelSavings, companyPay, cogs, allocatedFixed, baseFixed, adjFixed, netIncome, pnlPerDriver,
-      driverPay, fuel, maint, tolls, faults, dispatcherPay, dispGrossAmount, dispMarginAmount, dispSharedLiability, totalFixedPerUnit,
+      driverPay, fuel, maint, tolls, faults, dispatcherPay, dispGrossAmount, dispMarginAmount, dispSharedLiability, fullSharedLiability, totalFixedPerUnit,
       totalPO, totalPOCov, totalEscrow, totalBalance, totalRecruiting,
       effNonTeams, currentPayDate,
       numOfTrucks, avgTruckPrice, numOfTrailers, avgTrailerPrice, truckUtilization, trailerUtilization,

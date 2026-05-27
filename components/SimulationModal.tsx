@@ -1,10 +1,11 @@
 import React from 'react';
-import { X, Save, Sliders, Plus, Trash2, ChevronDown, Settings, Edit2, Info, CornerDownRight, Eye, EyeOff, FileText, Bold, Italic, Underline, List, ListOrdered, Palette } from 'lucide-react';
+import { X, Save, Sliders, Plus, Trash2, ChevronDown, Settings, Edit2, Info, CornerDownRight, Eye, EyeOff, FileText, Bold, Italic, Underline, List, ListOrdered, Palette, Filter, PlayCircle } from 'lucide-react';
 import { formatCurrency } from '../utils';
 import { supabase } from '../lib/supabase';
 import RevenueCpm from './RevenueCpm';
 import PnlEditor from './PnlEditor';
 import FuelRebate from './FuelRebate';
+import TutorialModal from './ExpensesTutorial';
 import { SimulationConfig, ExpenseItem, ConfigContract, PnlConfig } from '../types';
 
 interface SimulationModalProps {
@@ -75,9 +76,13 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
       const [reductionModal, setReductionModal] = React.useState<{ isOpen: boolean, expenseKey: string, expenseName: string } | null>(null);
       const [reductionForm, setReductionForm] = React.useState({ type: 'ALL', target: '', validFrom: '', validTo: '', amount: '', note: '' });
       const [editingReduction, setEditingReduction] = React.useState<{ source: 'fixed' | 'fin', groupIds: string[] } | null>(null);
- 
+    const [expenseFilter, setExpenseFilter] = React.useState({ company: '', contract: '', date: '', sort: 'A-Z' });
+  const [isFilterVisible, setIsFilterVisible] = React.useState(false);
+  const [tutorialState, setTutorialState] = React.useState<{ isOpen: boolean, type: 'rules' | 'mcloo' | 'reductions' | null }>({ isOpen: false, type: null });
+  const [isTopTutorialDropdownOpen, setIsTopTutorialDropdownOpen] = React.useState(false);
+  const [isTabTutorialDropdownOpen, setIsTabTutorialDropdownOpen] = React.useState(false);
 
-      const reductionNoteRef = React.useRef<HTMLDivElement>(null);
+  const reductionNoteRef = React.useRef<HTMLDivElement>(null);
       const [isBoldActive, setIsBoldActive] = React.useState(false);
       const [isItalicActive, setIsItalicActive] = React.useState(false);
       const [isUnderlineActive, setIsUnderlineActive] = React.useState(false);
@@ -394,7 +399,10 @@ const fixedExpenseNames = Array.from(new Set([
          if (!ruleToDel) return prev.filter(e => String(e.id) !== String(id));
          return prev.filter(e => {
              if (String(e.id) === String(id)) return false;
-             if (ruleToDel.companyId && ruleToDel.companyId !== 'ALL' && e.name === ruleToDel.name && e.companyId === ruleToDel.companyId && e.valid_from === ruleToDel.valid_from && ((e as any).is_dummy || Number(e.amount || 0) === 0)) return false;
+             if (e.name === ruleToDel.name && e.valid_from === ruleToDel.valid_from && ((e as any).is_dummy || Number(e.amount || 0) === 0)) {
+                 if (ruleToDel.companyId && ruleToDel.companyId !== 'ALL' && e.companyId === ruleToDel.companyId) return false;
+                 if ((!ruleToDel.companyId || ruleToDel.companyId === '') && (ruleToDel as any).contractType && (e as any).contractType === (ruleToDel as any).contractType) return false;
+             }
              return true;
          });
      });
@@ -843,9 +851,31 @@ const fixedExpenseNames = Array.from(new Set([
               <p className="text-xs text-zinc-500">Adjust parameters, contracts and fixed expenses.</p>
             </div>
           </div>
-          <button onClick={onClose} disabled={isSaving} className="text-zinc-500 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-            <X size={24} />
-          </button>
+          <div className="flex items-center gap-4">
+             <div className="relative">
+                             <button onClick={() => {
+                if (activeTab === 'fixed') {
+                   setIsTopTutorialDropdownOpen(!isTopTutorialDropdownOpen);
+                } else {
+                   setIsTopTutorialDropdownOpen(false);
+                   setTutorialState({ isOpen: true, type: null });
+                }
+             }} className="flex items-center gap-2 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-500 px-3 py-1.5 rounded-lg text-xs font-bold uppercase transition-colors">
+                <PlayCircle size={16} />
+                Tutorial <ChevronDown size={14} className={activeTab === 'fixed' ? 'opacity-100' : 'opacity-0'} />
+             </button>
+                 {activeTab === 'fixed' && isTopTutorialDropdownOpen && (
+                   <div className="absolute top-full right-0 mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded shadow-xl overflow-hidden flex flex-col z-[100]">
+                      <button onClick={() => { setTutorialState({ isOpen: true, type: 'rules' }); setIsTopTutorialDropdownOpen(false); }} className="px-4 py-3 text-left text-[11px] font-bold text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800">Add expense rules</button>
+                      <button onClick={() => { setTutorialState({ isOpen: true, type: 'mcloo' }); setIsTopTutorialDropdownOpen(false); }} className="px-4 py-3 text-left text-[11px] font-bold text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800">Configure MCLOO Rule</button>
+                      <button onClick={() => { setTutorialState({ isOpen: true, type: 'reductions' }); setIsTopTutorialDropdownOpen(false); }} className="px-4 py-3 text-left text-[11px] font-bold text-zinc-300 hover:bg-zinc-800 transition-colors">Truck/Trailer Price Reductions</button>
+                   </div>
+                 )}
+             </div>
+             <button onClick={onClose} disabled={isSaving} className="text-zinc-500 hover:text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+                <X size={24} />
+             </button>
+          </div>
         </div>
 
         <div className="flex px-6 pt-2 border-b border-zinc-800 gap-2 bg-zinc-950 overflow-x-auto flex-shrink-0">
@@ -1210,12 +1240,28 @@ const fixedExpenseNames = Array.from(new Set([
               />
            </div>
 
-           <div className={activeTab === 'pnl' ? 'block' : 'hidden'}>
-              <PnlEditor 
-                 pnlConfigs={pnlConfigs} 
-                 setPnlConfigs={setPnlConfigs} 
-                 availableContractTypes={availableContractTypes} 
-              />
+                      <div className={activeTab === 'pnl' ? 'block' : 'hidden'}>
+              <div className="max-w-5xl mx-auto space-y-2 -mt-4">
+                 <div className="flex items-center justify-between pb-2 border-b border-zinc-800/50 mb-2">
+                    <div className="group relative cursor-help text-zinc-500 hover:text-cyan-500 transition-colors ml-auto">
+                       <Info size={16} />
+                       <div className="hidden group-hover:block absolute right-0 top-full mt-2 w-[420px] bg-zinc-800 text-zinc-200 text-[10px] p-3 rounded shadow-xl normal-case font-normal z-50 pointer-events-none text-left border border-zinc-600 leading-relaxed">
+                          <div className="font-bold text-cyan-400 uppercase tracking-wider mb-1.5">PNL Calculation</div>
+                          <div className="space-y-1.5">
+                             <p>This section controls how PNL is calculated for each contract type.</p>
+                             <p>For every contract, you define which income and expense components are included in the final PNL formula.</p>
+                             <p>The selected setup is used later when the system calculates profitability, margins and net result by contract.</p>
+                             <p>Use this section when a contract needs a different PNL logic than the default calculation.</p>
+                          </div>
+                       </div>
+                    </div>
+                 </div>
+                 <PnlEditor 
+                    pnlConfigs={pnlConfigs} 
+                    setPnlConfigs={setPnlConfigs} 
+                    availableContractTypes={availableContractTypes} 
+                 />
+              </div>
            </div>
 
            <div className={activeTab === 'fuel_rebate' ? 'block' : 'hidden'}>
@@ -1231,13 +1277,48 @@ const fixedExpenseNames = Array.from(new Set([
 
            <div className={activeTab === 'fixed' ? 'block' : 'hidden'}>
            <div className="max-w-6xl mx-auto -mt-4">
-              <div className="flex justify-end mb-2">
-                 <button onClick={() => setHideOverriddenRules(!hideOverriddenRules)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-bold uppercase transition-colors" title={hideOverriddenRules ? "View default overrides" : "Hide default overrides"}>
-                    {hideOverriddenRules ? <EyeOff size={14} /> : <Eye size={14} />}
-                    {hideOverriddenRules ? 'Show Overrides' : 'Hide Overrides'}
+              <div className="flex justify-end mb-2 gap-2">
+                 {isFilterVisible && (
+                    <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded px-2 py-1">
+                       <select value={expenseFilter.company} onChange={(e) => setExpenseFilter({...expenseFilter, company: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
+                          <option value="">All Companies</option>
+                          {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                       </select>
+                       <select value={expenseFilter.contract} onChange={(e) => setExpenseFilter({...expenseFilter, contract: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
+                          <option value="">All Contracts</option>
+                          {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
+                       </select>
+                       <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-700 rounded px-2 py-1">
+                          <span className="text-[9px] text-zinc-500 font-bold uppercase">Pay Date:</span>
+                          <input type="date" value={expenseFilter.date} onChange={(e) => {
+                             let val = e.target.value;
+                             if (val) {
+                                const d = new Date(val);
+                                const day = d.getUTCDay();
+                                const diff = 4 - day;
+                                d.setUTCDate(d.getUTCDate() + (diff > 3 ? diff - 7 : (diff < -3 ? diff + 7 : diff)));
+                                val = d.toISOString().split('T')[0];
+                             }
+                             setExpenseFilter({...expenseFilter, date: val});
+                          }} style={{ colorScheme: 'dark' }} className="bg-transparent text-[10px] text-zinc-300 outline-none" />
+                       </div>
+                       <select value={expenseFilter.sort} onChange={(e) => setExpenseFilter({...expenseFilter, sort: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
+                          <option value="A-Z">Sort: A-Z</option>
+                          <option value="Z-A">Sort: Z-A</option>
+                       </select>
+                       <button onClick={() => setExpenseFilter({ company: '', contract: '', date: '', sort: 'A-Z' })} className="text-zinc-500 hover:text-rose-500 ml-1" title="Clear Filters"><X size={14}/></button>
+                    </div>
+                 )}
+                 <button onClick={() => setIsFilterVisible(!isFilterVisible)} className={`flex items-center gap-1.5 px-3 py-1.5 border rounded text-[10px] font-bold uppercase transition-colors ${isFilterVisible || expenseFilter.company || expenseFilter.contract || expenseFilter.date || expenseFilter.sort !== 'A-Z' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:bg-zinc-800'}`}>
+                    <Filter size={14} />
+                    Filter
                  </button>
-              </div>
-              <div className="w-full border border-zinc-800 rounded-lg overflow-hidden bg-zinc-950/50">
+                 <button onClick={() => setHideOverriddenRules(!hideOverriddenRules)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-bold uppercase transition-colors ml-auto" title={hideOverriddenRules ? "View default overrides" : "Hide default overrides"}>
+                {hideOverriddenRules ? <EyeOff size={14} /> : <Eye size={14} />}
+                {hideOverriddenRules ? 'Show Overrides' : 'Hide Overrides'}
+             </button>
+          </div>
+          <div className="w-full border border-zinc-800 rounded-lg overflow-hidden bg-zinc-950/50">
                     <table className="w-full text-left border-collapse">
                        <thead>
                                           <tr className="bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
@@ -1246,10 +1327,62 @@ const fixedExpenseNames = Array.from(new Set([
                                        </thead>
                        <tbody className="divide-y divide-zinc-800">
                           {unifiedExpenses.map(exp => {
+                             if (expenseFilter.company || expenseFilter.contract || expenseFilter.date) {
+                                 let filterFrom = '';
+                                 let filterTo = '';
+                                 if (expenseFilter.date) {
+                                     const pDate = new Date(expenseFilter.date);
+                                     const tDate = new Date(pDate); tDate.setUTCDate(pDate.getUTCDate() - 3);
+                                     filterTo = tDate.toISOString().split('T')[0];
+                                     const fDate = new Date(pDate); fDate.setUTCDate(pDate.getUTCDate() - 9);
+                                     filterFrom = fDate.toISOString().split('T')[0];
+                                 }
+
+                                 const hasMatch = localFixedExpenses.some(e => {
+                                     if (e.name !== exp.name) return false;
+                                     let match = true;
+                                     if (expenseFilter.company && e.companyId !== expenseFilter.company) match = false;
+                                     if (expenseFilter.contract && (e as any).contractType !== expenseFilter.contract) match = false;
+                                     if (expenseFilter.date) {
+                                         const f = e.original_valid_from || e.valid_from || '2000-01-01';
+                                         const t = e.valid_to || '2099-12-31';
+                                         if (filterFrom > t || filterTo < f) match = false;
+                                     }
+                                     return match;
+                                 });
+                                 let finImportMatch = false;
+                                 if (exp.type === 'FINIMPORT' && expenseFilter.date && !expenseFilter.company && !expenseFilter.contract) {
+                                     finImportMatch = finImportData.some(d => {
+                                         const dDate = new Date(d.week_ending);
+                                         const vfObj = new Date(dDate); vfObj.setUTCDate(dDate.getUTCDate() - 5);
+                                         const vfStr = vfObj.toISOString().split('T')[0];
+                                         const vtStr = (d as any).valid_to || d.week_ending;
+                                         return filterFrom <= vtStr && filterTo >= vfStr;
+                                     });
+                                 }
+                                 if (!hasMatch && !finImportMatch) return null;
+                             }
+
                              const isExpanded = selectedExpenseName === exp.name;
                              
                              if (exp.type === 'FIXED') {
-                                 const rules = localFixedExpenses.filter(e => e.name === exp.name);
+                                 let rules = localFixedExpenses.filter(e => e.name === exp.name);
+                                 if (expenseFilter.company) rules = rules.filter(e => e.companyId === expenseFilter.company || e.companyId === 'ALL');
+                                 if (expenseFilter.contract) rules = rules.filter(e => (e as any).contractType === expenseFilter.contract || e.companyId === 'ALL');
+                                 if (expenseFilter.date) {
+                                     const pDate = new Date(expenseFilter.date);
+                                     const tDate = new Date(pDate); tDate.setUTCDate(pDate.getUTCDate() - 3);
+                                     const filterTo = tDate.toISOString().split('T')[0];
+                                     const fDate = new Date(pDate); fDate.setUTCDate(pDate.getUTCDate() - 9);
+                                     const filterFrom = fDate.toISOString().split('T')[0];
+                                     rules = rules.filter(e => {
+                                         const f = e.valid_from || '2000-01-01';
+                                         const t = e.valid_to || '2099-12-31';
+                                         return filterFrom <= t && filterTo >= f;
+                                     });
+                                 }
+                                 if (rules.length === 0) return null;
+
                                  const sortedRules = [...rules].sort((a,b) => new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime());
                                  const latestRule = sortedRules[0];
                                  
@@ -1310,7 +1443,17 @@ const fixedExpenseNames = Array.from(new Set([
                                                          </tr>
                                                       </thead>
                                                       <tbody className="divide-y divide-zinc-800/30">
-                                                         {rules.map(expObj => {
+                                                         {[...rules].sort((a, b) => {
+                                                             const nameA = a.companyId === 'ALL' ? ' ' : String(a.companyId || (a as any).contractType || 'zz').trim().toLowerCase();
+                                                             const nameB = b.companyId === 'ALL' ? ' ' : String(b.companyId || (b as any).contractType || 'zz').trim().toLowerCase();
+                                                             if (expenseFilter.sort === 'A-Z') {
+                                                                 return nameA.localeCompare(nameB) || new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime();
+                                                             }
+                                                             if (expenseFilter.sort === 'Z-A') {
+                                                                 return nameB.localeCompare(nameA) || new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime();
+                                                             }
+                                                             return 0;
+                                                         }).map(expObj => {
                                                             const isPast = expObj.companyId === 'ALL' && expObj.valid_to && new Date(expObj.valid_to).getTime() < Date.now();
                                                             return (
                                                             <tr key={expObj.id} className={`transition-colors group/row ${isPast ? 'opacity-40 bg-zinc-900/50' : 'hover:bg-zinc-800/30'}`}>
@@ -1431,9 +1574,37 @@ const fixedExpenseNames = Array.from(new Set([
                                     </React.Fragment>
                                  );
                              } else {
-                                 const exceptionRules = localFixedExpenses.filter(e => e.name === exp.name && !(e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm));
-                                 const globalRules = [...finImportData];
-                                 const globalOverrides = localFixedExpenses.filter(e => e.name === exp.name && e.companyId === 'ALL' && !(e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm));
+                                 let exceptionRules = localFixedExpenses.filter(e => e.name === exp.name && !(e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm));
+                                 let globalRules = [...finImportData];
+                                 let globalOverrides = localFixedExpenses.filter(e => e.name === exp.name && e.companyId === 'ALL' && !(e.contractType && e.franchise_charge !== undefined && e.franchise_charge !== null && !e.amount && !e.cpm));
+
+                                 if (expenseFilter.company) exceptionRules = exceptionRules.filter(e => e.companyId === expenseFilter.company || e.companyId === 'ALL');
+                                 if (expenseFilter.contract) exceptionRules = exceptionRules.filter(e => (e as any).contractType === expenseFilter.contract || e.companyId === 'ALL');
+                                 if (expenseFilter.date) {
+                                     const pDate = new Date(expenseFilter.date);
+                                     const tDate = new Date(pDate); tDate.setUTCDate(pDate.getUTCDate() - 3);
+                                     const filterTo = tDate.toISOString().split('T')[0];
+                                     const fDate = new Date(pDate); fDate.setUTCDate(pDate.getUTCDate() - 9);
+                                     const filterFrom = fDate.toISOString().split('T')[0];
+
+                                     exceptionRules = exceptionRules.filter(e => {
+                                         const f = e.original_valid_from || e.valid_from || '2000-01-01';
+                                         const t = e.valid_to || '2099-12-31';
+                                         return filterFrom <= t && filterTo >= f;
+                                     });
+                                     globalOverrides = globalOverrides.filter(e => {
+                                         const f = e.valid_from || '2000-01-01';
+                                         const t = e.valid_to || '2099-12-31';
+                                         return filterFrom <= t && filterTo >= f;
+                                     });
+                                     globalRules = globalRules.filter(d => {
+                                         const dDate = new Date(d.week_ending);
+                                         const vfObj = new Date(dDate); vfObj.setUTCDate(dDate.getUTCDate() - 5);
+                                         const vfStr = vfObj.toISOString().split('T')[0];
+                                         const vtStr = (d as any).valid_to || d.week_ending;
+                                         return filterFrom <= vtStr && filterTo >= vfStr;
+                                     });
+                                 }
 
                                  const uniqueDates = Array.from(new Set([
                                      ...globalRules.map(d => d.week_ending),
@@ -1446,7 +1617,7 @@ const fixedExpenseNames = Array.from(new Set([
                                              return vf.toISOString().split('T')[0] === vfStrExp && (fd as any)[`is_custom_${exp.key}`] && Number((fd as any)[`custom_val_${exp.key}`]) === Number(e.amount);
                                          });
                                          const isRedOnly = hasRed && ((e as any).is_dummy || Number(e.amount || 0) === 0 || matchesGlobal);
-                                         return (e.companyId === 'ALL' || isRedOnly) && !globalRules.some(gr => {
+                                         return e.companyId === 'ALL' && !isRedOnly && !globalRules.some(gr => {
                                              const d = new Date(gr.week_ending);
                                              const vf = new Date(d); vf.setUTCDate(d.getUTCDate() - 5);
                                              return vfStrExp === vf.toISOString().split('T')[0];
@@ -1459,6 +1630,17 @@ const fixedExpenseNames = Array.from(new Set([
                                          return d.toISOString().split('T')[0];
                                      }).filter(Boolean)
                                  ])).sort((a, b) => new Date(b).getTime() - new Date(a).getTime()).filter(dateStr => {
+                                     if (expenseFilter.date) {
+                                         const pDate = new Date(expenseFilter.date);
+                                         const tDate = new Date(pDate); tDate.setUTCDate(pDate.getUTCDate() - 3);
+                                         const filterTo = tDate.toISOString().split('T')[0];
+                                         const fDate = new Date(pDate); fDate.setUTCDate(pDate.getUTCDate() - 9);
+                                         const filterFrom = fDate.toISOString().split('T')[0];
+                                         const dDate = new Date(dateStr);
+                                         const vfObj = new Date(dDate); vfObj.setUTCDate(dDate.getUTCDate() - 5);
+                                         const vfStr = vfObj.toISOString().split('T')[0];
+                                         if (filterFrom > dateStr || filterTo < vfStr) return false;
+                                     }
                                      const puData = finImportPerUnitData.find(d => d.week_ending === dateStr);
                                      const gRule = globalRules.find(d => d.week_ending === dateStr);
                                      const puVal = puData && (exp as any).puKey ? Math.abs(puData[(exp as any).puKey] || 0) : 0;
@@ -1581,11 +1763,17 @@ const fixedExpenseNames = Array.from(new Set([
                                                          });
                                                          const isRedOnly = hasRed && ((e as any).is_dummy || Number(e.amount || 0) === 0 || matchesGlobal);
                                                          if (isRedOnly) return false;
-                                                         return e.is_standalone || !uniqueDates.some(ds => {
-                                                             const dBase = new Date(ds);
-                                                             const vfStr = new Date(dBase.getTime() - 5 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                                                             return (e.original_valid_from || e.valid_from) === vfStr;
-                                                         });
+                                                         return true;
+                                                     }).sort((a, b) => {
+                                                         const nameA = a.companyId === 'ALL' ? ' ' : String(a.companyId || (a as any).contractType || 'zz').trim().toLowerCase();
+                                                         const nameB = b.companyId === 'ALL' ? ' ' : String(b.companyId || (b as any).contractType || 'zz').trim().toLowerCase();
+                                                         if (expenseFilter.sort === 'A-Z') {
+                                                             return nameA.localeCompare(nameB) || new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime();
+                                                         }
+                                                         if (expenseFilter.sort === 'Z-A') {
+                                                             return nameB.localeCompare(nameA) || new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime();
+                                                         }
+                                                         return 0;
                                                      }).map(cRule => (
                                                           <React.Fragment key={`standalone_${cRule.id}`}>
                                                               <tr className="bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
@@ -1725,30 +1913,32 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                     <input type="number" value={(cRule as any).shared_insurance ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'shared_insurance' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
                                                                                                  )}
                                                                                               </div>
-                                                                                              <div className="relative group">
-                                                                                                 <button className="h-7 px-3 flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded text-[10px] text-zinc-300 hover:border-amber-500/50 transition-colors">
-                                                                                                    <span>Include in Limit</span>
-                                                                                                    <ChevronDown size={12} className="text-zinc-500" />
-                                                                                                 </button>
-                                                                                                 <div className="absolute left-0 bottom-full mb-1 w-48 bg-zinc-950 border border-zinc-700 rounded-md shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10000] p-2 flex flex-col gap-1.5 ring-1 ring-white/10">
-                                                                                                    {['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
-                                                                                                       const dummyName = `MCLOO_INCLUDE_${ins}`;
-                                                                                                       const isIncluded = localFixedExpenses.some(e => e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from);
-                                                                                                       return (
-                                                                                                          <label key={ins} className="flex items-center gap-2 px-2 py-1 hover:bg-white/5 rounded cursor-pointer group/item">
-                                                                                                             <input type="checkbox" checked={isIncluded} onChange={(e) => {
-                                                                                                                if (e.target.checked) {
-                                                                                                                   setLocalFixedExpenses(prev => [...prev, { id: Math.random().toString(36).substring(2, 11), category: 'Fixed', name: dummyName, companyId: cRule.companyId, amount: 0, frequency: 'Weekly', allocationType: 'divide', unit: '$', valid_from: cRule.valid_from, is_standalone: true } as any]);
-                                                                                                                } else {
-                                                                                                                   setLocalFixedExpenses(prev => prev.filter(e => !(e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from)));
-                                                                                                                }
-                                                                                                             }} className="w-3 h-3 accent-amber-500" />
-                                                                                                             <span className="text-[10px] text-zinc-400 group-hover/item:text-zinc-200">{ins}</span>
-                                                                                                          </label>
-                                                                                                       );
-                                                                                                    })}
-                                                                                                 </div>
-                                                                                              </div>
+                                                                                             {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) && (
+                                                                                             <div className="relative group">
+                                                                                                <button className="h-7 px-3 flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded text-[10px] text-zinc-300 hover:border-amber-500/50 transition-colors">
+                                                                                                   <span>Include in Limit</span>
+                                                                                                   <ChevronDown size={12} className="text-zinc-500" />
+                                                                                                </button>
+                                                                                                <div className="absolute left-0 bottom-full mb-1 w-48 bg-zinc-950 border border-zinc-700 rounded-md shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10000] p-2 flex flex-col gap-1.5 ring-1 ring-white/10">
+                                                                                                   {['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
+                                                                                                      const dummyName = `MCLOO_INCLUDE_${ins}`;
+                                                                                                      const isIncluded = localFixedExpenses.some(e => e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from);
+                                                                                                      return (
+                                                                                                         <label key={ins} className="flex items-center gap-2 px-2 py-1 hover:bg-white/5 rounded cursor-pointer group/item">
+                                                                                                            <input type="checkbox" checked={isIncluded} onChange={(e) => {
+                                                                                                               if (e.target.checked) {
+                                                                                                                  setLocalFixedExpenses(prev => [...prev, { id: Math.random().toString(36).substring(2, 11), category: 'Fixed', name: dummyName, companyId: cRule.companyId, amount: 0, frequency: 'Weekly', allocationType: 'divide', unit: '$', valid_from: cRule.valid_from, is_standalone: true } as any]);
+                                                                                                               } else {
+                                                                                                                  setLocalFixedExpenses(prev => prev.filter(e => !(e.name === dummyName && e.companyId === cRule.companyId && e.valid_from === cRule.valid_from)));
+                                                                                                               }
+                                                                                                            }} className="w-3 h-3 accent-amber-500" />
+                                                                                                            <span className="text-[10px] text-zinc-400 group-hover/item:text-zinc-200">{ins}</span>
+                                                                                                         </label>
+                                                                                                      );
+                                                                                                   })}
+                                                                                                </div>
+                                                                                             </div>
+                                                                                             )}
                                                                                            </div>
                                                                                         </div>
                                                                                      </div>
@@ -1858,9 +2048,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                       let sharedResp = 0;
                                                                                       let compPay = 0;
                                                                                       if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
-                                                                                          const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
-                                                                                          compPay = baseLimit;
-                                                                                          sharedResp = perUnitAmt - baseLimit;
+                                                                                                                                                                                    const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
+                                                                                          compPay = Math.min(perUnitAmt, baseLimit);
+                                                                                          sharedResp = Math.max(perUnitAmt - baseLimit, 0);
                                                                                       } else {
                                                                                           const sharedVal = Number((cRule as any).shared_insurance || 0);
                                                                                           sharedResp = sharedVal;
@@ -1976,7 +2166,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                         if (isRedOnly) {
                                                             return e.companyId !== 'ALL' && (e.original_valid_from || e.valid_from) === vFromStr;
                                                         }
-                                                        return e.companyId !== 'ALL' && !e.is_standalone && (e.original_valid_from || e.valid_from) === vFromStr;
+                                                        return false;
                                                         });
                                                         
                                                         const reductionsForDate = allCRules.filter(c => {
@@ -1991,7 +2181,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                         });
                                                         const cRules = allCRules.filter(c => !reductionsForDate.includes(c));
 
-                                                        if (!gRule && (globalOverrides.some(go => go.valid_from === vFromStr) || cRules.length > 0 || reductionsForDate.length > 0)) {
+                                                        if (!gRule && (globalOverrides.some(go => go.valid_from === vFromStr) || reductionsForDate.length > 0)) {
                                                             gRule = { id: `dummy_${dateStr}`, week_ending: dateStr } as any;
                                                         }
 
@@ -2028,9 +2218,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                          const puValTemp = puDataTemp && (exp as any).puKey ? Math.abs(puDataTemp[(exp as any).puKey] || 0) : 0;
                                                          const gValTemp = gRule && exp.key ? Math.abs((gRule as any)[exp.key] || 0) : 0;
                                                          const hasCustomOverrideTemp = gRule && ((gRule as any)[`is_custom_${exp.key}`] || globalOverrides.some(go => go.valid_from === vFromStr));
-                                                         const showGRule = gRule && (puValTemp > 0 || gValTemp > 0 || hasCustomOverrideTemp || cRules.length > 0 || reductionsForDate.length > 0);
+                                                         const showGRule = gRule && (puValTemp > 0 || gValTemp > 0 || hasCustomOverrideTemp || reductionsForDate.length > 0);
                                                       const fragmentRows = [];
-                                                      if (showGRule && (!(isOverridden && hideOverriddenRules) || cRules.length > 0 || reductionsForDate.length > 0)) {
+                                                      if (showGRule && (!(isOverridden && hideOverriddenRules) || reductionsForDate.length > 0)) {
                                                           fragmentRows.push(
                                                                      <tr key={`g_${gRule.id}_${dateStr}`} className={`transition-colors ${isOverridden ? 'opacity-20 grayscale pointer-events-none' : 'hover:bg-zinc-800/30'}`}>
                                                                           <td className="py-1.5 px-3 align-top">
@@ -2293,9 +2483,9 @@ let extraWeeklyAmt = 0;
                                                                                                let sharedResp = 0;
                                                                                                let compPay = 0;
                                                                                                if ((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) {
-                                                                                                   const baseLimit = Number((gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? 0);
-                                                                                                   compPay = baseLimit;
-                                                                                                   sharedResp = perUnitAmt - baseLimit;
+                                                                                                                                                                                                      const baseLimit = Number((gRule as any).company_base_for_mcloo ?? (savedOverride as any)?.company_base_for_mcloo ?? 0);
+                                                                                                   compPay = Math.min(perUnitAmt, baseLimit);
+                                                                                                   sharedResp = Math.max(perUnitAmt - baseLimit, 0);
                                                                                                } else {
                                                                                                    const sharedVal = Number((gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? 0);
                                                                                                    sharedResp = sharedVal;
@@ -2333,14 +2523,15 @@ let extraWeeklyAmt = 0;
                                                                                                                  <input type="number" value={(gRule as any).shared_insurance ?? (savedOverride as any)?.shared_insurance ?? ''} onChange={(e) => { handleFinImportChange(gRule.id, 'shared_insurance', e.target.value as any); }} className="w-full bg-zinc-950 border border-zinc-700 rounded py-0 pl-4 pr-1 text-[9px] text-zinc-200 focus:border-emerald-500 outline-none h-full" />
                                                                                                               )}
                                                                                                            </div>
+                                                                                                           {((mclooEditModes[gRule.id] ? mclooEditModes[gRule.id] === 'base' : (((gRule as any).company_base_for_mcloo !== undefined && (gRule as any).company_base_for_mcloo !== null && String((gRule as any).company_base_for_mcloo).trim() !== '') || ((savedOverride as any)?.company_base_for_mcloo !== undefined && (savedOverride as any)?.company_base_for_mcloo !== null && String((savedOverride as any)?.company_base_for_mcloo).trim() !== '')))) && (
                                                                                                            <div className="relative group">
                                                                                                               <button className="h-5 px-2 flex items-center gap-1 bg-zinc-950 border border-zinc-800 rounded text-[8px] text-zinc-400 hover:border-emerald-500/50 transition-colors">
                                                                                                                  <span>Include</span>
                                                                                                                  <ChevronDown size={10} />
                                                                                                               </button>
                                                                                                               <div className="absolute left-0 bottom-full mb-1 w-40 bg-zinc-950 border border-zinc-700 rounded shadow-2xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-[10000] p-1 flex flex-col gap-0.5 ring-1 ring-white/10">
-    {['Liability Insurance (General)', 'Cargo Insurance', 'Lease Gap Coverage', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
-        const dummyName = `MCLOO_INCLUDE_${ins}`;
+                                                                                                                 {['Liability Insurance (General)', 'Cargo Insurance', 'Lease Gap Coverage', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => {
+                                                                                                                    const dummyName = `MCLOO_INCLUDE_${ins}`;
                                                                                                                     const dObj = new Date(dateStr);
                                                                                                                     const vfObj = new Date(dObj); vfObj.setUTCDate(dObj.getUTCDate() - 5);
                                                                                                                     const vfStr = vfObj.toISOString().split('T')[0];
@@ -2360,6 +2551,7 @@ let extraWeeklyAmt = 0;
                                                                                                                  })}
                                                                                                               </div>
                                                                                                            </div>
+                                                                                                           )}
                                                                                                         </div>
                                                                                                      </div>
                                                                                                      <div className="flex flex-col gap-0.5 border-l border-zinc-800 pl-4">
@@ -2442,8 +2634,8 @@ let extraWeeklyAmt = 0;
                                                                                                      const finalVal = (baseVal === 0 && !isCustom) ? '' : Math.max(0, baseVal - globalReductionAmount - rAmount);
 
                                                                                                      fragmentRows.push(
-                                                                                                         <tr key={`${rRule.id}_global_attached_reduction`} className="bg-rose-500/5 hover:bg-rose-500/10 transition-colors">
-                                                                             <td className="py-1.5 px-3"></td>
+                                                                         <tr key={`${rRule.id}_${dateStr}_global_attached_reduction`} className="bg-rose-500/5 hover:bg-rose-500/10 transition-colors">
+                                             <td className="py-1.5 px-3"></td>
                                                                              <td className="py-1.5 px-3 relative">
                                                                                  <div className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-500/50">
                                                                                      <CornerDownRight size={16} />
@@ -2478,7 +2670,17 @@ let extraWeeklyAmt = 0;
                                                              }
                                                          }
                                                          
-                                                         cRules.forEach(cRule => {
+                                                         [...cRules].sort((a, b) => {
+                                                             const nameA = a.companyId === 'ALL' ? ' ' : String(a.companyId || (a as any).contractType || 'zz').trim().toLowerCase();
+                                                             const nameB = b.companyId === 'ALL' ? ' ' : String(b.companyId || (b as any).contractType || 'zz').trim().toLowerCase();
+                                                             if (expenseFilter.sort === 'A-Z') {
+                                                                 return nameA.localeCompare(nameB) || new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime();
+                                                             }
+                                                             if (expenseFilter.sort === 'Z-A') {
+                                                                 return nameB.localeCompare(nameA) || new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime();
+                                                             }
+                                                             return 0;
+                                                         }).forEach(cRule => {
                                                              fragmentRows.push(
                                                                      <tr key={cRule.id} className="bg-amber-500/5 hover:bg-amber-500/10 transition-colors">
                                                                         <td className="py-1.5 px-3">
@@ -2644,6 +2846,7 @@ let extraWeeklyAmt = 0;
                                                                                                     <input type="number" value={(cRule as any).shared_insurance ?? ''} onChange={(e) => handleCompanyExpenseChange(cRule.id, 'shared_insurance' as any, e.target.value)} className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 focus:border-amber-500 outline-none h-full" />
                                                                                                  )}
                                                                                               </div>
+                                                                                                                                                                                           {(mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== '')) && (
                                                                                               <div className="relative group">
                                                                                                  <button className="h-7 px-3 flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded text-[10px] text-zinc-300 hover:border-amber-500/50 transition-colors">
     <span>Include in Limit</span>
@@ -2668,6 +2871,7 @@ let extraWeeklyAmt = 0;
                                                                                                     })}
                                                                                                  </div>
                                                                                               </div>
+                                                                                              )}
                                                                                            </div>
                                                                                         </div>
                                                                                      </div>
@@ -2748,9 +2952,9 @@ let extraWeeklyAmt = 0;
                                                                                             let sharedResp = 0;
                                                                                             let compPay = 0;
                                                                                             if ((mclooEditModes[cRule.id] ? mclooEditModes[cRule.id] === 'base' : ((cRule as any).company_base_for_mcloo !== undefined && (cRule as any).company_base_for_mcloo !== null && String((cRule as any).company_base_for_mcloo).trim() !== ''))) {
-                                                                                                const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
-                                                                                                compPay = baseLimit;
-                                                                                                sharedResp = perUnitAmt - baseLimit;
+                                                                                                                                                                                                const baseLimit = Number((cRule as any).company_base_for_mcloo || 0);
+                                                                                                compPay = Math.min(perUnitAmt, baseLimit);
+                                                                                                sharedResp = Math.max(perUnitAmt - baseLimit, 0);
                                                                                             } else {
                                                                                                 const sharedVal = Number((cRule as any).shared_insurance || 0);
                                                                                                 sharedResp = sharedVal;
@@ -2898,9 +3102,9 @@ let extraWeeklyAmt = 0;
                                                                                                     const globalReductionAmount = globalReds.length > 0 ? Math.max(...globalReds.map(e => Number((e as any)[rKey]) || 0)) : 0;
                                                                                                     const finalVal = (baseVal === 0 && !isCustom) ? '' : Math.max(0, baseVal - globalReductionAmount - rAmount);
 
-                                                                                                     fragmentRows.push(
-                                                                                                         <tr key={`${rRule.id}_global_attached_reduction`} className="bg-rose-500/5 hover:bg-rose-500/10 transition-colors">
-                                                                                                            <td className="py-1.5 px-3"></td>
+                                                                                                    fragmentRows.push(
+                                                                         <tr key={`${rRule.id}_${dateStr}_global_attached_reduction`} className="bg-rose-500/5 hover:bg-rose-500/10 transition-colors">
+                                                                            <td className="py-1.5 px-3"></td>
                                                                                                             <td className="py-1.5 px-3 relative">
                                                                                                                 <div className="absolute right-3 top-1/2 -translate-y-1/2 text-rose-500/50">
                                                                                                                     <CornerDownRight size={16} />
@@ -3370,6 +3574,7 @@ let extraWeeklyAmt = 0;
                 </div>
             </div>
         )}
+        <TutorialModal isOpen={tutorialState.isOpen} onClose={() => setTutorialState({ isOpen: false, type: null })} activeTab={activeTab} tutorialType={tutorialState.type} />
       </div>
     </div>
   );

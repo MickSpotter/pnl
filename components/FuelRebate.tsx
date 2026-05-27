@@ -31,7 +31,7 @@ const FuelRebate: React.FC<FuelRebateProps> = ({
           </div>
         </div>
       </div>
-      <div className="w-full border border-zinc-800 rounded-lg overflow-hidden bg-zinc-950/50 p-4">
+     <div className="w-full border border-zinc-800 rounded-lg overflow-visible bg-zinc-950/50 p-4">
         <table className="w-full text-left border-collapse table-fixed">
           <thead>
             <tr className="border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
