@@ -1737,9 +1737,9 @@ const fixedExpenseNames = Array.from(new Set([
                                                           )}
                                                       </div>
                                                    </div>
-                                                   <div className="border border-zinc-800 rounded">
+                                                   <div className="border border-zinc-800 rounded max-h-[300px] overflow-y-auto">
                                                        <table className="w-full text-left border-collapse">
-                                                          <thead className="sticky top-0 bg-zinc-900 z-10">
+                                                          <thead className="sticky top-0 bg-zinc-900 z-[20]">
                                                              <tr className="border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
                                                                 <th className="py-2 px-3 font-bold w-[12%]">Valid From</th>
                                                                 <th className="py-2 px-3 font-bold w-[12%]">Valid To</th>

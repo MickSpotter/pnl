@@ -4,12 +4,13 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { DriverPerformance, DriverStatus, SimulationConfig, ExpenseItem, FinImportRecord } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../utils';
-import { Sliders, LayoutList, PieChart, DollarSign, TrendingUp, BarChart3, LineChart, Maximize2, X, History, Filter, Info, ChevronDown, ChevronRight, Check, LayoutDashboard, Activity, Truck, Container, AlertTriangle } from 'lucide-react';
+import { Sliders, LayoutList, PieChart, DollarSign, TrendingUp, BarChart3, LineChart, Maximize2, X, History, Filter, Info, ChevronDown, ChevronRight, Check, LayoutDashboard, Activity, Truck, Container, AlertTriangle, Eye, EyeOff, AlignLeft, AlignRight, Columns as ColumnsIcon } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import SimulationModal from './SimulationModal';
 import HistoricalChart, { ChartSeries } from './HistoricalChart';
 import Simulator from './Simulator';
 import TableFilter, { FilterRule } from './TableFilter';
+import { ColumnsEditor } from './Columns';
 
 let hasPlayedInitialAnimations = false;
 
@@ -90,14 +91,200 @@ const MasterTable: React.FC<{
   chartData?: any[],
   isAverageView?: boolean,
   searchQuery?: string,
-  configContracts?: any[]
-}> = ({ companyMetrics, drivers, calculateMetrics, totalActiveCount, selectedDate, groupBy, chartData = [], isAverageView = false, searchQuery = '', configContracts = [] }) => {
+  configContracts?: any[],
+  tableColumns?: any[]
+}> = ({ companyMetrics, drivers, calculateMetrics, totalActiveCount, selectedDate, groupBy, chartData = [], isAverageView = false, searchQuery = '', configContracts = [], tableColumns = [] }) => {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'name', direction: 'asc' });
       const [isRevColExpanded, setIsRevColExpanded] = useState(false);
       const [isPoModalOpen, setIsPoModalOpen] = useState(false);
       const [isExpModalOpen, setIsExpModalOpen] = useState(false);
+      const tableRef = useRef<HTMLTableElement>(null);
 
-      const requestSort = (key: string) => {
+      React.useLayoutEffect(() => {
+        if (!tableRef.current || !tableColumns.length) return;
+        const table = tableRef.current;
+        table.style.borderCollapse = 'collapse';
+        const headers = Array.from(table.querySelectorAll('thead th'));
+        
+        const headerMap = new Map();
+        const usedIndices = new Set();
+        
+        const sortedColsForMatching = [...tableColumns].sort((a, b) => b.label.length - a.label.length);
+        
+        headers.forEach((th, index) => {
+           const text = th.textContent?.replace(/[↑↓]/g, '').trim() || '';
+           const matchedCol = sortedColsForMatching.find(col => text === col.label || text === col.id || text.startsWith(col.label) || text.startsWith(col.id));
+           if (matchedCol && !usedIndices.has(index)) {
+               headerMap.set(matchedCol.id, index);
+               usedIndices.add(index);
+           }
+        });
+        
+        const rows = Array.from(table.querySelectorAll('tr'));
+        const originalOrder = new Map();
+        const originalStyles = new Map();
+        
+        rows.forEach(row => {
+            const children = Array.from(row.children);
+            originalOrder.set(row, children);
+            children.forEach((cell: any) => {
+                if (!originalStyles.has(cell)) {
+                    originalStyles.set(cell, {
+                        display: cell.style.display,
+                        position: cell.style.position,
+                        left: cell.style.left,
+                        right: cell.style.right,
+                        zIndex: cell.style.zIndex,
+                        backgroundColor: cell.style.backgroundColor
+                    });
+                }
+                cell.style.display = '';
+                cell.style.position = '';
+                cell.style.left = '';
+                cell.style.right = '';
+                cell.style.zIndex = '';
+                cell.style.backgroundColor = '';
+            });
+        });
+
+        const leftCols = tableColumns.filter(c => c.pinned === 'left' && !c.hidden).sort((a, b) => (a.pinTime || 0) - (b.pinTime || 0));
+        const rightCols = tableColumns.filter(c => c.pinned === 'right' && !c.hidden).sort((a, b) => (b.pinTime || 0) - (a.pinTime || 0));
+        const midCols = tableColumns.filter(c => !c.pinned && !c.hidden);
+        const hiddenCols = tableColumns.filter(c => c.hidden);
+
+        const orderedIndices: number[] = [];
+        const addIdx = (colId: string) => {
+            if (headerMap.has(colId)) {
+                const idx = headerMap.get(colId);
+                if (!orderedIndices.includes(idx)) orderedIndices.push(idx);
+            }
+        };
+
+        leftCols.forEach(c => addIdx(c.id));
+        midCols.forEach(c => addIdx(c.id));
+        rightCols.forEach(c => addIdx(c.id)); 
+        
+        headers.forEach((_, idx) => {
+            if (!orderedIndices.includes(idx)) {
+                let isHidden = false;
+                hiddenCols.forEach(hc => {
+                    if (headerMap.get(hc.id) === idx) isHidden = true;
+                });
+                if (!isHidden) orderedIndices.push(idx);
+            }
+        });
+
+        rows.forEach(row => {
+            if (row.children.length !== headers.length) return;
+            const cells = originalOrder.get(row);
+            orderedIndices.forEach(idx => {
+                if (cells[idx]) row.appendChild(cells[idx]);
+            });
+            hiddenCols.forEach(col => {
+                if (headerMap.has(col.id)) {
+                    const idx = headerMap.get(col.id);
+                    if (cells[idx]) cells[idx].style.display = 'none';
+                }
+            });
+        });
+
+        let currentLeft = 0;
+        leftCols.forEach((col, cIdx) => {
+            if (headerMap.has(col.id)) {
+                const idx = headerMap.get(col.id);
+                const headerCell = originalOrder.get(rows[0])[idx] as HTMLElement;
+                const colWidth = headerCell ? headerCell.offsetWidth : 0;
+                
+                rows.forEach(row => {
+                    if (row.children.length !== headers.length) return;
+                    const cells = originalOrder.get(row);
+                    const cell = cells[idx] as HTMLElement;
+                    if (cell && cell.style.display !== 'none') {
+                        const isHeader = row.parentElement?.tagName.toLowerCase() === 'thead';
+                        const isFooter = row.parentElement?.tagName.toLowerCase() === 'tfoot';
+                        
+                        cell.style.position = 'sticky';
+                        cell.style.left = cIdx === 0 ? '0px' : `${currentLeft - cIdx}px`;
+                        cell.style.backgroundColor = '#09090b';
+                        
+                        if (isHeader) {
+                            cell.style.zIndex = '70';
+                        } else if (isFooter) {
+                            cell.style.zIndex = '60';
+                        } else {
+                            cell.style.zIndex = '40';
+                            cell.classList.add('hover:!z-[100]', 'group-hover:bg-zinc-900/60');
+                        }
+                        
+                        if (cIdx === leftCols.length - 1) {
+                            cell.classList.add('shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]');
+                        }
+                    }
+                });
+                currentLeft += colWidth;
+            }
+        });
+
+        let currentRight = 0;
+        [...rightCols].reverse().forEach((col, cIdx) => {
+            if (headerMap.has(col.id)) {
+                const idx = headerMap.get(col.id);
+                const headerCell = originalOrder.get(rows[0])[idx] as HTMLElement;
+                const colWidth = headerCell ? headerCell.offsetWidth : 0;
+                
+                rows.forEach(row => {
+                    if (row.children.length !== headers.length) return;
+                    const cells = originalOrder.get(row);
+                    const cell = cells[idx] as HTMLElement;
+                    if (cell && cell.style.display !== 'none') {
+                        const isHeader = row.parentElement?.tagName.toLowerCase() === 'thead';
+                        const isFooter = row.parentElement?.tagName.toLowerCase() === 'tfoot';
+                        
+                        cell.style.position = 'sticky';
+                        cell.style.right = cIdx === 0 ? '0px' : `${currentRight - cIdx}px`;
+                        cell.style.backgroundColor = '#09090b';
+                        
+                        if (isHeader) {
+                            cell.style.zIndex = '70';
+                        } else if (isFooter) {
+                            cell.style.zIndex = '60';
+                        } else {
+                            cell.style.zIndex = '40';
+                            cell.classList.add('hover:!z-[100]', 'group-hover:bg-zinc-900/60');
+                        }
+                        
+                        if (cIdx === rightCols.length - 1) {
+                            cell.classList.add('shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)]');
+                        }
+                    }
+                });
+                currentRight += colWidth;
+            }
+        });
+
+        return () => {
+            table.style.borderCollapse = '';
+            rows.forEach(row => {
+                const originalCells = originalOrder.get(row);
+                if (originalCells) {
+                    originalCells.forEach((cell: HTMLElement) => {
+                        const orig = originalStyles.get(cell);
+                        if (orig) {
+                            cell.style.display = orig.display;
+                            cell.style.position = orig.position;
+                            cell.style.left = orig.left;
+                            cell.style.right = orig.right;
+                            cell.style.zIndex = orig.zIndex;
+                            cell.style.backgroundColor = orig.backgroundColor;
+                                    }
+                                    row.appendChild(cell);
+                                });
+                            }
+                        });
+                    };
+                  }, [tableColumns, isAverageView, isRevColExpanded, selectedDate, drivers, sortConfig, groupBy]);
+
+                  const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'desc';
     if (sortConfig && sortConfig.key === key && sortConfig.direction === 'desc') {
       direction = 'asc';
@@ -170,7 +357,7 @@ const MasterTable: React.FC<{
             insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0,
             fcTruck: 0, fcTrailer: 0, fcPlates: 0, fcTelematics: 0, fcPhone: 0, fcOffice: 0, fcRent: 0, fcBackupMc: 0, fcBoReg: 0, fcBoTech: 0, fcFactoring: 0,
             pnlCompanyPay: 0, pnlFuelRebate: 0, pnlAllocatedFixed: 0, pnlTotalPOCov: 0, pnlTotalRecruiting: 0, pnlTolls: 0,
-            pnlRevBase: 0, pnlFranchiseBase: 0, pnlPoDeductions: 0, pnlPoSettle: 0, pnlNegNetPay: 0, pnlStrictNegNetPay: 0, pnlBalanceSettle: 0, pnlBalanceChange: 0, pnlTruckFloat: 0, pnlTruckWkly: 0, pnlOccIns: 0, pnlEld: 0, pnlIfta: 0, pnlMaintSupport: 0, pnlLiability: 0, pnlTruckPhd: 0, pnlTrailer: 0, pnlTrailerPhd: 0, pnlEscrowAdj: 0, pnlTollsAdj: 0, pnlCashAdv: 0, pnlCpmAdj: 0, pnlFuelAdj: 0, pnlProrated: 0, pnlZeroMiDrop: 0,
+            pnlRevBase: 0, pnlFranchiseBase: 0, pnlPoDeductions: 0, pnlPoSettle: 0, pnlNegNetPay: 0, pnlStrictNegNetPay: 0, pnlBalanceSettle: 0, pnlBalanceChange: 0, pnlExcludedBalanceChange: 0, pnlIncludedBalanceChange: 0, pnlTruckFloat: 0, pnlTruckWkly: 0, pnlOccIns: 0, pnlEld: 0, pnlIfta: 0, pnlMaintSupport: 0, pnlLiability: 0, pnlTruckPhd: 0, pnlTrailer: 0, pnlTrailerPhd: 0, pnlEscrowAdj: 0, pnlTollsAdj: 0, pnlCashAdv: 0, pnlCpmAdj: 0, pnlFuelAdj: 0, pnlProrated: 0, pnlZeroMiDrop: 0,
             poBreakdown: {}
           };
           driversByName.forEach((drvRecords) => {
@@ -587,27 +774,61 @@ const MasterTable: React.FC<{
             </td>
           <td className="group/balchange relative hover:z-[99999] px-1 py-0.5 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
             {val(rowBalChange, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(rowBalChange, div)))}
-            <div className="fixed hidden group-hover/balchange:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+            <div className="fixed hidden group-hover/balchange:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[280px] pointer-events-none flex flex-col gap-1 dynamic-tooltip whitespace-normal break-words">
               <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Balance Change Breakdown:</div>
               <div className="flex justify-between"><span>PO Deductions:</span><span className="font-mono">{formatCurrency(val(metrics.pnlPoDeductions, div))}</span></div>
               <div className="flex justify-between"><span>PO Settle:</span><span className="font-mono">{formatCurrency(val(metrics.pnlPoSettle, div))}</span></div>
               <div className="flex justify-between"><span>Net Pay:</span><span className="font-mono">{val(groupBy === 'Driver' ? (metrics.netPay || metrics.driverPay) : metrics.pnlStrictNegNetPay, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(groupBy === 'Driver' ? (metrics.netPay || metrics.driverPay) : metrics.pnlStrictNegNetPay, div)))}</span></div>
               {groupBy !== 'Driver' && <div className="text-[9px] text-zinc-400 italic mt-0.5 leading-tight">* Shows only negative net pay.</div>}
               <div className="flex justify-between mt-0.5"><span>Balance Settle:</span><span className="font-mono">{formatCurrency(val(metrics.pnlBalanceSettle, div))}</span></div>
-              {rowDrivers.some(d => d.contractType === 'MCLOO') && (
-                <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1">
-                  * MCLOO contract: Multiplied by 0.3
-                </div>
-              )}
-              {rowName !== 'TPOG (Franchise PnL)' && rowDrivers.some(d => d.contractType === 'TPOG') && (
-                <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1">
-                  * TPOG: Applies to non-franchise only
-                </div>
-              )}
               <div className="flex justify-between border-t border-zinc-600 mt-1 pt-1 font-bold text-white">
                 <span>Total:</span>
                 <span className="font-mono">{formatCurrency(val(rowBalChange, div))}</span>
               </div>
+              {((groupBy === 'Contract' && (rowName === 'TPOG' || rowName === 'TPOG (Franchise PnL)')) ||
+                ((groupBy === 'Company' || groupBy === 'Franchise' || groupBy === 'Team') && rowDrivers.some(d => d.contractType === 'MCLOO' || (d.contractType === 'TPOG' && !!d.franchiseId))) ||
+                (groupBy === 'Driver' && rowDrivers.some(d => d.contractType === 'MCLOO' || (d.contractType === 'TPOG' && !!d.franchiseId)))) && (
+                <div className="flex flex-col gap-1 mt-1 border-t border-zinc-700 pt-1">
+                  {groupBy === 'Contract' && rowName === 'TPOG' && (
+                      <span className="text-[9px] text-amber-400 italic leading-tight">
+                          * Note: Balance Change is calculated only for non-franchise TPOG, but the displayed figure is the full amount (including TPOG with franchise).
+                      </span>
+                  )}
+                  {groupBy === 'Contract' && rowName === 'TPOG (Franchise PnL)' && (
+                      <span className="text-[9px] text-emerald-400 italic leading-tight">
+                          * Note: The full balance change is calculated here and this income/expense is borne by the franchise.
+                      </span>
+                  )}
+                  {(groupBy === 'Company' || groupBy === 'Franchise' || groupBy === 'Team') && (
+                      <>
+                          {rowDrivers.some(d => d.contractType === 'MCLOO') && (
+                              <span className="text-[9px] text-amber-400 italic leading-tight">
+                                  * Note: MCLOO contract amounts are multiplied by 0.3.
+                              </span>
+                          )}
+                          {rowDrivers.some(d => d.contractType === 'TPOG' && !!d.franchiseId) && (
+                              <span className="text-[9px] text-amber-400 italic leading-tight">
+                                  * Note: TPOG contracts with a franchise are excluded for the company but included for the franchise.
+                              </span>
+                          )}
+                      </>
+                  )}
+                  {groupBy === 'Driver' && (
+                      <>
+                          {rowDrivers.some(d => d.contractType === 'MCLOO') && (
+                              <span className="text-[9px] text-amber-400 italic leading-tight">
+                                  * Note: Value is multiplied by 0.3.
+                              </span>
+                          )}
+                          {rowDrivers.some(d => d.contractType === 'TPOG' && !!d.franchiseId) && (
+                              <span className="text-[9px] text-amber-400 italic leading-tight">
+                                  * Note: The full balance change applies to the Franchise PnL but is excluded from the Company Revenue Collected calculation.
+                              </span>
+                          )}
+                      </>
+                  )}
+                </div>
+              )}
             </div>
           </td>
           <td className="group/prorated relative hover:z-[99999] px-1 py-0.5 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
@@ -956,7 +1177,7 @@ const MasterTable: React.FC<{
            </div>
          </div>
       )}
-      <table className="w-full min-h-full h-full text-left text-[11px] whitespace-nowrap [&_th:not(.text-right)]:w-[1%] [&_td:not(.text-right)]:w-[1%] [&_th.text-right]:w-[75px] [&_th.text-right]:min-w-[75px] [&_td.text-right]:w-[75px] [&_td.text-right]:min-w-[75px] [&_td.text-right]:overflow-hidden [&_td.text-right]:text-ellipsis">
+      <table ref={tableRef} key={`${groupBy}-${isAverageView}-${isRevColExpanded}-${selectedDate}`} className="w-full min-h-full h-full text-left text-[11px] whitespace-nowrap [&_th:not(.text-right)]:w-[1%] [&_td:not(.text-right)]:w-[1%] [&_th.text-right]:w-[75px] [&_th.text-right]:min-w-[75px] [&_td.text-right]:w-[75px] [&_td.text-right]:min-w-[75px] [&_td.text-right]:overflow-hidden [&_td.text-right]:text-ellipsis">
         <thead className="bg-zinc-950 text-zinc-500 font-medium uppercase sticky top-0 z-[60] shadow-sm select-none">
          <tr>
             <th onClick={() => requestSort('name')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-[10px] sticky left-0 z-30 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)] cursor-pointer hover:text-white">Segment {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
@@ -1221,6 +1442,7 @@ const MasterTable: React.FC<{
         </thead>
         <tbody className="divide-y divide-zinc-800/50 font-mono">
           {groupBy === 'Company' && sortArray(uniqueCompanies, 'Company').map(companyName => {
+            if (isAverageView && companyName === 'Unassigned') return null;
             const compDrivers = groupedDrivers.get(companyName || 'Unassigned') || [];
             const metrics = getAdjustedGroupMetrics(compDrivers);
             const w4 = get4wMetrics(companyName);
@@ -1232,6 +1454,7 @@ const MasterTable: React.FC<{
             );
           })}
          {groupBy === 'Contract' && sortArray(uniqueContracts, 'Contract').map(contractName => {
+            if (isAverageView && contractName === 'Unassigned') return null;
             const compDrivers = groupedDrivers.get(contractName || 'Unassigned') || [];
             let metrics = getAdjustedGroupMetrics(compDrivers);
             let w4 = get4wMetrics(contractName);
@@ -1295,6 +1518,7 @@ const MasterTable: React.FC<{
             );
           })}
          {groupBy === 'Franchise' && sortArray(uniqueFranchises, 'Franchise').map(franchiseName => {
+             if (isAverageView && franchiseName === 'Unassigned') return null;
              const displayLabel = (!franchiseName || franchiseName === 'Unassigned') ? 'No Franchise' : franchiseName;
              const franDrivers = groupedDrivers.get(franchiseName || 'Unassigned') || [];
              const metrics = getAdjustedGroupMetrics(franDrivers);
@@ -1308,6 +1532,7 @@ const MasterTable: React.FC<{
           })}
                      
          {groupBy === 'Team' && sortArray(uniqueTeams, 'Team').map(teamName => {
+            if (isAverageView && teamName === 'Unassigned') return null;
             const displayLabel = (!teamName || teamName === 'Unassigned') ? 'No Team' : teamName;
             const teamDrivers = groupedDrivers.get(teamName || 'Unassigned') || [];
             const metrics = getAdjustedGroupMetrics(teamDrivers);
@@ -1567,19 +1792,28 @@ const MasterTable: React.FC<{
                         </td>
                         <td className="group/balchange relative hover:z-[99999] px-1 py-1 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
                           {val(footerBalChange, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(footerBalChange, div)))}
-                          <div className="fixed hidden group-hover/balchange:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+                          <div className="fixed hidden group-hover/balchange:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[280px] pointer-events-none flex flex-col gap-1 dynamic-tooltip whitespace-normal break-words">
                             <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Balance Change Breakdown:</div>
                             <div className="flex justify-between"><span>PO Deductions:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlPoDeductions, div))}</span></div>
                             <div className="flex justify-between"><span>PO Settle:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlPoSettle, div))}</span></div>
                             <div className="flex justify-between"><span>Net Pay:</span><span className="font-mono">{val(groupBy === 'Driver' ? (dynamicTotals.netPay || dynamicTotals.driverPay) : dynamicTotals.pnlStrictNegNetPay, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(groupBy === 'Driver' ? (dynamicTotals.netPay || dynamicTotals.driverPay) : dynamicTotals.pnlStrictNegNetPay, div)))}</span></div>
                             {groupBy !== 'Driver' && <div className="text-[9px] text-zinc-400 italic mt-0.5 leading-tight">* Shows only negative net pay.</div>}
                             <div className="flex justify-between mt-0.5"><span>Balance Settle:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.pnlBalanceSettle, div))}</span></div>
-                            <div className="text-[9px] text-zinc-400 mt-1 italic border-t border-zinc-700 pt-1">
-                              * Includes 0.3x reduction for MCLOO rows
-                            </div>
                             <div className="flex justify-between border-t border-zinc-600 mt-1 pt-1 font-bold text-white">
                               <span>Total:</span>
                               <span className="font-mono">{formatCurrency(val(footerBalChange, div))}</span>
+                            </div>
+                            <div className="flex flex-col gap-1 mt-1 border-t border-zinc-700 pt-1">
+                                {(drivers || []).some(d => d.contractType === 'MCLOO') && (
+                                    <span className="text-[9px] text-amber-400 italic leading-tight">
+                                        * Note: MCLOO contract amounts are multiplied by 0.3.
+                                    </span>
+                                )}
+                                {(drivers || []).some(d => d.contractType === 'TPOG' && !!d.franchiseId) && (
+                                    <span className="text-[9px] text-amber-400 italic leading-tight">
+                                        * Note: TPOG contracts with a franchise are excluded for the company but included for the franchise.
+                                    </span>
+                                )}
                             </div>
                           </div>
                         </td>
@@ -1806,6 +2040,42 @@ const PnLView: React.FC<PnLViewProps> = ({
   const [selectedEntities, setSelectedEntities] = useState<string[]>(['COMPANY']);
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['netIncome']);
+  const [tableColumns, setTableColumns] = useState<any[]>([
+    { id: 'Segment', label: 'Segment', pinned: 'left', hidden: false },
+    { id: 'Company', label: 'Company', pinned: null, hidden: false },
+    { id: 'Team', label: 'Team', pinned: null, hidden: false },
+    { id: 'Franchise', label: 'Franchise', pinned: null, hidden: false },
+    { id: 'Dispatcher', label: 'Dispatcher', pinned: null, hidden: false },
+    { id: 'Contract', label: 'Contract', pinned: null, hidden: false },
+    { id: 'Eff Drv', label: 'Eff Drv', pinned: null, hidden: false },
+    { id: 'Eff NonTm', label: 'Eff NonTm', pinned: null, hidden: false },
+    { id: 'Eff Trls', label: 'Eff Trls', pinned: null, hidden: false },
+    { id: 'Gross', label: 'Gross', pinned: null, hidden: false },
+    { id: 'Margin', label: 'Margin', pinned: null, hidden: false },
+    { id: 'Net Pay', label: 'Net Pay', pinned: null, hidden: false },
+    { id: 'Med. Net Pay', label: 'Med. Net Pay', pinned: null, hidden: false },
+    { id: 'Disp. Pay', label: 'Disp. Pay', pinned: null, hidden: false },
+    { id: 'Ins. Exp.', label: 'Ins. Exp.', pinned: null, hidden: false },
+    { id: 'Fuel', label: 'Fuel', pinned: null, hidden: false },
+    { id: 'Rev. Col.', label: 'Rev. Col.', pinned: null, hidden: false },
+    { id: 'Rev Base', label: 'Rev Base', pinned: null, hidden: false },
+    { id: 'Bal Change', label: 'Bal Change', pinned: null, hidden: false },
+    { id: 'Rev Prorated', label: 'Rev Prorated', pinned: null, hidden: false },
+    { id: '0 Mi Cap', label: '0 Mi Cap', pinned: null, hidden: false },
+    { id: 'Escrow Adj', label: 'Escrow Adj', pinned: null, hidden: false },
+    { id: 'Tolls Adj', label: 'Tolls Adj', pinned: null, hidden: false },
+    { id: 'Cash Adv', label: 'Cash Adv', pinned: null, hidden: false },
+    { id: 'CPM Adj', label: 'CPM Adj', pinned: null, hidden: false },
+    { id: 'Fuel Adj', label: 'Fuel Adj', pinned: null, hidden: false },
+    { id: 'Fuel Reb.', label: 'Fuel Reb.', pinned: null, hidden: false },
+    { id: 'Wkly Exp.', label: 'Wkly Exp.', pinned: null, hidden: false },
+    { id: 'Tolls', label: 'Tolls', pinned: null, hidden: false },
+    { id: 'PO', label: 'PO', pinned: null, hidden: false },
+    { id: 'Recruiting', label: 'Recruiting', pinned: null, hidden: false },
+    { id: 'PnL 4w', label: 'PnL 4w', pinned: null, hidden: false },
+    { id: '4w Avg', label: '4w Avg', pinned: null, hidden: false },
+    { id: 'Total PnL', label: 'Total PnL', pinned: 'right', hidden: false }
+  ]);
 
   const uniqueDates = useMemo(() => {
     const dates = Array.from(new Set(drivers.map(d => d.payDate).filter(Boolean)));
@@ -2834,6 +3104,8 @@ const PnLView: React.FC<PnLViewProps> = ({
                       case 'Gross': fieldValue = d.grossRevenue; break;
                       case 'Margin': fieldValue = d.marginAmount; break;
                       case 'Miles': fieldValue = Number(d.milesDriven) || 0; break;
+                      case 'Net Pay': fieldValue = d.netPay ?? 0; break;
+                      case 'Med Net Pay': fieldValue = d.netPay ?? 0; break;
                       case 'Disp. Pay': fieldValue = d.dispatcherCommission || 0; break;
                       case 'Ins. Exp.': fieldValue = (d as any).insuranceCost || 0; break;
                       case 'Fuel': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : Math.abs(d.fuelSavings || 0); break;
@@ -3117,6 +3389,8 @@ if (isCategorical) {
     let pnlStrictNegNetPay = 0;
     let pnlBalanceSettle = 0;
     let pnlBalanceChange = 0;
+    let pnlExcludedBalanceChange = 0;
+    let pnlIncludedBalanceChange = 0;
     let pnlTruckFloat = 0;
     let pnlTruckWkly = 0;
     let pnlOccIns = 0;
@@ -3273,11 +3547,11 @@ if (isCategorical) {
 
                 drvRevBase = rBase;
             } else {
-                drvPoDeductions = 0;
-                drvPoSettle = 0;
-                drvNegNetPay = 0;
-                drvBalanceSettle = 0;
-                drvBalanceChange = 0;
+                drvPoDeductions = -poDed;
+                drvPoSettle = poSet;
+                drvNegNetPay = nPay < 0 ? nPay : 0;
+                drvBalanceSettle = balSet;
+                drvBalanceChange = drvPoDeductions + drvPoSettle + drvNegNetPay + drvBalanceSettle;
                 
                 drvEscrowAdj = 0;
                 drvCashAdv = dCash;
@@ -3333,7 +3607,11 @@ if (isCategorical) {
         drvZeroMiDrop = 0;
         if (dMiles === 0) {
             const prorated = drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd;
-            const preDrop = (d as any).isFranchiseStub ? (rBase + drvBalanceChange + prorated) : (drvRevBase + drvBalanceChange + prorated);
+            let effectiveBalChangeForPreDrop = drvBalanceChange;
+            if (isFranchise && !(d as any).isFranchiseStub) {
+                 effectiveBalChangeForPreDrop = 0;
+            }
+            const preDrop = (d as any).isFranchiseStub ? (rBase + effectiveBalChangeForPreDrop + prorated) : (drvRevBase + effectiveBalChangeForPreDrop + prorated);
             if (preDrop > 0) {
                 drvZeroMiDrop = -preDrop;
             }
@@ -3356,6 +3634,13 @@ if (isCategorical) {
         pnlStrictNegNetPay += drvStrictNegNetPay * companyTakeMulti;
         pnlBalanceSettle += drvBalanceSettle * companyTakeMulti;
         pnlBalanceChange += drvBalanceChange * companyTakeMulti;
+        
+        if (isFranchise && !(d as any).isFranchiseStub) {
+            pnlExcludedBalanceChange += drvBalanceChange * companyTakeMulti;
+        } else {
+            pnlIncludedBalanceChange += drvBalanceChange * companyTakeMulti;
+        }
+        
         pnlTruckFloat += drvTruckFloat * companyTakeMulti;
         pnlTruckWkly += drvTruckWkly * companyTakeMulti;
         pnlOccIns += drvOccIns * companyTakeMulti;
@@ -3395,7 +3680,7 @@ if (isCategorical) {
       insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate, poBreakdown,
       fcTruck, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring,
       pnlCompanyPay, pnlFuelRebate, pnlAllocatedFixed, pnlTotalPOCov, pnlTotalRecruiting, pnlTolls,
-      pnlRevBase, pnlFranchiseBase, pnlPoDeductions, pnlPoSettle, pnlNegNetPay, pnlStrictNegNetPay, pnlBalanceSettle, pnlBalanceChange, pnlTruckFloat, pnlTruckWkly, pnlOccIns, pnlEld, pnlIfta, pnlMaintSupport, pnlLiability, pnlTruckPhd, pnlTrailer, pnlTrailerPhd, pnlEscrowAdj, pnlTollsAdj, pnlCashAdv, pnlCpmAdj, pnlFuelAdj, pnlProrated, pnlZeroMiDrop
+      pnlRevBase, pnlFranchiseBase, pnlPoDeductions, pnlPoSettle, pnlNegNetPay, pnlStrictNegNetPay, pnlBalanceSettle, pnlBalanceChange, pnlExcludedBalanceChange, pnlIncludedBalanceChange, pnlTruckFloat, pnlTruckWkly, pnlOccIns, pnlEld, pnlIfta, pnlMaintSupport, pnlLiability, pnlTruckPhd, pnlTrailer, pnlTrailerPhd, pnlEscrowAdj, pnlTollsAdj, pnlCashAdv, pnlCpmAdj, pnlFuelAdj, pnlProrated, pnlZeroMiDrop
     };
   }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems, configContracts]);
 
@@ -3902,6 +4187,23 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
       };
   }, [allDrivers, drivers, selectedDate, latestPayDate, calculateMetrics]);
 
+  const activeColIds = useMemo(() => {
+    const ids = ['Segment', 'Gross', 'Margin', 'Net Pay', 'Disp. Pay', 'Ins. Exp.', 'Fuel', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Recruiting', 'Total PnL'];
+    if (!isAverageView && groupBy === 'Driver') {
+      ids.push('Company', 'Team', 'Franchise', 'Dispatcher', 'Contract');
+    }
+    if (!isAverageView) {
+      ids.push('Eff Drv', 'Eff NonTm', 'Eff Trls');
+    }
+    if (groupBy !== 'Driver') {
+      ids.push('Med. Net Pay');
+    }
+    if (selectedDate !== 'ALL') {
+      ids.push('PnL 4w', '4w Avg');
+    }
+    return ids;
+  }, [isAverageView, groupBy, selectedDate]);
+
   return (
     <div className="flex flex-col h-full gap-2">
       <SimulationModal 
@@ -3954,8 +4256,11 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                     />
                  </div>
                  <div className="flex items-center gap-2">
+                    <div className="w-[140px] h-[28px]">
+                    <ColumnsEditor columns={tableColumns} setColumns={setTableColumns} activeIds={activeColIds} />
+                 </div>
                     <div className="w-[140px] h-[28px] [&>div]:w-full [&>div]:h-full [&_button]:w-full [&_button]:h-full">
-                       <TableFilter 
+                       <TableFilter
                          filters={tableFilters} 
                          setFilters={setTableFilters} 
                          optionsMap={{
@@ -3967,17 +4272,20 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                          }}
                        />
                     </div>
-                   <select
-                     value={groupBy}
-                     onChange={(e) => setGroupBy(e.target.value as any)}
-                     className="bg-zinc-950 border border-zinc-800 rounded px-2 text-zinc-300 font-sans text-xs focus:outline-none focus:border-emerald-500 w-[140px] h-[28px]"
-                   >
-                     <option value="Contract">By Contract</option>
-                     <option value="Company">By Company</option>
-                     <option value="Franchise">By Franchise</option>
-                     <option value="Team">By Team</option>
-                     {!isAverageView && <option value="Driver">By Driver</option>}
-                   </select>
+                   <div className="relative flex items-center">
+                     <Eye size={12} className="absolute left-2 text-zinc-500 pointer-events-none" />
+                     <select
+                       value={groupBy}
+                       onChange={(e) => setGroupBy(e.target.value as any)}
+                       className="bg-zinc-950 border border-zinc-800 rounded pl-6 pr-2 text-zinc-300 font-sans text-xs focus:outline-none focus:border-emerald-500 w-[140px] h-[28px]"
+                     >
+                       <option value="Contract">By Contract</option>
+                       <option value="Company">By Company</option>
+                       <option value="Franchise">By Franchise</option>
+                       <option value="Team">By Team</option>
+                       {!isAverageView && <option value="Driver">By Driver</option>}
+                     </select>
+                   </div>
                    <button
                      onClick={() => {
                         setIsAverageView(!isAverageView);
@@ -4007,6 +4315,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                     isAverageView={isAverageView}
                     searchQuery={searchQuery}
                     configContracts={configContracts}
+                    tableColumns={tableColumns}
                  />
               </div>
            </div>
@@ -4067,8 +4376,11 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                  />
               </div>
               <div className="flex items-center gap-2">
+                 <div className="w-[130px] h-[26px]">
+                   <ColumnsEditor columns={tableColumns} setColumns={setTableColumns} activeIds={activeColIds} />
+                 </div>
                  <div className="w-[130px] h-[26px] [&>div]:w-full [&>div]:h-full [&_button]:w-full [&_button]:h-full">
-                   <TableFilter 
+                   <TableFilter
                      filters={tableFilters} 
                      setFilters={setTableFilters} 
                      optionsMap={{
@@ -4080,17 +4392,20 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                      }}
                    />
                  </div>
-                 <select
-                   value={groupBy}
-                   onChange={(e) => setGroupBy(e.target.value as any)}
-                   className="bg-zinc-950 border border-zinc-800 rounded px-2 text-zinc-300 font-sans text-[10px] focus:outline-none focus:border-emerald-500 w-[130px] h-[26px]"
-                 >
-                   <option value="Contract">By Contract</option>
-                   <option value="Company">By Company</option>
-                   <option value="Franchise">By Franchise</option>
-                   <option value="Team">By Team</option>
-                   {!isAverageView && <option value="Driver">By Driver</option>}
-                 </select>
+                 <div className="relative flex items-center">
+                   <Eye size={10} className="absolute left-2 text-zinc-500 pointer-events-none" />
+                   <select
+                     value={groupBy}
+                     onChange={(e) => setGroupBy(e.target.value as any)}
+                     className="bg-zinc-950 border border-zinc-800 rounded pl-6 pr-2 text-zinc-300 font-sans text-[10px] focus:outline-none focus:border-emerald-500 w-[130px] h-[26px]"
+                   >
+                     <option value="Contract">By Contract</option>
+                     <option value="Company">By Company</option>
+                     <option value="Franchise">By Franchise</option>
+                     <option value="Team">By Team</option>
+                     {!isAverageView && <option value="Driver">By Driver</option>}
+                   </select>
+                 </div>
                  <button
                    onClick={() => {
                       setIsAverageView(!isAverageView);
@@ -4120,6 +4435,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                 isAverageView={isAverageView}
                 searchQuery={searchQuery}
                 configContracts={configContracts}
+                tableColumns={tableColumns}
             />
           </div>
           <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col min-h-0 overflow-hidden">
@@ -5434,17 +5750,20 @@ const finalTrailerInterchangePerUnit = filteredNT > 0 ? finalTrailerInterchangeT
                        Detailed PNL History
                     </h2>
                     <div className="flex items-center gap-3">
-                       <select
-                         value={pnlHistoryGroupBy}
-                         onChange={(e) => {
-                             setPnlHistoryGroupBy(e.target.value as any);
-                         }}
-                         className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-zinc-300 font-sans text-xs focus:outline-none focus:border-emerald-500 w-32"
-                       >
-                         <option value="Contract">By Contract</option>
-                         <option value="Company">By Company</option>
-                         <option value="Team">By Team</option>
-                       </select>
+                       <div className="relative flex items-center">
+                         <Eye size={12} className="absolute left-2 text-zinc-500 pointer-events-none" />
+                         <select
+                           value={pnlHistoryGroupBy}
+                           onChange={(e) => {
+                               setPnlHistoryGroupBy(e.target.value as any);
+                           }}
+                           className="bg-zinc-950 border border-zinc-800 rounded pl-6 pr-2 py-1 text-zinc-300 font-sans text-xs focus:outline-none focus:border-emerald-500 w-32"
+                         >
+                           <option value="Contract">By Contract</option>
+                           <option value="Company">By Company</option>
+                           <option value="Team">By Team</option>
+                         </select>
+                       </div>
                        <button
                          onClick={() => setIsPnlHistoryAverageView(!isPnlHistoryAverageView)}
                          className={`px-3 py-1 rounded text-[10px] font-bold border transition-colors ${isPnlHistoryAverageView ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
