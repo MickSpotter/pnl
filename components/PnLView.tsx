@@ -485,12 +485,7 @@ const MasterTable: React.FC<{
           }));
           if (tpogFranchiseDrivers.length > 0) {
               const fMetrics: any = getAggregatedMetrics(tpogFranchiseDrivers);
-              const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'driverPay'];
-              Object.keys(fMetrics).forEach(k => {
-                  if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
-                      fMetrics[k] = fMetrics[k] / 2;
-                  }
-              });
+              fMetrics.netIncome = fMetrics.netIncome / 2;
               metrics.netIncome -= fMetrics.netIncome;
               metrics.pnlPerDriver = metrics.effNonTeams > 0 ? metrics.netIncome / metrics.effNonTeams : 0;
               metrics.isAdjusted = true;
@@ -543,13 +538,7 @@ const MasterTable: React.FC<{
         if (tpogFranchiseDrivers.length > 0) {
             const rawF = getAggregatedMetrics(tpogFranchiseDrivers);
             const fMetrics: any = { ...rawF };
-            const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj', 'driverPay'];
-            
-            Object.keys(fMetrics).forEach(k => {
-                if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
-                    fMetrics[k] = fMetrics[k] / 2;
-                }
-            });
+            fMetrics.netIncome = fMetrics.netIncome / 2;
 
             t.netIncome -= fMetrics.netIncome;
             t.pnlPerDriver = t.effNonTeams > 0 ? t.netIncome / t.effNonTeams : 0;
@@ -837,7 +826,7 @@ const MasterTable: React.FC<{
           <td className="group/prorated relative hover:z-[99999] px-1 py-0.5 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
             {val(metrics.pnlProrated, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlProrated, div)))}
             <div className="fixed hidden group-hover/prorated:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
-              <div className="font-bold text-emerald-300 border-b border-zinc-600 pb-1 mb-1">Prorated Fixed Costs{rowName === 'TPOG (Franchise PnL)' ? ' (/ 2)' : ''}:</div>
+              <div className="font-bold text-emerald-300 border-b border-zinc-600 pb-1 mb-1">Prorated Fixed Costs:</div>
               <div className="flex justify-between"><span>Truck Float:</span><span className="font-mono">{formatCurrency(val(metrics.pnlTruckFloat, div))}</span></div>
               <div className="flex justify-between"><span>Truck Weekly:</span><span className="font-mono">{formatCurrency(val(metrics.pnlTruckWkly, div))}</span></div>
               <div className="flex justify-between"><span>Occ Ins:</span><span className="font-mono">{formatCurrency(val(metrics.pnlOccIns, div))}</span></div>
@@ -929,11 +918,7 @@ const MasterTable: React.FC<{
                 * Note: Shown values are 100%. The total column figure is obtained by multiplying these by 0.3.
               </div>
             )}
-            {rowName === 'TPOG (Franchise PnL)' && (
-              <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1 leading-tight">
-                * Note: Shown values are 100%. The total column figure is obtained by multiplying these by 0.5.
-              </div>
-            )}
+            
           </div>
         )}
       </td>
@@ -945,7 +930,7 @@ const MasterTable: React.FC<{
         {metrics.isAdjusted && (
           <div className="fixed hidden group-hover/tpogpnl:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
             <span className="font-bold text-emerald-400">TPOG PnL Explanation:</span>
-            The columns in this row display the full amount (100%) including the franchise share. However, the Total PnL represents the net PnL for TPOG, as the franchise share (50%) has already been deducted.
+            The columns in this row display the full amount (100%) including the franchise share. However, the Total PnL represents the net PnL for TPOG, calculated as TPOG - TPOG(Franchise PnL)/2.
           </div>
         )}
       </td>
@@ -1001,15 +986,15 @@ const MasterTable: React.FC<{
                   const pb = fMetrics.poBreakdown || {};
                   const pbDivided: any = {};
                   Object.keys(pb).forEach(k => {
-                      pbDivided[k] = Number(pb[k]) / 2;
+                      pbDivided[k] = Number(pb[k]);
                       allReasons.add(k);
                   });
-                  const div = (fMetrics.effNonTeamsCount > 0 ? fMetrics.effNonTeamsCount : fMetrics.effCount) / 2;
+                  const div = fMetrics.effNonTeamsCount > 0 ? fMetrics.effNonTeamsCount : fMetrics.effCount;
               rowData.push({
                   name: 'TPOG (Franchise PnL)',
                   breakdown: pbDivided,
                   div: div,
-                  total: val((fMetrics.pnlTotalPOCov !== undefined ? fMetrics.pnlTotalPOCov : fMetrics.totalPOCov) / 2, div)
+                  total: val(fMetrics.pnlTotalPOCov !== undefined ? fMetrics.pnlTotalPOCov : fMetrics.totalPOCov, div)
               });
           }
       }
@@ -1079,9 +1064,9 @@ const MasterTable: React.FC<{
                 const fMetrics = getAggregatedMetrics(tpogFranchiseDrivers);
                 const breakdown: any = {};
                 columns.forEach(col => {
-                    breakdown[col] = (fMetrics[col] || 0) / 2;
+                    breakdown[col] = fMetrics[col] || 0;
                 });
-                const div = (fMetrics.effNonTeamsCount > 0 ? fMetrics.effNonTeamsCount : fMetrics.effCount) / 2;
+                const div = fMetrics.effNonTeamsCount > 0 ? fMetrics.effNonTeamsCount : fMetrics.effCount;
                 const totalExp = columns.reduce((sum, col) => sum + (breakdown[col] || 0), 0);
                 
                 rowData.push({
@@ -1257,9 +1242,7 @@ const MasterTable: React.FC<{
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                 <div className="font-bold text-white mb-0.5">Dispatcher Pay:</div>
                 <div>Displays the amount paid to the dispatcher from gross and margin. For MCLOO contracts, it also includes the dispatcher's share of Liability Insurance (Auto).</div>
-                <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                  TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
-                </div>
+                
               </div>
             </th>
            <th onClick={() => requestSort('insuranceExp')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
@@ -1267,9 +1250,7 @@ const MasterTable: React.FC<{
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                 <div className="font-bold text-white mb-0.5">Insurance Expenses:</div>
                 <div>Shows the company's expenses on insurances.</div>
-                <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                  TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
-                </div>
+               
               </div>
            </th>
                  <th onClick={() => requestSort('fuel')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300">
@@ -1280,9 +1261,7 @@ const MasterTable: React.FC<{
                        <li><span className="font-semibold text-emerald-400">Positive Values (Fuel Saved):</span> For MCLOO, OO, LOO, LPOO, MCOO contracts. <br/>Calculation: <span className="font-mono text-[9px]">(Retail Price - Discounted Price) * Quantity</span></li>
                        <li><span className="font-semibold text-rose-400">Negative Values (Fuel Spent):</span> For TPOG, POG, CPM &amp; Others. <br/>Calculation: <span className="font-mono text-[9px]">Discounted Price * Quantity</span></li>
                      </ul>
-                     <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                       TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
-                     </div>
+                    
                    </div>
                  </th>
                  <th onClick={() => requestSort('companyPay')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
@@ -1332,7 +1311,7 @@ const MasterTable: React.FC<{
                 </div>
                 <div className="mt-2 text-amber-400 font-semibold border-t border-zinc-600 pt-1 flex flex-col gap-0.5">
                   <span>TPOG (Franchise PnL):</span>
-                  <span className="text-zinc-300 font-normal text-[9px]">The franchise share row fully applies Steps 1-3 (including all balances), is subjected to the Zero-Mile Cap, and then receives post-cap adjustments. The final calculated total is then divided by 2 (50/50 split).</span>
+                  <span className="text-zinc-300 font-normal text-[9px]">The franchise share row fully applies Steps 1-3 (including all balances), is subjected to the Zero-Mile Cap, and then receives post-cap adjustments.</span>
                 </div>
               </div>
             </th>
@@ -1357,9 +1336,7 @@ const MasterTable: React.FC<{
                      <div className="text-zinc-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-700">
                        Fuel Rebate = Fuel Quantity × $ Amount
                      </div>
-                     <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                       TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
-                     </div>
+                     
                    </div>
                  </th>
            <th onClick={() => requestSort('allocatedFixed')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
@@ -1377,9 +1354,7 @@ const MasterTable: React.FC<{
                   <span className="font-semibold text-white">Proration Rule:</span><br/>
                   <div className="pl-2 mt-0.5">Once the Base Fixed Cost is calculated, it is prorated based on the days worked:<br/><span className="text-emerald-400 font-mono">Result = Base Fixed Cost * (Days Worked / 7.0)</span></div>
                 </div>
-                <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                  TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
-                </div>
+                
               </div>
             
             </th>
@@ -1393,9 +1368,7 @@ const MasterTable: React.FC<{
                           <li><span className="font-semibold text-blue-300">Exception (MCLOO):</span> Tolls are completely skipped (Result = 0).</li>
                           <li><span className="font-semibold text-blue-300">All Other Contracts:</span> The full toll amount is applied.<br/><span className="text-emerald-400 font-mono text-[9px]">Result = Toll Amount</span></li>
                         </ul>
-                        <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                          TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
-                        </div>
+                       
                       </div>
                     </th>
                    <th onClick={() => requestSort('totalPOCov')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
@@ -1405,7 +1378,7 @@ const MasterTable: React.FC<{
                      <div className="text-zinc-300">This column shows the total Purchase Order amount covered by the company. Note: Execution priority goes from top to bottom.</div>
                      <div className="font-semibold text-white mt-1">Calculation Rules:</div>
                      <ul className="list-none flex flex-col gap-1.5">
-                       <li className="pl-2 border-l-2 border-rose-500"><span className="font-semibold text-rose-300">1. TPOG Contracts:</span><br/>Company Share: If expense reason includes 'Hotel' or 'Flights/Car' &rarr; <span className="text-emerald-400 font-mono text-[9px]">Result = 0</span><br/>Franchise Share &rarr; <span className="text-emerald-400 font-mono text-[9px]">Result = (PO Amount - Deduction Amount) / 2</span></li>
+                       <li className="pl-2 border-l-2 border-rose-500"><span className="font-semibold text-rose-300">1. TPOG Contracts:</span><br/>Company Share: If expense reason includes 'Hotel' or 'Flights/Car' &rarr; <span className="text-emerald-400 font-mono text-[9px]">Result = 0</span><br/>Franchise Share &rarr; <span className="text-emerald-400 font-mono text-[9px]">Result = PO Amount - Deduction Amount</span></li>
                        <li className="pl-2 border-l-2 border-purple-500"><span className="font-semibold text-purple-300">2. MCLOO Contract:</span><br/><span className="text-emerald-400 font-mono text-[9px]">Result = (PO Amount - Deduction Amount) * 0.3</span></li>
                        <li className="pl-2 border-l-2 border-blue-500"><span className="font-semibold text-blue-300">3. 'Company Pay' &amp; Fuel Charges:</span><br/>If charge category is 'Company Pay', 'Deduction to MC', or Fuel costs ('CADV', 'SCLE'):<br/><span className="text-emerald-400 font-mono text-[9px]">Result = Full PO Amount</span></li>
                        <li className="pl-2 border-l-2 border-zinc-500"><span className="font-semibold text-zinc-300">4. Standard Calculation (All Others):</span><br/><span className="text-emerald-400 font-mono text-[9px]">Result = PO Amount - Deduction Amount</span></li>
@@ -1417,9 +1390,7 @@ const MasterTable: React.FC<{
                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[300px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                      <div className="font-bold text-white mb-0.5">Recruiting Cost Calculation:</div>
                      <div>Total recruiting cost from financial import for the specific contract type (CPM, MCLOO, OO, POG) divided by total effective non-teams for that contract, then multiplied by the individual driver's effective non-teams count.</div>
-                     <div className="mt-2 text-rose-300 font-semibold border-t border-zinc-600 pt-1">
-                       TPOG (Franchise PnL): <span className="text-zinc-300 font-normal">The final result is divided by 2 (50/50 split).</span>
-                     </div>
+                    
                    </div>
                  </th>
                  {show4w && <th onClick={() => requestSort('w4Sum')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-orange-300 text-[10px] cursor-pointer hover:text-orange-200 !overflow-visible">
@@ -1484,14 +1455,7 @@ const MasterTable: React.FC<{
                if (franchiseStubs.length > 0) {
                        const rawMetrics = getAggregatedMetrics(franchiseStubs);
                        fMetrics = { ...rawMetrics };
-                       
-                       const doNotDivide = ['rawEffCount', 'effCount', 'effNonTeamsCount', 'effTrailersCount', 'gross', 'margin', 'effNonTeams', 'pnlPerDriver', 'pnlEscrowAdj', 'driverPay'];
-                       
-                       Object.keys(fMetrics).forEach(k => {
-                           if (!doNotDivide.includes(k) && typeof fMetrics[k] === 'number') {
-                               fMetrics[k] = fMetrics[k] / 2;
-                           }
-                       });
+                       fMetrics.netIncome = fMetrics.netIncome / 2;
                    
                    franchiseW4 = get4wMetrics('TPOG (Franchise PnL)');
 
@@ -1513,7 +1477,7 @@ const MasterTable: React.FC<{
                            <div className="group/fran_info flex items-center cursor-help">
                              <Info size={12} className="text-amber-500/70 hover:text-amber-400 transition-colors" />
                              <div className="fixed hidden group-hover/fran_info:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] whitespace-normal w-56 pointer-events-none ml-4 mt-6 font-normal normal-case text-left">
-                               This row displays the 50% franchise share of costs and revenues for the TPOG contract. The values represent exclusively the portion paid and earned by the franchise.
+                               This row displays the full amount (100%) of the TPOG contract with franchise, which includes the portion paid and earned by the franchise.
                              </div>
                            </div>
                          </div>
@@ -4093,13 +4057,13 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
           });
           byName.forEach(recs => {
             const m = calculateMetrics(recs, true);
-            fGross += m.gross / 2;
-            fMargin += m.margin / 2;
-            fCompanyPay += (m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay || 0)) / 2;
-            fAllocatedFixed += (m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed || 0)) / 2;
-            fTolls += Math.abs(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls || 0)) / 2;
-            fTotalPOCov += Math.abs(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov || 0)) / 2;
-            fTotalRecruiting += Math.abs(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting || 0)) / 2;
+            fGross += m.gross;
+            fMargin += m.margin;
+            fCompanyPay += m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay || 0);
+            fAllocatedFixed += m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed || 0);
+            fTolls += Math.abs(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls || 0));
+            fTotalPOCov += Math.abs(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov || 0));
+            fTotalRecruiting += Math.abs(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting || 0));
             tNet += m.netIncome / 2;
           });
           row['TPOG (Franchise PnL)_netIncome'] = tNet;
