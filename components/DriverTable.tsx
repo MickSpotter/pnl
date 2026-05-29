@@ -107,84 +107,84 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
       iss.push({ label: "Driver has less than 7 working days (average calculation unavailable)", diff: 0, severity: "neutral" });
       const emptyStats = [
         { name: 'Gross', val: null, fleet: targetAvg.gross || 0, diff: 0, severity: 'neutral' },
-        { name: 'Revenue', val: null, fleet: targetAvg.rev || 0, diff: 0, severity: 'neutral' }
+        { name: 'Margin', val: null, fleet: targetAvg.margin || 0, diff: 0, severity: 'neutral' },
+        { name: 'Net Pay', val: null, fleet: targetAvg.netPay || 0, diff: 0, severity: 'neutral' },
+        { name: 'Disp. Pay', val: null, fleet: targetAvg.dispPay || 0, diff: 0, severity: 'neutral' },
+        { name: 'Ins. Exp.', val: null, fleet: targetAvg.insExp || 0, diff: 0, severity: 'neutral' },
+        { name: 'Fuel', val: null, fleet: targetAvg.fuel || 0, diff: 0, severity: 'neutral' },
+        { name: 'Rev. Col.', val: null, fleet: targetAvg.rev || 0, diff: 0, severity: 'neutral' },
+        { name: 'Fuel Reb.', val: null, fleet: targetAvg.fuelRebate || 0, diff: 0, severity: 'neutral' },
+        { name: 'Wkly Exp.', val: null, fleet: targetAvg.wklyExp || 0, diff: 0, severity: 'neutral' },
+        { name: 'Tolls', val: null, fleet: targetAvg.tolls || 0, diff: 0, severity: 'neutral' },
+        { name: 'PO', val: null, fleet: targetAvg.poCov || 0, diff: 0, severity: 'neutral' },
+        { name: 'Recruiting', val: null, fleet: targetAvg.recruiting || 0, diff: 0, severity: 'neutral' },
+        { name: 'PnL', val: null, fleet: targetAvg.pnl || 100, diff: 0, severity: 'neutral' }
       ];
-      if (primaryContract !== 'MCLOO') {
-        emptyStats.push({ name: 'PO Co Cov', val: null, fleet: targetAvg.poCov || 0, diff: 0, severity: 'neutral' });
-      }
-      emptyStats.push({ name: 'Fuel', val: null, fleet: targetAvg.fuel || 0, diff: 0, severity: 'neutral' });
-      emptyStats.push({ name: 'PnL', val: null, fleet: targetAvg.pnl || 500, diff: 0, severity: 'neutral' });
-
       return { issues: iss, perfStats: emptyStats };
     }
 
-    const grossRecs = fullWeeks.filter((r: any) => (r.totalGross || 0) !== 0);
-    const avgGross = grossRecs.length > 0 ? grossRecs.reduce((s: number, r: any) => s + (r.totalGross || 0), 0) / grossRecs.length : 0;
-    
-    const revRecs = fullWeeks.filter((r: any) => (r.companyPay || 0) !== 0);
-    const avgRev = revRecs.length > 0 ? revRecs.reduce((s: number, r: any) => s + (r.companyPay || 0), 0) / revRecs.length : 0;
-    
-    const poRecs = fullWeeks.filter((r: any) => (r.poCoverage ? -Math.abs(r.poCoverage) : 0) !== 0);
-    const avgPOCov = poRecs.length > 0 ? poRecs.reduce((s: number, r: any) => s + (r.poCoverage ? -Math.abs(r.poCoverage) : 0), 0) / poRecs.length : 0;
-    
-    const pnlRecs = fullWeeks.filter((r: any) => ((r.companyPay || 0) - Math.abs(r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)) !== 0);
-    const avgPnL = pnlRecs.length > 0 ? pnlRecs.reduce((s: number, r: any) => s + ((r.companyPay || 0) - Math.abs(r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)), 0) / pnlRecs.length : 0;
-
+    const applyDiv = (r: any) => (r.contractType === 'TPOG' && !!r.franchiseId) ? 0.5 : 1;
+    const mclooMult = (r: any) => r.contractType === 'MCLOO' ? 0.3 : 1;
+    const avgGross = filteredRecords.reduce((s: number, r: any) => s + ((r.totalGross || r.grossRevenue || 0) * applyDiv(r)), 0) / count;
+    const avgMargin = filteredRecords.reduce((s: number, r: any) => s + ((r.marginAmount || 0) * applyDiv(r)), 0) / count;
+    const avgNetPay = filteredRecords.reduce((s: number, r: any) => s + ((r.netPay || 0) * applyDiv(r)), 0) / count;
+    const avgDispPay = filteredRecords.reduce((s: number, r: any) => s + ((r.dispatcherCommission || 0) * applyDiv(r)), 0) / count;
+    const avgInsExp = filteredRecords.reduce((s: number, r: any) => s + (((r.liability || 0) + (r.cargo_insurance || 0) + (r.physical_damage || 0)) * applyDiv(r)), 0) / count;
     const sumMiles = filteredRecords.reduce((s: number, r: any) => s + (r.milesDriven || 0), 0);
-    const totalFuelSpend = filteredRecords.reduce((s: number, r: any) => s + ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)), 0);
-    const avgFuel = sumMiles > 0 ? totalFuelSpend / sumMiles : 0;
+    const avgFuel = sumMiles > 0 ? filteredRecords.reduce((s: number, r: any) => s + (((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)) * applyDiv(r)), 0) / sumMiles : 0;
+    const avgRev = filteredRecords.reduce((s: number, r: any) => s + ((r.companyPay || 0) * applyDiv(r)), 0) / count;
+    const avgFuelReb = filteredRecords.reduce((s: number, r: any) => s + (((r.fuel_quantity || 0) * 0.20) * applyDiv(r)), 0) / count;
+    const avgWklyExp = filteredRecords.reduce((s: number, r: any) => s + ((r.calculatedFixedCost || r.fixed_costs || 0) * applyDiv(r)), 0) / count;
+    const avgTolls = filteredRecords.reduce((s: number, r: any) => s + (Math.abs(r.tollCost || 0) * (r.contractType === 'MCLOO' ? 0 : 1)), 0) / count;
+    const avgPO = filteredRecords.reduce((s: number, r: any) => s + ((r.poCoverage ? -Math.abs(r.poCoverage) : 0) * mclooMult(r) * applyDiv(r)), 0) / count;
+    const avgRecruiting = filteredRecords.reduce((s: number, r: any) => s + ((r.recruitingCost || 0) * applyDiv(r)), 0) / count;
+    const avgPnL = filteredRecords.reduce((s: number, r: any) => s + (((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)) * applyDiv(r)), 0) / count;
 
-    const tGross = 4000;
-    const tRev = targetAvg.rev || 400;
-    const tPoCov = targetAvg.poCov || 0;
-    const tFuel = targetAvg.fuel || -0.50;
-    const tPnL = 100;
-
-    const diffGross = tGross > 0 ? ((avgGross - tGross) / Math.abs(tGross)) * 100 : 0;
-    const diffRev = tRev > 0 ? ((avgRev - tRev) / Math.abs(tRev)) * 100 : 0;
-    const diffPOCov = tPoCov !== 0 ? ((avgPOCov - tPoCov) / Math.abs(tPoCov)) * 100 : (avgPOCov < -50 ? ((avgPOCov - (-50)) / 50) * 100 : 0);
-    const diffFuel = tFuel !== 0 ? ((avgFuel - tFuel) / Math.abs(tFuel)) * 100 : (avgFuel < -0.5 ? ((avgFuel - (-0.5)) / 0.5) * 100 : 0);
-    const diffPnL = tPnL > 0 ? ((avgPnL - tPnL) / Math.abs(tPnL)) * 100 : 0;
-
-    const getSeverity = (diff: number) => {
-      if (diff >= 5) return 'good';
-      if (diff >= -5) return 'neutral';
-      if (diff >= -15) return 'warning';
-      return 'critical';
-    };
-
-    const sGross = getSeverity(diffGross);
-    const sRev = avgRev < 0 ? 'critical' : (avgRev <= 50 ? 'warning' : (avgRev <= 200 ? 'neutral' : 'good'));
-    const sPOCov = getSeverity(diffPOCov);
-    const sFuel = diffFuel <= -50 ? 'critical' : (diffFuel <= -30 ? 'warning' : (diffFuel >= 5 ? 'good' : 'neutral'));
-    const sPnL = getSeverity(diffPnL);
-
-    if (sRev === 'critical') iss.push({ label: "Low Rev Coll. Avg", diff: diffRev, severity: "critical" });
-    else if (sRev === 'warning') iss.push({ label: "Slightly Low Rev Coll. Avg", diff: diffRev, severity: "warning" });
-
-    if (sGross === 'critical') iss.push({ label: "Low Gross Avg", diff: diffGross, severity: "critical" });
-    else if (sGross === 'warning') iss.push({ label: "Slightly Low Gross Avg", diff: diffGross, severity: "warning" });
-
-    if (primaryContract !== 'MCLOO') {
-      if (sPOCov === 'critical') iss.push({ label: "Low PO Co Cov", diff: diffPOCov, severity: "critical" });
-      else if (sPOCov === 'warning') iss.push({ label: "Slightly Low PO Co Cov", diff: diffPOCov, severity: "warning" });
-    }
-
-    if (sFuel === 'critical') iss.push({ label: "Low Fuel Avg", diff: diffFuel, severity: "critical" });
-    else if (sFuel === 'warning') iss.push({ label: "Slightly Low Fuel Avg", diff: diffFuel, severity: "warning" });
-
-    if (sPnL === 'critical') iss.push({ label: "Low PnL Avg", diff: diffPnL, severity: "critical" });
-    else if (sPnL === 'warning') iss.push({ label: "Slightly Low PnL Avg", diff: diffPnL, severity: "warning" });
-    
-    const perfStats = [
-      { name: 'Gross', val: avgGross, fleet: tGross, diff: diffGross, severity: sGross },
-      { name: 'Revenue', val: avgRev, fleet: tRev, diff: diffRev, severity: sRev },
+    const metrics = [
+      { name: 'Gross', val: avgGross, fleet: 4000, invert: false },
+      { name: 'Margin', val: avgMargin, fleet: targetAvg.margin || 0, invert: false },
+      { name: 'Net Pay', val: avgNetPay, fleet: targetAvg.netPay || 0, invert: false },
+      { name: 'Disp. Pay', val: avgDispPay, fleet: targetAvg.dispPay || 0, invert: false },
+      { name: 'Ins. Exp.', val: avgInsExp, fleet: targetAvg.insExp || 0, invert: true },
+      { name: 'Fuel', val: avgFuel, fleet: targetAvg.fuel || -0.5, invert: false, isFuel: true },
+      { name: 'Rev. Col.', val: avgRev, fleet: targetAvg.rev || 400, invert: false },
+      { name: 'Fuel Reb.', val: avgFuelReb, fleet: targetAvg.fuelRebate || 0, invert: false },
+      { name: 'Wkly Exp.', val: avgWklyExp, fleet: targetAvg.wklyExp || 0, invert: true },
+      { name: 'Tolls', val: avgTolls, fleet: targetAvg.tolls || 0, invert: true },
+      { name: 'PO', val: avgPO, fleet: targetAvg.poCov || 0, invert: false },
+      { name: 'Recruiting', val: avgRecruiting, fleet: targetAvg.recruiting || 0, invert: true },
+      { name: 'PnL', val: avgPnL, fleet: 100, invert: false }
     ];
-    if (primaryContract !== 'MCLOO') {
-      perfStats.push({ name: 'PO Co Cov', val: avgPOCov, fleet: tPoCov, diff: diffPOCov, severity: sPOCov });
-    }
-    perfStats.push({ name: 'Fuel', val: avgFuel, fleet: tFuel, diff: diffFuel, severity: sFuel });
-    perfStats.push({ name: 'PnL', val: avgPnL, fleet: tPnL, diff: diffPnL, severity: sPnL });
+
+    const perfStats = metrics.map(m => {
+        let diff = 0;
+        if (m.isFuel) {
+            diff = m.fleet !== 0 ? ((m.val - m.fleet) / Math.abs(m.fleet)) * 100 : (m.val < -0.5 ? ((m.val - (-0.5)) / 0.5) * 100 : 0);
+        } else if (m.invert) {
+            diff = m.fleet !== 0 ? ((m.fleet - m.val) / Math.abs(m.fleet)) * 100 : (m.val > 0 ? -100 : 0);
+        } else {
+            diff = m.fleet !== 0 ? ((m.val - m.fleet) / Math.abs(m.fleet)) * 100 : (m.val < -50 && m.name === 'PO' ? ((m.val - (-50)) / 50) * 100 : 0);
+        }
+        
+        let severity = 'neutral';
+        if (m.isFuel) {
+            severity = diff <= -50 ? 'critical' : (diff <= -30 ? 'warning' : (diff >= 5 ? 'good' : 'neutral'));
+        } else {
+            if (diff >= 5) severity = 'good';
+            else if (diff >= -5) severity = 'neutral';
+            else if (diff >= -15) severity = 'warning';
+            else severity = 'critical';
+        }
+        
+        if (m.name === 'Rev. Col.') {
+            severity = m.val < 0 ? 'critical' : (m.val <= 50 ? 'warning' : (m.val <= 200 ? 'neutral' : 'good'));
+        }
+
+        if (severity === 'critical') iss.push({ label: `Low ${m.name} Avg`, diff, severity });
+        else if (severity === 'warning') iss.push({ label: `Slightly Low ${m.name} Avg`, diff, severity });
+
+        return { name: m.name, val: m.val, fleet: m.fleet, diff, severity };
+    });
 
     return { issues: iss, perfStats };
   }, [filteredRecords, fleetAverages, selectedEntity]);
@@ -233,18 +233,23 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
             {issues.some((iss: any) => iss.severity === 'critical') && <AlertTriangle size={10} className="text-rose-500 ml-1" />}
           </div>
         </td>
-        <td className="px-2 py-1 text-right text-zinc-300">{formatCurrency(driver.totalGross)}</td>
-       <td className="px-2 py-1 text-right text-zinc-400">{formatCurrency(driver.marginAmount)}</td>
+        <td className="px-2 py-1 text-right text-yellow-400">{formatCurrency(driver.totalGross)}</td>
+        <td className="px-2 py-1 text-right text-yellow-400 font-medium">{formatCurrency(driver.marginAmount)}</td>
+        <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(driver.netPay)}</td>
+        <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(driver.dispatcherPay)}</td>
+        <td className="px-2 py-1 text-right text-purple-400">-{formatCurrency(Math.abs(driver.insuranceExp))}</td>
+        <td className="px-2 py-1 text-right text-purple-400">{driver.totalFuel < 0 ? `-$${Math.abs(driver.totalFuel).toFixed(2)}` : `$${driver.totalFuel.toFixed(2)}`}</td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.companyPay)}</td>
+        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.fuelRebate)}</td>
+        <td className="px-2 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(driver.wklyExp))}</td>
+        <td className="px-2 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(driver.tollCost))}</td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.poCoverage)}</td>
-        <td className="px-2 py-1 text-right text-zinc-400">
-          {driver.totalFuel < 0 ? `-$${Math.abs(driver.totalFuel).toFixed(2)}` : `$${driver.totalFuel.toFixed(2)}`}
-        </td>
+        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.recruitingCost)}</td>
         <td className={`px-2 py-1 text-right font-bold ${driver.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(driver.totalPnL)}</td>
       </tr>
       {isExpanded && (
         <tr className="bg-zinc-950/50">
-          <td colSpan={8} className="p-4 border-b border-zinc-800">
+          <td colSpan={15} className="p-4 border-b border-zinc-800">
             <div className="flex flex-wrap items-center justify-between bg-zinc-900/40 border border-zinc-800 p-2 rounded mb-3 gap-4">
               <div className="flex items-center gap-6">
                  <div>
@@ -288,8 +293,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
               <div className="flex items-center gap-3">
                 <select value={selectedEntity} onChange={(e) => setSelectedEntity(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none focus:border-emerald-500 w-[140px] cursor-pointer">
                   <option value="TOTAL">View: Total History</option>
-                  {Array.from(new Set(driver.records.map((r:any) => r.contractType))).map(c => <option key={`c-${c}`} value={`CTR:${c as string}`}>Contract: {c as string}</option>)}
-                  {Array.from(new Set(driver.records.map((r:any) => r.companyId))).map(c => <option key={`cmp-${c}`} value={`CMP:${c as string}`}>Company: {c as string}</option>)}
+                  {Array.from(new Set(driver.records.map((r:any) => r.contractType))).filter((c:any) => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c.toUpperCase())).map(c => <option key={`c-${c}`} value={`CTR:${c as string}`}>Contract: {c as string}</option>)}
+                  {Array.from(new Set(driver.records.map((r:any) => r.companyId))).filter((c:any) => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c.toUpperCase())).map(c => <option key={`cmp-${c}`} value={`CMP:${c as string}`}>Company: {c as string}</option>)}
                 </select>
                 <details className="relative group">
                   <summary className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-400 outline-none hover:border-emerald-500 cursor-pointer list-none flex items-center gap-2">
@@ -472,6 +477,12 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           tollCost: 0,
           maintenanceCost: 0,
           driverFaultExpenses: 0,
+          netPay: 0,
+          dispatcherPay: 0,
+          insuranceExp: 0,
+          fuelRebate: 0,
+          wklyExp: 0,
+          recruitingCost: 0,
           tpogPercentages: [],
           contracts: new Set(),
           records: [],
@@ -479,19 +490,29 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
         });
       }
       const agg = map.get(d.name);
-      const pnl = (d.companyPay || 0) - (d.fixed_costs || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tollCost || 0);
+      const isMcloo = d.contractType === 'MCLOO';
+      const isTpogFran = d.contractType === 'TPOG' && !!d.franchiseId;
+      const tpogDiv = isTpogFran ? 0.5 : 1;
+      const mclooMult = isMcloo ? 0.3 : 1;
+      const pnl = ((d.companyPay || 0) - (d.fixed_costs || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tollCost || 0)) * tpogDiv;
 
-      agg.totalGross += (d.totalGross || d.grossRevenue || 0);
-      agg.companyPay += (d.companyPay || 0);
+      agg.totalGross += (d.totalGross || d.grossRevenue || 0) * tpogDiv;
+      agg.companyPay += (d.companyPay || 0) * tpogDiv;
       agg.totalPnL += pnl;
-      agg.marginAmount += (d.marginAmount || 0);
-      agg.poCoverage += d.poCoverage ? -Math.abs(d.poCoverage) : 0;
-      agg.fuelCost += d.fuelCost ? -Math.abs(d.fuelCost) : 0;
-      agg.fuelSavings += (d.fuelSavings || 0);
+      agg.marginAmount += (d.marginAmount || 0) * tpogDiv;
+      agg.poCoverage += (d.poCoverage ? -Math.abs(d.poCoverage) : 0) * mclooMult * tpogDiv;
+      agg.fuelCost += (d.fuelCost ? -Math.abs(d.fuelCost) : 0) * tpogDiv;
+      agg.fuelSavings += (d.fuelSavings || 0) * tpogDiv;
       agg.totalFuel = agg.fuelCost + agg.fuelSavings;
-      agg.tollCost += d.tollCost ? -Math.abs(d.tollCost) : 0;
-      agg.maintenanceCost += (d.maintenanceCost || 0);
-      agg.driverFaultExpenses += (d.driverFaultExpenses || 0);
+      agg.tollCost += (d.tollCost ? -Math.abs(d.tollCost) : 0) * (isMcloo ? 0 : 1);
+      agg.maintenanceCost += (d.maintenanceCost || 0) * tpogDiv;
+      agg.driverFaultExpenses += (d.driverFaultExpenses || 0) * tpogDiv;
+      agg.netPay += (d.netPay || 0) * tpogDiv;
+      agg.dispatcherPay += (d.dispatcherCommission || 0) * tpogDiv;
+      agg.insuranceExp += ((d.liability || 0) + (d.cargo_insurance || 0) + (d.physical_damage || 0)) * tpogDiv;
+      agg.fuelRebate += ((d.fuel_quantity || 0) * 0.20) * tpogDiv;
+      agg.wklyExp += (d.calculatedFixedCost || d.fixed_costs || 0) * tpogDiv;
+      agg.recruitingCost += (d.recruitingCost || 0) * tpogDiv;
       
       if (d.tpogPercentage) agg.tpogPercentages.push(d.tpogPercentage);
       if (d.contractType) agg.contracts.add(d.contractType);
@@ -564,6 +585,12 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           driverFaultExpenses: sumFaults / cFaults,
           totalPnL: sumPnL / cPnL,
           tpogPercentage: sumTpog / cTpog,
+          netPay: agg.netPay / count,
+          dispatcherPay: agg.dispatcherPay / count,
+          insuranceExp: agg.insuranceExp / count,
+          fuelRebate: agg.fuelRebate / count,
+          wklyExp: agg.wklyExp / count,
+          recruitingCost: agg.recruitingCost / count,
           contracts: Array.from(agg.contracts),
           records: agg.records.sort((a: any, b: any) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())
         };
@@ -595,70 +622,71 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
          const cType = r.contractType || 'Unassigned';
          if (!contractAvgs[cType]) {
             contractAvgs[cType] = { 
-               grossSum: 0, grossCount: 0,
-               revSum: 0, revCount: 0,
-               marginSum: 0, marginCount: 0,
-               poCovSum: 0, poCovCount: 0,
-               fuelSum: 0, fuelMilesSum: 0
+               grossSum: 0, grossCount: 0, revSum: 0, revCount: 0, marginSum: 0, marginCount: 0,
+               poCovSum: 0, poCovCount: 0, fuelSum: 0, fuelMilesSum: 0, netPaySum: 0, dispPaySum: 0,
+               insExpSum: 0, fuelRebateSum: 0, wklyExpSum: 0, tollsSum: 0, recruitingSum: 0, pnlSum: 0, pnlCount: 0
             };
          }
          
-         const gross = r.totalGross || 0;
-         if (gross !== 0) { contractAvgs[cType].grossSum += gross; contractAvgs[cType].grossCount += 1; }
-         
-         const rev = r.companyPay || 0;
-         if (rev !== 0) { contractAvgs[cType].revSum += rev; contractAvgs[cType].revCount += 1; }
-         
-         const margin = r.marginAmount || 0;
-         if (margin !== 0) { contractAvgs[cType].marginSum += margin; contractAvgs[cType].marginCount += 1; }
-         
-         const poCov = r.poCoverage ? -Math.abs(r.poCoverage) : 0;
-         if (poCov !== 0) { contractAvgs[cType].poCovSum += poCov; contractAvgs[cType].poCovCount += 1; }
-         
-         const fuelAmt = (r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0);
-         if (fuelAmt !== 0) {
-             contractAvgs[cType].fuelSum += fuelAmt;
-             contractAvgs[cType].fuelMilesSum += (r.milesDriven || 0);
-         }
+         const isMcloo = r.contractType === 'MCLOO';
+         const isTpogFran = r.contractType === 'TPOG' && !!r.franchiseId;
+         const tpogDiv = isTpogFran ? 0.5 : 1;
+         const mclooMult = isMcloo ? 0.3 : 1;
+
+         if (r.totalGross) { contractAvgs[cType].grossSum += r.totalGross * tpogDiv; contractAvgs[cType].grossCount++; }
+         if (r.companyPay) { contractAvgs[cType].revSum += r.companyPay * tpogDiv; contractAvgs[cType].revCount++; }
+         if (r.marginAmount) { contractAvgs[cType].marginSum += r.marginAmount * tpogDiv; contractAvgs[cType].marginCount++; }
+         if (r.poCoverage) { contractAvgs[cType].poCovSum += -Math.abs(r.poCoverage) * mclooMult * tpogDiv; contractAvgs[cType].poCovCount++; }
+         if (r.fuelCost || r.fuelSavings) { contractAvgs[cType].fuelSum += ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)) * tpogDiv; contractAvgs[cType].fuelMilesSum += (r.milesDriven || 0); }
+         if (r.netPay) { contractAvgs[cType].netPaySum += r.netPay * tpogDiv; }
+         if (r.dispatcherCommission) { contractAvgs[cType].dispPaySum += r.dispatcherCommission * tpogDiv; }
+         if (r.liability || r.cargo_insurance || r.physical_damage) { contractAvgs[cType].insExpSum += ((r.liability || 0) + (r.cargo_insurance || 0) + (r.physical_damage || 0)) * tpogDiv; }
+         if (r.fuel_quantity) { contractAvgs[cType].fuelRebateSum += (r.fuel_quantity * 0.20) * tpogDiv; }
+         if (r.calculatedFixedCost || r.fixed_costs) { contractAvgs[cType].wklyExpSum += (r.calculatedFixedCost || r.fixed_costs) * tpogDiv; }
+         if (r.tollCost) { contractAvgs[cType].tollsSum += Math.abs(r.tollCost) * (isMcloo ? 0 : 1); }
+         if (r.recruitingCost) { contractAvgs[cType].recruitingSum += r.recruitingCost * tpogDiv; }
+         contractAvgs[cType].pnlSum += ((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)) * tpogDiv;
+         contractAvgs[cType].pnlCount++;
       });
     });
 
-    const result: Record<string, any> = {
-      'ALL': { gross: 0, rev: 0, margin: 0, poCov: 0, fuel: 0, pnl: 100 }
-    };
-    
-    let tGrossSum = 0, tGrossCount = 0;
-    let tRevSum = 0, tRevCount = 0;
-    let tMarginSum = 0, tMarginCount = 0;
-    let tPoCovSum = 0, tPoCovCount = 0;
-    let tFuelSum = 0, tFuelMilesSum = 0;
+    const result: Record<string, any> = { 'ALL': {} };
+    let totals: any = { grossSum: 0, grossCount: 0, revSum: 0, revCount: 0, marginSum: 0, marginCount: 0, poCovSum: 0, poCovCount: 0, fuelSum: 0, fuelMilesSum: 0, netPaySum: 0, dispPaySum: 0, insExpSum: 0, fuelRebateSum: 0, wklyExpSum: 0, tollsSum: 0, recruitingSum: 0, pnlSum: 0, pnlCount: 0 };
 
     Object.keys(contractAvgs).forEach(k => {
        const a = contractAvgs[k];
-       
-       tGrossSum += a.grossSum; tGrossCount += a.grossCount;
-       tRevSum += a.revSum; tRevCount += a.revCount;
-       tMarginSum += a.marginSum; tMarginCount += a.marginCount;
-       tPoCovSum += a.poCovSum; tPoCovCount += a.poCovCount;
-       tFuelSum += a.fuelSum; tFuelMilesSum += a.fuelMilesSum;
-
+       Object.keys(totals).forEach(tk => totals[tk] += a[tk] || 0);
        result[k] = {
           gross: a.grossCount > 0 ? a.grossSum / a.grossCount : 0,
           rev: a.revCount > 0 ? a.revSum / a.revCount : 0,
           margin: a.marginCount > 0 ? a.marginSum / a.marginCount : 0,
           poCov: a.poCovCount > 0 ? a.poCovSum / a.poCovCount : 0,
           fuel: a.fuelMilesSum > 0 ? a.fuelSum / a.fuelMilesSum : 0,
-          pnl: 100
+          netPay: a.grossCount > 0 ? a.netPaySum / a.grossCount : 0,
+          dispPay: a.grossCount > 0 ? a.dispPaySum / a.grossCount : 0,
+          insExp: a.grossCount > 0 ? a.insExpSum / a.grossCount : 0,
+          fuelRebate: a.grossCount > 0 ? a.fuelRebateSum / a.grossCount : 0,
+          wklyExp: a.grossCount > 0 ? a.wklyExpSum / a.grossCount : 0,
+          tolls: a.grossCount > 0 ? a.tollsSum / a.grossCount : 0,
+          recruiting: a.grossCount > 0 ? a.recruitingSum / a.grossCount : 0,
+          pnl: a.pnlCount > 0 ? a.pnlSum / a.pnlCount : 100
        };
     });
     
     result['ALL'] = {
-        gross: tGrossCount > 0 ? tGrossSum / tGrossCount : 0,
-        rev: tRevCount > 0 ? tRevSum / tRevCount : 0,
-        margin: tMarginCount > 0 ? tMarginSum / tMarginCount : 0,
-        poCov: tPoCovCount > 0 ? tPoCovSum / tPoCovCount : 0,
-        fuel: tFuelMilesSum > 0 ? tFuelSum / tFuelMilesSum : 0,
-        pnl: 100
+        gross: totals.grossCount > 0 ? totals.grossSum / totals.grossCount : 0,
+        rev: totals.revCount > 0 ? totals.revSum / totals.revCount : 0,
+        margin: totals.marginCount > 0 ? totals.marginSum / totals.marginCount : 0,
+        poCov: totals.poCovCount > 0 ? totals.poCovSum / totals.poCovCount : 0,
+        fuel: totals.fuelMilesSum > 0 ? totals.fuelSum / totals.fuelMilesSum : 0,
+        netPay: totals.grossCount > 0 ? totals.netPaySum / totals.grossCount : 0,
+        dispPay: totals.grossCount > 0 ? totals.dispPaySum / totals.grossCount : 0,
+        insExp: totals.grossCount > 0 ? totals.insExpSum / totals.grossCount : 0,
+        fuelRebate: totals.grossCount > 0 ? totals.fuelRebateSum / totals.grossCount : 0,
+        wklyExp: totals.grossCount > 0 ? totals.wklyExpSum / totals.grossCount : 0,
+        tolls: totals.grossCount > 0 ? totals.tollsSum / totals.grossCount : 0,
+        recruiting: totals.grossCount > 0 ? totals.recruitingSum / totals.grossCount : 0,
+        pnl: totals.pnlCount > 0 ? totals.pnlSum / totals.pnlCount : 100
     };
 
     return result;
@@ -784,11 +812,18 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             <tr>
               <th className="px-2 py-1.5 w-6 bg-zinc-900 border-b border-zinc-800"></th>
               <th onClick={() => requestSort('name')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left">Driver</th>
-              <th onClick={() => requestSort('totalGross')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none">Gross{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('marginAmount')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none">Margin{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('companyPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Rev. Collected{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('poCoverage')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">PO Co Cov{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('totalFuel')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 cursor-pointer hover:text-white select-none">Fuel{isAvgPerWeek ? ' / mi' : ''}</th>
+              <th onClick={() => requestSort('totalGross')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none">Gross{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('marginAmount')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none">Margin{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('netPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Net Pay{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('dispatcherPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Disp. Pay{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('insuranceExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Ins. Exp.{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('totalFuel')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Fuel{isAvgPerWeek ? ' / mi' : ''}</th>
+              <th onClick={() => requestSort('companyPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Rev. Col.{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('fuelRebate')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Fuel Reb.{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('wklyExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Wkly Exp.{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('tollCost')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Tolls{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('poCoverage')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">PO{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('recruitingCost')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Recruiting{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('totalPnL')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-white cursor-pointer hover:text-emerald-400 select-none">Total PnL{isAvgPerWeek ? ' / wk' : ''}</th>
             </tr>
           </thead>

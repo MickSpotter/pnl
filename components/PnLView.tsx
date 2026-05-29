@@ -355,7 +355,7 @@ const MasterTable: React.FC<{
             totalEscrow: 0, totalBalance: 0, totalRecruiting: 0, netIncome: 0, effNonTeams: 0, pnlPerDriver: 0,
             driverPay: 0, fuel: 0, maint: 0, tolls: 0, faults: 0, insuranceExp: 0, fuelRebate: 0,
             insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0,
-            fcTruck: 0, fcTrailer: 0, fcPlates: 0, fcTelematics: 0, fcPhone: 0, fcOffice: 0, fcRent: 0, fcBackupMc: 0, fcBoReg: 0, fcBoTech: 0, fcFactoring: 0,
+            fcTruck: 0, fcCpm: 0, fcTrailer: 0, fcPlates: 0, fcTelematics: 0, fcPhone: 0, fcOffice: 0, fcRent: 0, fcBackupMc: 0, fcBoReg: 0, fcBoTech: 0, fcFactoring: 0,
             pnlCompanyPay: 0, pnlFuelRebate: 0, pnlAllocatedFixed: 0, pnlTotalPOCov: 0, pnlTotalRecruiting: 0, pnlTolls: 0,
             pnlRevBase: 0, pnlFranchiseBase: 0, pnlPoDeductions: 0, pnlPoSettle: 0, pnlNegNetPay: 0, pnlStrictNegNetPay: 0, pnlBalanceSettle: 0, pnlBalanceChange: 0, pnlExcludedBalanceChange: 0, pnlIncludedBalanceChange: 0, pnlTruckFloat: 0, pnlTruckWkly: 0, pnlOccIns: 0, pnlEld: 0, pnlIfta: 0, pnlMaintSupport: 0, pnlLiability: 0, pnlTruckPhd: 0, pnlTrailer: 0, pnlTrailerPhd: 0, pnlEscrowAdj: 0, pnlTollsAdj: 0, pnlCashAdv: 0, pnlCpmAdj: 0, pnlFuelAdj: 0, pnlProrated: 0, pnlZeroMiDrop: 0,
             poBreakdown: {}
@@ -404,6 +404,7 @@ const MasterTable: React.FC<{
             t.insPhdTruck += m.insPhdTruck || 0;
             t.insPhdTrailer += m.insPhdTrailer || 0;
             t.fcTruck += m.fcTruck || 0;
+            t.fcCpm += m.fcCpm || 0;
             t.fcTrailer += m.fcTrailer || 0;
             t.fcPlates += m.fcPlates || 0;
             t.fcTelematics += m.fcTelematics || 0;
@@ -479,6 +480,7 @@ const MasterTable: React.FC<{
               poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
               poAmount: (d as any).franchise_po || 0,
               po_breakdown: (d as any).franchise_po_breakdown,
+              ...((d as any).franchise_fixed_breakdown || {}),
               isFranchiseStub: true
           }));
           if (tpogFranchiseDrivers.length > 0) {
@@ -534,7 +536,8 @@ const MasterTable: React.FC<{
             fixed_costs: (d as any).franchise_fixed_costs_full || 0,
             poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
             poAmount: (d as any).franchise_po || 0,
-            po_breakdown: (d as any).franchise_po_breakdown
+            po_breakdown: (d as any).franchise_po_breakdown,
+            ...((d as any).franchise_fixed_breakdown || {})
         }));
         
         if (tpogFranchiseDrivers.length > 0) {
@@ -885,6 +888,7 @@ const MasterTable: React.FC<{
                         {val(metrics.insPhdTruck, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Truck:</span><span className="font-mono">{val(metrics.insPhdTruck, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.insPhdTruck, div)))}</span></div>}
                         {val(metrics.insPhdTrailer, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Trailer:</span><span className="font-mono">{val(metrics.insPhdTrailer, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.insPhdTrailer, div)))}</span></div>}
                         {val(metrics.fcTruck, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Truck Price:</span><span className="font-mono">{val(metrics.fcTruck, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.fcTruck, div)))}</span></div>}
+                        <div className="flex justify-between gap-2 text-zinc-400"><span>CPM:</span><span className="font-mono">{val(metrics.fcCpm, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.fcCpm, div)))}</span></div>
                         {val(metrics.fcTrailer, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Trailer Price:</span><span className="font-mono">{val(metrics.fcTrailer, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.fcTrailer, div)))}</span></div>}
                         {val(metrics.fcPlates, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Plates:</span><span className="font-mono">{val(metrics.fcPlates, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.fcPlates, div)))}</span></div>}
                         {val(metrics.fcTelematics, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Telematics:</span><span className="font-mono">{val(metrics.fcTelematics, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.fcTelematics, div)))}</span></div>}
@@ -989,6 +993,7 @@ const MasterTable: React.FC<{
               poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
               poAmount: (d as any).franchise_po || 0,
               po_breakdown: (d as any).franchise_po_breakdown,
+              ...((d as any).franchise_fixed_breakdown || {}),
               isFranchiseStub: true
           }));
          if (tpogFranchiseDrivers.length > 0) {
@@ -1031,7 +1036,7 @@ const MasterTable: React.FC<{
         else if (groupBy === 'Team') entities = uniqueTeams;
         else if (groupBy === 'Driver') entities = driverRows.map(d => d.name || 'Unassigned');
 
-        const columns = ['insLiabAuto', 'insLiabGen', 'insCargo', 'insLeaseGapCoverage', 'insTrailerInterchange', 'insLago', 'insPhdPremium', 'insPhdTruck', 'insPhdTrailer', 'fcTruck', 'fcTrailer', 'fcPlates', 'fcTelematics', 'fcPhone', 'fcOffice', 'fcRent', 'fcBackupMc', 'fcBoReg', 'fcBoTech', 'fcFactoring'];
+        const columns = ['insLiabAuto', 'insLiabGen', 'insCargo', 'insLeaseGapCoverage', 'insTrailerInterchange', 'insLago', 'insPhdPremium', 'insPhdTruck', 'insPhdTrailer', 'fcTruck', 'fcCpm', 'fcTrailer', 'fcPlates', 'fcTelematics', 'fcPhone', 'fcOffice', 'fcRent', 'fcBackupMc', 'fcBoReg', 'fcBoTech', 'fcFactoring'];
         const rowData: any[] = [];
 
         entities.forEach((entity: string) => {
@@ -1067,6 +1072,7 @@ const MasterTable: React.FC<{
                 fixed_costs: (d as any).franchise_fixed_costs_full || 0,
                 poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
                 poAmount: (d as any).franchise_po || 0,
+                ...((d as any).franchise_fixed_breakdown || {}),
                 isFranchiseStub: true
             }));
             if (tpogFranchiseDrivers.length > 0) {
@@ -1471,6 +1477,7 @@ const MasterTable: React.FC<{
                    poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
                    poAmount: (d as any).franchise_po || 0,
                    po_breakdown: (d as any).franchise_po_breakdown,
+                   ...((d as any).franchise_fixed_breakdown || {}),
                    isFranchiseStub: true
                }));
                
@@ -1872,6 +1879,7 @@ const MasterTable: React.FC<{
                         {val(dynamicTotals.insPhdTruck, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Truck:</span><span className="font-mono">{val(dynamicTotals.insPhdTruck, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.insPhdTruck, div)))}</span></div>}
                         {val(dynamicTotals.insPhdTrailer, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>PhD Trailer:</span><span className="font-mono">{val(dynamicTotals.insPhdTrailer, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.insPhdTrailer, div)))}</span></div>}
                         {val(dynamicTotals.fcTruck, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Truck Price:</span><span className="font-mono">{val(dynamicTotals.fcTruck, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.fcTruck, div)))}</span></div>}
+                        <div className="flex justify-between gap-2 text-zinc-400"><span>CPM:</span><span className="font-mono">{val(dynamicTotals.fcCpm, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.fcCpm, div)))}</span></div>
                         {val(dynamicTotals.fcTrailer, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Trailer Price:</span><span className="font-mono">{val(dynamicTotals.fcTrailer, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.fcTrailer, div)))}</span></div>}
                         {val(dynamicTotals.fcPlates, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Plates:</span><span className="font-mono">{val(dynamicTotals.fcPlates, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.fcPlates, div)))}</span></div>}
                         {val(dynamicTotals.fcTelematics, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Telematics:</span><span className="font-mono">{val(dynamicTotals.fcTelematics, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.fcTelematics, div)))}</span></div>}
@@ -2683,6 +2691,7 @@ const PnLView: React.FC<PnLViewProps> = ({
 
          let company_fixed_full = 0;
          let franchise_fixed_full = 0;
+         let f_breakdown: any = {};
 
          const calculateFixedForType = (type: string) => {
              effContractType = type;
@@ -2780,7 +2789,33 @@ const PnLView: React.FC<PnLViewProps> = ({
          } else {
              company_fixed_full = calculateFixedForType(d.contractType || '');
              if (isGarland) company_fixed_full -= effNT * (truck_weekly + phd_premium + phd + plates);
-             if (isFranchise) franchise_fixed_full = calculateFixedForType('TPOG (Franchise PnL)');
+             if (isFranchise) {
+                 franchise_fixed_full = calculateFixedForType('TPOG (Franchise PnL)');
+                 const prevType = effContractType;
+                 effContractType = 'TPOG (Franchise PnL)';
+                 f_breakdown.insLiabAuto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') * effNT;
+                 f_breakdown.insLiabGen = getFcRule('Liability Insurance (General)', '', '') * effNT;
+                 f_breakdown.insCargo = getFcRule('Cargo Insurance', 'cargo_insurance_custom', 'cargo_insurance') * effNT;
+                 f_breakdown.insLeaseGapCoverage = getFcRule('Lease Gap Coverage', 'lease_gap_coverage_custom', 'lease_gap_coverage') * effNT;
+                 f_breakdown.insTrailerInterchange = getFcRule('Trailer Interchange', 'trailer_interchange_custom', 'trailer_interchange') * effNT;
+                 f_breakdown.insLago = getFcRule('LAGO', 'lago_custom', 'lago') * effNT;
+                 f_breakdown.insPhdPremium = getFcRule('PD Premium', 'pd_premium_custom', 'pd_premium') * effNT;
+                 f_breakdown.insPhdTruck = getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage') * effNT;
+                 f_breakdown.insPhdTrailer = (getFcRule('Physical Damage', 'physical_damage_custom', 'physical_damage') / 4.0) * effTr;
+                 f_breakdown.fcTruck = effNT * Math.max(0, getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly') - getRed('Truck Price', 'truck_reduction', d.companyId || '', effContractType));
+                 f_breakdown.fcCpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm') * (Number(d.milesDriven) || 0);
+                 f_breakdown.fcTrailer = effTr * Math.max(0, getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly') - getRed('Trailer Price', 'trailer_reduction', d.companyId || '', effContractType));
+                 f_breakdown.fcPlates = effNT * getFcRule('Plates', 'plates_custom', 'plates');
+                 f_breakdown.fcTelematics = effNT * getFcRule('Telematics', 'telematics_custom', 'telematics');
+                 f_breakdown.fcPhone = effNT * getFcRule('Phone & Internet', 'phone_and_internet_custom', 'phone_and_internet');
+                 f_breakdown.fcOffice = effNT * getFcRule('Office Supplies', 'office_supplies_custom', 'office_supplies');
+                 f_breakdown.fcRent = effNT * getFcRule('Rent & Parking', 'rent_and_parking_custom', 'rent_and_parking');
+                 f_breakdown.fcBackupMc = effNT * getFcRule('Backup MC', 'backup_mc_custom', 'backup_mc');
+                 f_breakdown.fcBoReg = effNT * getFcRule('Back Office Pay', 'backoffice_reg_custom', 'backoffice_reg');
+                 f_breakdown.fcBoTech = effNT * getFcRule('Tech Pay', 'backoffice_tech_custom', 'backoffice_tech');
+                 f_breakdown.fcFactoring = (driver_gross + margin_amt) * (getFcRule('Factoring', 'factoring_custom', 'factoring') / 100.0);
+                 effContractType = prevType;
+             }
          }
 
          let ins_liab_auto = 0;
@@ -2906,10 +2941,11 @@ const PnLView: React.FC<PnLViewProps> = ({
         const fullSharedLiab = Math.abs(fullSharedLiabAmount);
         const calcDispPay = dispGrossAmount + dispMarginAmount + dispSharedLiab;
 
-        let fc_truck = 0, fc_trailer = 0, fc_plates = 0, fc_telematics = 0, fc_phone = 0, fc_office = 0, fc_rent = 0, fc_backup_mc = 0, fc_bo_reg = 0, fc_bo_tech = 0, fc_factoring = 0;
+        let fc_truck = 0, fc_cpm = 0, fc_trailer = 0, fc_plates = 0, fc_telematics = 0, fc_phone = 0, fc_office = 0, fc_rent = 0, fc_backup_mc = 0, fc_bo_reg = 0, fc_bo_tech = 0, fc_factoring = 0;
 
         if (isOO) {
-            fc_truck = truck_cpm * (Number(d.milesDriven) || 0);
+            fc_truck = 0;
+            fc_cpm = truck_cpm * (Number(d.milesDriven) || 0);
             fc_trailer = trailer_weekly * effTr;
             fc_factoring = (driver_gross + margin_amt) * (factoring / 100.0);
             fc_phone = phone_and_internet * effNT;
@@ -2919,7 +2955,8 @@ const PnLView: React.FC<PnLViewProps> = ({
             fc_bo_reg = backoffice_reg * effNT;
             fc_bo_tech = backoffice_tech * effNT;
         } else if (d.contractType === 'MCLOO') {
-            fc_truck = (effNT * truck_weekly) + (truck_cpm * (Number(d.milesDriven) || 0));
+            fc_truck = (effNT * truck_weekly);
+            fc_cpm = (truck_cpm * (Number(d.milesDriven) || 0));
             fc_trailer = trailer_weekly * effTr;
             fc_plates = plates * effNT;
             fc_telematics = telematics * effNT;
@@ -2931,7 +2968,16 @@ const PnLView: React.FC<PnLViewProps> = ({
             fc_bo_reg = backoffice_reg * effNT;
             fc_bo_tech = backoffice_tech * effNT;
         } else {
-            fc_truck = (effNT * getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly')) + (getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm') * (Number(d.milesDriven) || 0));
+            let current_cpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm');
+            if (isFranchise && (d as any).isFranchiseStub) {
+                const prevType = effContractType;
+                effContractType = 'TPOG (Franchise PnL)';
+                const franchise_cpm = getFcRuleCpm('CPM', 'truck_price_cpm', 'truck_price_cpm');
+                effContractType = prevType;
+                if (franchise_cpm > 0) current_cpm = franchise_cpm;
+            }
+            fc_truck = (effNT * getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly'));
+            fc_cpm = (current_cpm * (Number(d.milesDriven) || 0));
             fc_trailer = effTr * getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
             fc_plates = effNT * getFcRule('Plates', 'plates_custom', 'plates');
             fc_telematics = effNT * getFcRule('Telematics', 'telematics_custom', 'telematics');
@@ -2953,6 +2999,7 @@ const PnLView: React.FC<PnLViewProps> = ({
         result.push({
           ...d,
           fcTruck: fc_truck * cTake,
+          fcCpm: fc_cpm * cTake,
           fcTrailer: fc_trailer * cTake,
           fcPlates: fc_plates * cTake,
           fcTelematics: fc_telematics * cTake,
@@ -2981,6 +3028,7 @@ const PnLView: React.FC<PnLViewProps> = ({
           calculatedFixedCost: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
           fixed_costs: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
           franchise_fixed_costs_full: franchise_fixed_full,
+          franchise_fixed_breakdown: f_breakdown,
           insuranceCost: insurance_costs_calc - fullSharedLiab,
           insLiabAuto: ins_liab_auto * cTake,
           insLiabGen: ins_liab_gen * cTake,
@@ -3379,7 +3427,7 @@ if (isCategorical) {
     let pnlAdjFixed = 0;
     let pnlFuelRebate = 0;
     
-    let fcTruck = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0;
+    let fcTruck = 0, fcCpm = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0;
 
     let pnlRevBase = 0;
     let pnlFranchiseBase = 0;
@@ -3411,6 +3459,7 @@ if (isCategorical) {
     
     initialDrivers.forEach(d => {
         fcTruck += (d as any).fcTruck || 0;
+        fcCpm += (d as any).fcCpm || 0;
         fcTrailer += (d as any).fcTrailer || 0;
         fcPlates += (d as any).fcPlates || 0;
         fcTelematics += (d as any).fcTelematics || 0;
@@ -3678,7 +3727,7 @@ if (isCategorical) {
       numOfTrucks, avgTruckPrice, numOfTrailers, avgTrailerPrice, truckUtilization, trailerUtilization,
       rawFinImportData, effNonTeamsForTrucks: effNonTeamsNoOOCount,
       insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate, poBreakdown,
-      fcTruck, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring,
+      fcTruck, fcCpm, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring,
       pnlCompanyPay, pnlFuelRebate, pnlAllocatedFixed, pnlTotalPOCov, pnlTotalRecruiting, pnlTolls,
       pnlRevBase, pnlFranchiseBase, pnlPoDeductions, pnlPoSettle, pnlNegNetPay, pnlStrictNegNetPay, pnlBalanceSettle, pnlBalanceChange, pnlExcludedBalanceChange, pnlIncludedBalanceChange, pnlTruckFloat, pnlTruckWkly, pnlOccIns, pnlEld, pnlIfta, pnlMaintSupport, pnlLiability, pnlTruckPhd, pnlTrailer, pnlTrailerPhd, pnlEscrowAdj, pnlTollsAdj, pnlCashAdv, pnlCpmAdj, pnlFuelAdj, pnlProrated, pnlZeroMiDrop
     };
@@ -3826,6 +3875,7 @@ if (isCategorical) {
                   fixed_costs: (d as any).franchise_fixed_costs_full || 0,
                   poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
                   poAmount: (d as any).franchise_po || 0,
+                  ...((d as any).franchise_fixed_breakdown || {}),
                   isFranchiseStub: true
               }));
 
@@ -3970,6 +4020,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
               fixed_costs: (d as any).franchise_fixed_costs_full || 0,
               poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
               poAmount: (d as any).franchise_po || 0,
+              ...((d as any).franchise_fixed_breakdown || {}),
               isFranchiseStub: true
           }));
           if (tpogFranchiseDrivers.length > 0) {
@@ -4028,6 +4079,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
           poCoverage: d.franchise_po ? -Math.abs(Number(d.franchise_po)) : 0,
           poAmount: d.franchise_po || 0,
           po_breakdown: d.franchise_po_breakdown,
+          ...(d.franchise_fixed_breakdown || {}),
           isFranchiseStub: true
         }));
         if (franDrivers.length > 0) {
