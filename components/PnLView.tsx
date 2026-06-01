@@ -358,7 +358,8 @@ const MasterTable: React.FC<{
             fcTruck: 0, fcCpm: 0, fcTrailer: 0, fcPlates: 0, fcTelematics: 0, fcPhone: 0, fcOffice: 0, fcRent: 0, fcBackupMc: 0, fcBoReg: 0, fcBoTech: 0, fcFactoring: 0,
             pnlCompanyPay: 0, pnlFuelRebate: 0, pnlAllocatedFixed: 0, pnlTotalPOCov: 0, pnlTotalRecruiting: 0, pnlTolls: 0,
             pnlRevBase: 0, pnlFranchiseBase: 0, pnlPoDeductions: 0, pnlPoSettle: 0, pnlNegNetPay: 0, pnlStrictNegNetPay: 0, pnlBalanceSettle: 0, pnlBalanceChange: 0, pnlExcludedBalanceChange: 0, pnlIncludedBalanceChange: 0, pnlTruckFloat: 0, pnlTruckWkly: 0, pnlOccIns: 0, pnlEld: 0, pnlIfta: 0, pnlMaintSupport: 0, pnlLiability: 0, pnlTruckPhd: 0, pnlTrailer: 0, pnlTrailerPhd: 0, pnlEscrowAdj: 0, pnlTollsAdj: 0, pnlCashAdv: 0, pnlCpmAdj: 0, pnlFuelAdj: 0, pnlProrated: 0, pnlZeroMiDrop: 0,
-            poBreakdown: {}
+            poBreakdown: {},
+            sharedInsBreakdown: {}
           };
           driversByName.forEach((drvRecords) => {
             const m = calculateMetrics(drvRecords, true);
@@ -450,6 +451,12 @@ const MasterTable: React.FC<{
                 Object.entries(m.poBreakdown).forEach(([k, v]) => {
                     if (!t.poBreakdown[k]) t.poBreakdown[k] = 0;
                     t.poBreakdown[k] += Number(v);
+                });
+            }
+            if (m.sharedInsBreakdown) {
+                Object.entries(m.sharedInsBreakdown).forEach(([k, v]) => {
+                    if (!t.sharedInsBreakdown[k]) t.sharedInsBreakdown[k] = 0;
+                    t.sharedInsBreakdown[k] += Number(v);
                 });
             }
           });
@@ -654,15 +661,6 @@ const MasterTable: React.FC<{
           })()}
         </td>
       )}
-      <td className="group/disp relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
-        <span>{val(metrics.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(metrics.dispatcherPay, div))}</span>
-        <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-          <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
-          <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">{formatCurrency(val(metrics.dispGrossAmount, div))}</span></div>
-          <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">{formatCurrency(val(metrics.dispMarginAmount, div))}</span></div>
-          <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(val(metrics.dispSharedLiability, div)))}</span></div>
-        </div>
-      </td>
       <td className="group/ins relative hover:z-[99999] px-1 py-0.5 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
         -{formatCurrency(Math.abs(val(metrics.insuranceExp, div)))}
         <div className="fixed hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -860,6 +858,20 @@ const MasterTable: React.FC<{
           <td className="px-1 py-0.5 text-right text-zinc-400 font-mono">{val(metrics.pnlCashAdv, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlCashAdv, div)))}</td>
           <td className="px-1 py-0.5 text-right text-zinc-400 font-mono">{val(metrics.pnlCpmAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlCpmAdj, div)))}</td>
           <td className="px-1 py-0.5 text-right text-zinc-400 font-mono">{val(metrics.pnlFuelAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(metrics.pnlFuelAdj, div)))}</td>
+          <td className="group/sharedins relative hover:z-[99999] px-1 py-0.5 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+            +{formatCurrency(Math.abs(val(metrics.fullSharedLiability, div)))}
+            {metrics.sharedInsBreakdown && Object.keys(metrics.sharedInsBreakdown).length > 0 && (
+              <div className="fixed hidden group-hover/sharedins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+                <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Shared Ins Breakdown:</div>
+                {Object.entries(metrics.sharedInsBreakdown).map(([comp, amount]: any) => (
+                   <div key={comp} className="flex justify-between gap-4">
+                      <span>{comp}:</span>
+                      <span className="font-mono text-zinc-300">+{formatCurrency(Math.abs(val(Number(amount), div)))}</span>
+                   </div>
+                ))}
+              </div>
+            )}
+          </td>
         </>
       )}
        <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.fuelRebate, div))}</td>
@@ -921,6 +933,15 @@ const MasterTable: React.FC<{
             
           </div>
         )}
+      </td>
+      <td className="group/disp relative hover:z-[99999] px-1 py-0.5 text-right text-blue-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
+        <span>{val(metrics.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(metrics.dispatcherPay, div))}</span>
+        <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+          <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
+          <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">{formatCurrency(val(metrics.dispGrossAmount, div))}</span></div>
+          <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">{formatCurrency(val(metrics.dispMarginAmount, div))}</span></div>
+          <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(val(metrics.dispSharedLiability, div)))}</span></div>
+        </div>
       </td>
        <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.totalRecruiting, div))}</td>
        {show4w && <td className="px-1 py-0.5 text-right font-medium text-orange-300">{isStub ? '-' : formatCurrency(val(w4.sum, div))}</td>}
@@ -1237,14 +1258,6 @@ const MasterTable: React.FC<{
                 <div>The middle value of net earnings across the group, providing a more accurate representation of typical driver pay by eliminating extreme highs or lows.</div>
               </div>
             </th>}
-            <th onClick={() => requestSort('dispatcherPay')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
-              Disp. Pay {sortConfig?.key === 'dispatcherPay' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-              <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-                <div className="font-bold text-white mb-0.5">Dispatcher Pay:</div>
-                <div>Displays the amount paid to the dispatcher from gross and margin. For MCLOO contracts, it also includes the dispatcher's share of Liability Insurance (Auto).</div>
-                
-              </div>
-            </th>
            <th onClick={() => requestSort('insuranceExp')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
               Ins. Exp. {sortConfig?.key === 'insuranceExp' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -1300,6 +1313,7 @@ const MasterTable: React.FC<{
                     <li><span className="font-semibold text-zinc-300">Tolls:</span> Added 100% for OO, LOO, LPOO. Added 30% for MCLOO.</li>
                     <li><span className="font-semibold text-zinc-300">Cash Advance:</span> Added 100% (Excluded for MCLOO).</li>
                     <li><span className="font-semibold text-zinc-300">Revenue CPM:</span> Added Rev CPM * Total Miles.</li>
+                    <li><span className="font-semibold text-zinc-300">Shared Ins:</span> Added Full Shared Liability.</li>
                   </ul>
                 </div>
                 <div className="flex flex-col gap-1">
@@ -1326,6 +1340,7 @@ const MasterTable: React.FC<{
                 <th onClick={() => requestSort('pnlCashAdv')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Cash Adv {sortConfig?.key === 'pnlCashAdv' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
                 <th onClick={() => requestSort('pnlCpmAdj')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">CPM Adj {sortConfig?.key === 'pnlCpmAdj' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
                 <th onClick={() => requestSort('pnlFuelAdj')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Fuel Adj {sortConfig?.key === 'pnlFuelAdj' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
+                <th onClick={() => requestSort('fullSharedLiability')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-zinc-500 text-[10px] cursor-pointer hover:text-zinc-400">Shared Ins {sortConfig?.key === 'fullSharedLiability' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
               </>
             )}
                  <th onClick={() => requestSort('fuelRebate')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
@@ -1385,6 +1400,14 @@ const MasterTable: React.FC<{
                      </ul>
                    </div>
                  </th>
+                 <th onClick={() => requestSort('dispatcherPay')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
+                   Disp. Pay {sortConfig?.key === 'dispatcherPay' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                     <div className="font-bold text-white mb-0.5">Dispatcher Pay:</div>
+                     <div>Displays the amount paid to the dispatcher from gross and margin. For MCLOO contracts, it also includes the dispatcher's share of Liability Insurance (Auto).</div>
+                     
+                   </div>
+                 </th>
                  <th onClick={() => requestSort('totalRecruiting')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
                    Recruiting {sortConfig?.key === 'totalRecruiting' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[300px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -1411,7 +1434,7 @@ const MasterTable: React.FC<{
                    <div className="flex items-center justify-end gap-1">Total PnL {sortConfig?.key === 'netIncome' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</div>
                    <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[320px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                      <div className="font-bold text-white mb-0.5">Total PnL (Net Income) Calculation:</div>
-                     <div className="text-emerald-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-700">PnL = Revenue Collected + Fuel Rebate - Fixed - PO Co Cov - Recruiting - Tolls</div>
+                     <div className="text-emerald-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-700">PnL = Revenue Collected + Fuel Rebate + Disp. Gross/Margin Share - Fixed - PO Co Cov - Recruiting - Tolls</div>
                      <div className="text-[9px] text-zinc-400 mt-1 italic">* Items included in this formula can be dynamically enabled or disabled per contract in the PNL Calculation settings.</div>
                    </div>
                  </th>
@@ -1590,7 +1613,7 @@ const MasterTable: React.FC<{
             {!isAverageView && Array.from({ length: 3 }).map((_, i) => (
               <td key={`empty-counts-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
             ))}
-            {Array.from({ length: isRevColExpanded ? (groupBy === 'Driver' ? 21 : 22) : (groupBy === 'Driver' ? 12 : 13) }).map((_, i) => (
+            {Array.from({ length: isRevColExpanded ? (groupBy === 'Driver' ? 22 : 23) : (groupBy === 'Driver' ? 12 : 13) }).map((_, i) => (
                <td key={`empty-metrics-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
              ))}
             {show4w && <td className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>}
@@ -1651,15 +1674,6 @@ const MasterTable: React.FC<{
                         })()}
                       </td>
                     )}
-                    <td className="group/disp relative hover:z-[99999] px-1 py-1 text-right text-purple-400 font-medium !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
-                      <span>{val(dynamicTotals.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(dynamicTotals.dispatcherPay, div))}</span>
-                      <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-                        <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
-                        <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.dispGrossAmount, div))}</span></div>
-                        <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.dispMarginAmount, div))}</span></div>
-                        <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(val(dynamicTotals.dispSharedLiability, div)))}</span></div>
-                      </div>
-                    </td>
                     <td className="group/ins relative hover:z-[99999] px-1 py-1 text-right text-purple-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
                       -{formatCurrency(Math.abs(val(dynamicTotals.insuranceExp, div)))}
                       <div className="fixed hidden group-hover/ins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
@@ -1826,6 +1840,20 @@ const MasterTable: React.FC<{
                         <td className="px-1 py-1 text-right text-zinc-400 font-mono">{val(dynamicTotals.pnlCashAdv, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlCashAdv, div)))}</td>
                         <td className="px-1 py-1 text-right text-zinc-400 font-mono">{val(dynamicTotals.pnlCpmAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlCpmAdj, div)))}</td>
                         <td className="px-1 py-1 text-right text-zinc-400 font-mono">{val(dynamicTotals.pnlFuelAdj, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlFuelAdj, div)))}</td>
+                        <td className="group/footersharedins relative hover:z-[99999] px-1 py-1 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
+                          +{formatCurrency(Math.abs(val(dynamicTotals.fullSharedLiability, div)))}
+                          {dynamicTotals.sharedInsBreakdown && Object.keys(dynamicTotals.sharedInsBreakdown).length > 0 && (
+                            <div className="fixed hidden group-hover/footersharedins:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
+                              <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Total Shared Ins Breakdown:</div>
+                              {Object.entries(dynamicTotals.sharedInsBreakdown).map(([comp, amount]: any) => (
+                                 <div key={comp} className="flex justify-between gap-4">
+                                    <span>{comp}:</span>
+                                    <span className="font-mono text-zinc-300">+{formatCurrency(Math.abs(val(Number(amount), div)))}</span>
+                                 </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
                       </>
                     )}
                      <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.pnlFuelRebate !== undefined ? dynamicTotals.pnlFuelRebate : dynamicTotals.fuelRebate, div))}</td>
@@ -1877,6 +1905,15 @@ const MasterTable: React.FC<{
                           })}
                         </div>
                       )}
+                    </td>
+                    <td className="group/disp relative hover:z-[99999] px-1 py-1 text-right text-blue-400 font-medium !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
+                      <span>{val(dynamicTotals.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(dynamicTotals.dispatcherPay, div))}</span>
+                      <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[220px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                        <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
+                        <div className="flex justify-between gap-4"><span>Gross Share:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.dispGrossAmount, div))}</span></div>
+                        <div className="flex justify-between gap-4"><span>Margin Share:</span><span className="font-mono">{formatCurrency(val(dynamicTotals.dispMarginAmount, div))}</span></div>
+                        <div className="flex justify-between gap-4"><span>Shared Liability (Auto):</span><span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(val(dynamicTotals.dispSharedLiability, div)))}</span></div>
+                      </div>
                     </td>
                      <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.pnlTotalRecruiting !== undefined ? dynamicTotals.pnlTotalRecruiting : dynamicTotals.totalRecruiting, div))}</td>
                      {show4w && <td className="px-1 py-1 text-right font-medium text-orange-300">{formatCurrency(val(dynamicTotals.w4Sum, div))}</td>}
@@ -2026,7 +2063,6 @@ const PnLView: React.FC<PnLViewProps> = ({
     { id: 'Margin', label: 'Margin', pinned: null, hidden: false },
     { id: 'Net Pay', label: 'Net Pay', pinned: null, hidden: false },
     { id: 'Med. Net Pay', label: 'Med. Net Pay', pinned: null, hidden: false },
-    { id: 'Disp. Pay', label: 'Disp. Pay', pinned: null, hidden: false },
     { id: 'Ins. Exp.', label: 'Ins. Exp.', pinned: null, hidden: false },
     { id: 'Fuel', label: 'Fuel', pinned: null, hidden: false },
     { id: 'Rev. Col.', label: 'Rev. Col.', pinned: null, hidden: false },
@@ -2039,10 +2075,12 @@ const PnLView: React.FC<PnLViewProps> = ({
     { id: 'Cash Adv', label: 'Cash Adv', pinned: null, hidden: false },
     { id: 'CPM Adj', label: 'CPM Adj', pinned: null, hidden: false },
     { id: 'Fuel Adj', label: 'Fuel Adj', pinned: null, hidden: false },
+    { id: 'Shared Ins', label: 'Shared Ins', pinned: null, hidden: false },
     { id: 'Fuel Reb.', label: 'Fuel Reb.', pinned: null, hidden: false },
     { id: 'Wkly Exp.', label: 'Wkly Exp.', pinned: null, hidden: false },
     { id: 'Tolls', label: 'Tolls', pinned: null, hidden: false },
     { id: 'PO', label: 'PO', pinned: null, hidden: false },
+    { id: 'Disp. Pay', label: 'Disp. Pay', pinned: null, hidden: false },
     { id: 'Recruiting', label: 'Recruiting', pinned: null, hidden: false },
     { id: 'PnL 4w', label: 'PnL 4w', pinned: null, hidden: false },
     { id: '4w Avg', label: '4w Avg', pinned: null, hidden: false },
@@ -2526,9 +2564,7 @@ const PnLView: React.FC<PnLViewProps> = ({
         let liabilityAuto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance');
         let sharedInsLiabActive = getActiveAmount('Shared Insurance Liability', date, d.companyId, uniqueCompsInWeek.length);
         let sharedInsLiab = sharedInsLiabActive.amount !== 0 || sharedInsLiabActive.exp ? Math.abs(getWeeklyAmountFromExp(sharedInsLiabActive.amount, sharedInsLiabActive.exp)) : getFcRule('Shared Insurance Liability', 'shared_insurance_liability_custom', 'shared_insurance_liability');
-        if (d.contractType === 'MCLOO') {
-            liabilityAuto = liabilityAuto - sharedInsLiab;
-        }
+        
         let liabilityGeneral = getFcRule('Liability Insurance (General)', '', '');
         let liabilityGlobal = getFcRule('Liability Insurance (Global)', '', '');
         let liability = liabilityAuto + liabilityGlobal;
@@ -2595,10 +2631,9 @@ const PnLView: React.FC<PnLViewProps> = ({
                          if (baseLimit !== undefined && baseLimit !== null && String(baseLimit).trim() !== '') {
                              const limit = Number(baseLimit) || 0;
                              liability = Math.min(totalAmount, limit);
-                         } else {
-                             const sharedVal = Number((matchedExp as any).shared_liability ?? (matchedExp as any).shared_insurance) || 0;
-                             liability = totalAmount - sharedVal;
-                         }
+                        } else {
+                    liability = totalAmount;
+                }
                      } else {
                          liability = liabilityAuto + liabilityGeneral + liabilityGlobal;
                      }
@@ -2800,10 +2835,10 @@ const PnLView: React.FC<PnLViewProps> = ({
              } else {
                  ins_liab_auto = getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') * effNT;
                  if (liabilityGeneral === 0) {
-                     let orig_auto = Math.max(0, getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') - sharedInsLiab + getFcRule('Liability Insurance (Global)', '', ''));
-                     let tot = orig_auto + orig_gen;
-                     ins_liab_gen = tot > 0 ? liability * (orig_gen / tot) * effNT : 0;
-                } else {
+                    let orig_auto = Math.max(0, getFcRule('Liability Insurance (Auto)', 'liability_insurance_custom', 'liability_insurance') + getFcRule('Liability Insurance (Global)', '', ''));
+                    let tot = orig_auto + orig_gen;
+                    ins_liab_gen = tot > 0 ? liability * (orig_gen / tot) * effNT : 0;
+               } else {
                      ins_liab_gen = liabilityGeneral * effNT;
                  }
              }
@@ -2940,9 +2975,9 @@ const PnLView: React.FC<PnLViewProps> = ({
                 effContractType = prevType;
                 if (franchise_cpm > 0) current_cpm = franchise_cpm;
             }
-            fc_truck = (effNT * getFcRule('Truck Price', 'truck_weekly_custom', 'truck_weekly'));
-            fc_cpm = (current_cpm * (Number(d.milesDriven) || 0));
-            fc_trailer = effTr * getFcRule('Trailer Price', 'trailer_weekly_custom', 'trailer_weekly');
+            fc_truck = (effNT * truck_weekly);
+             fc_cpm = (current_cpm * (Number(d.milesDriven) || 0));
+             fc_trailer = effTr * trailer_weekly;
             fc_plates = effNT * getFcRule('Plates', 'plates_custom', 'plates');
             fc_telematics = effNT * getFcRule('Telematics', 'telematics_custom', 'telematics');
             fc_factoring = (driver_gross + margin_amt) * (getFcRule('Factoring', 'factoring_custom', 'factoring') / 100.0);
@@ -2980,7 +3015,7 @@ const PnLView: React.FC<PnLViewProps> = ({
           dispMarginAmount: dispMarginAmount,
           dispSharedLiability: dispSharedLiab,
           fullSharedLiability: fullSharedLiab,
-          companyPay: Number(d.companyPay || 0) * companyTakeMulti,
+          companyPay: (Number(d.companyPay || 0) * companyTakeMulti) + fullSharedLiab,
           tollCost: multipliedTolls,
           calculatedTolls: multipliedTolls,
           tolls: multipliedTolls,
@@ -2993,7 +3028,7 @@ const PnLView: React.FC<PnLViewProps> = ({
           fixed_costs: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
           franchise_fixed_costs_full: franchise_fixed_full,
           franchise_fixed_breakdown: f_breakdown,
-          insuranceCost: insurance_costs_calc - fullSharedLiab,
+          insuranceCost: insurance_costs_calc,
           insLiabAuto: ins_liab_auto * cTake,
           insLiabGen: ins_liab_gen * cTake,
           insCargo: ins_cargo * cTake,
@@ -3138,7 +3173,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                       case 'Recruiting': fieldValue = Math.abs(d.recruitingCost || 0); break;
                       case 'PnL 4w': fieldValue = 0; break;
                       case '4w Avg': fieldValue = 0; break;
-                      case 'Total PnL': fieldValue = (d.companyPay || 0) + ((d as any).fuelRebate || 0) - ((d as any).calculatedFixedCost || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tolls || d.tollCost || 0); break;
+                      case 'Total PnL': fieldValue = (d.companyPay || 0) + ((d as any).fuelRebate || 0) + ((d as any).dispSharedLiability || 0) - ((d as any).calculatedFixedCost || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tolls || d.tollCost || 0); break;
                       default: return true;
                   }
 
@@ -3376,6 +3411,15 @@ if (isCategorical) {
     const dispMarginAmount = initialDrivers.reduce((sum, d) => sum + ((d as any).dispMarginAmount || 0), 0);
     const dispSharedLiability = initialDrivers.reduce((sum, d) => sum + ((d as any).dispSharedLiability || 0), 0);
     const fullSharedLiability = initialDrivers.reduce((sum, d) => sum + ((d as any).fullSharedLiability || 0), 0);
+    const sharedInsBreakdown = initialDrivers.reduce((acc: any, d: any) => {
+        let amt = Number(d.fullSharedLiability || 0);
+        if (amt !== 0) {
+            let comp = d.companyId || 'Unassigned';
+            if (!acc[comp]) acc[comp] = 0;
+            acc[comp] += amt;
+        }
+        return acc;
+    }, {});
 
     let companyPay = 0;
     let tolls = 0;
@@ -3680,7 +3724,7 @@ if (isCategorical) {
     const pnlAllocatedFixed = pnlBaseFixed + pnlAdjFixed;
     const totalFixedPerUnit = effCount > 0 ? (allocatedFixed / effCount) : 0;
 
-    const netIncome = pnlCompanyPay + pnlFuelRebate - pnlAllocatedFixed - Math.abs(pnlTotalPOCov) - Math.abs(pnlTotalRecruiting) - Math.abs(pnlTolls);
+    const netIncome = pnlCompanyPay + pnlFuelRebate + dispGrossAmount + dispMarginAmount - pnlAllocatedFixed - Math.abs(pnlTotalPOCov) - Math.abs(pnlTotalRecruiting) - Math.abs(pnlTolls);
     const pnlPerDriver = effNonTeams > 0 ? netIncome / effNonTeams : 0;
 
     return {
@@ -3690,7 +3734,7 @@ if (isCategorical) {
       effNonTeams, currentPayDate,
       numOfTrucks, avgTruckPrice, numOfTrailers, avgTrailerPrice, truckUtilization, trailerUtilization,
       rawFinImportData, effNonTeamsForTrucks: effNonTeamsNoOOCount,
-      insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate, poBreakdown,
+      insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate, poBreakdown, sharedInsBreakdown,
       fcTruck, fcCpm, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring,
       pnlCompanyPay, pnlFuelRebate, pnlAllocatedFixed, pnlTotalPOCov, pnlTotalRecruiting, pnlTolls,
       pnlRevBase, pnlFranchiseBase, pnlPoDeductions, pnlPoSettle, pnlNegNetPay, pnlStrictNegNetPay, pnlBalanceSettle, pnlBalanceChange, pnlExcludedBalanceChange, pnlIncludedBalanceChange, pnlTruckFloat, pnlTruckWkly, pnlOccIns, pnlEld, pnlIfta, pnlMaintSupport, pnlLiability, pnlTruckPhd, pnlTrailer, pnlTrailerPhd, pnlEscrowAdj, pnlTollsAdj, pnlCashAdv, pnlCpmAdj, pnlFuelAdj, pnlProrated, pnlZeroMiDrop
@@ -4204,7 +4248,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
   }, [allDrivers, drivers, selectedDate, latestPayDate, calculateMetrics]);
 
   const activeColIds = useMemo(() => {
-    const ids = ['Segment', 'Gross', 'Margin', 'Net Pay', 'Disp. Pay', 'Ins. Exp.', 'Fuel', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Recruiting', 'Total PnL'];
+    const ids = ['Segment', 'Gross', 'Margin', 'Net Pay', 'Ins. Exp.', 'Fuel', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Shared Ins', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Disp. Pay', 'Recruiting', 'Total PnL'];
     if (!isAverageView && groupBy === 'Driver') {
       ids.push('Company', 'Team', 'Franchise', 'Dispatcher', 'Contract');
     }

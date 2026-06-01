@@ -1003,11 +1003,11 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                   <>({mcGrossInput} * (Gross + Margin - (Margin * {mcMarginInput}))) - (Drv% * Gross) - (Gross * {dispGrossInput} + Margin * {dispMarginInput})</>
                                                                                ) : calcType === 'TPOG_FRANCHISE' ? (
                                                                                  <>
-                                                                                    <div className="mt-0.5">(Gross * ((1 - Drv%) - {dispGrossInput}) + Margin * {mcMarginInput})</div>
+                                                                                    <div className="mt-0.5">(Gross * (1 - Drv%) + Margin * {mcMarginInput})</div>
                                                                                     {splitBlock}
                                                                                  </>
                                                                               ) : (
-                                                                                 <>Gross * ((1 - Drv%) - {dispGrossInput}) + Margin * {mcMarginInput}</>
+                                                                                 <>Gross * (1 - Drv%) + Margin * {mcMarginInput}</>
                                                                               )}
                                                                            </div>
                                                                         </div>
@@ -1035,7 +1035,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                   else if (calcType === 'OO_NONF') content = <>Gross * {mcGrossInput} + Margin * {mcMarginInput}</>;
                                                                   else if (calcType === 'OO_FRANCHISE') content = <>Gross * {mcGrossInput} + Margin * {mcMarginInput}</>;
                                                                   else if (calcType === 'CPM_STYLE') content = <>(Gross + Margin * {mcMarginInput}) - Net Pay</>;
-                                                                  else if (calcType === 'POG_STYLE') content = <>Gross * ((1 - Drv%) - {dispGrossInput}) + Margin * {mcMarginInput}</>;
+                                                                  else if (calcType === 'POG_STYLE') content = <>Gross * (1 - Drv%) + Margin * {mcMarginInput}</>;
                                                                   else content = <>Gross * {mcGrossInput} + Margin * {mcMarginInput}</>;
 
                                                                   return (
