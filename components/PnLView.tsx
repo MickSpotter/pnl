@@ -648,22 +648,28 @@ const MasterTable: React.FC<{
       let prorated = 0;
       const uniqueNames = Array.from(new Set((rowDrivers || []).map(d => d.name || 'Unknown')));
       uniqueNames.forEach(dName => {
-        const drvRecords = rowDrivers.filter(d => d.name === dName);
-        const m = calculateMetrics(drvRecords, true);
-        if (m.pnlZeroMiDrop < 0) {
-          count++;
-          const originalRevBase = Math.abs(m.pnlZeroMiDrop) - m.pnlBalanceChange - m.pnlProrated;
-          if (drvRecords.some(d => (d as any).isFranchiseStub)) {
-            revBase += originalRevBase / 2;
-            balChange += m.pnlBalanceChange / 2;
-            prorated += m.pnlProrated / 2;
-          } else {
-            revBase += originalRevBase;
-            balChange += m.pnlBalanceChange;
-            prorated += m.pnlProrated;
-          }
-        }
-      });
+            const drvRecords = rowDrivers.filter(d => d.name === dName);
+            const m = calculateMetrics(drvRecords, true);
+            if (m.pnlZeroMiDrop < 0) {
+              count++;
+              drvRecords.forEach(d => {
+                    const dMiles = Number((d as any).total_miles ?? d.milesDriven ?? 0);
+                    if (dMiles === 0) {
+                      const dm = calculateMetrics([d], true);
+                      if (dm.pnlZeroMiDrop < 0) {
+                        let effectiveBalChange = dm.pnlBalanceChange;
+                        if (d.contractType === 'TPOG' && !!d.franchiseId && !(d as any).isFranchiseStub) {
+                            effectiveBalChange = 0;
+                        }
+                        const originalRevBase = Math.abs(dm.pnlZeroMiDrop) - effectiveBalChange - dm.pnlProrated;
+                        revBase += originalRevBase;
+                        balChange += effectiveBalChange;
+                        prorated += dm.pnlProrated;
+                      }
+                    }
+                  });
+            }
+          });
       return { count, revBase, balChange, prorated };
     })();
     return (
@@ -960,27 +966,34 @@ const MasterTable: React.FC<{
       </td>
       <td className="group/disp relative hover:z-[99999] px-1 py-0.5 text-right text-blue-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
         <span>{val(metrics.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(metrics.dispatcherPay, div))}</span>
-        <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[350px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+        <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[540px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
           <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
           {metrics.dispBreakdown && Object.keys(metrics.dispBreakdown).length > 0 && (
             <div className="mb-2 w-full text-[10px]">
-              <div className="grid grid-cols-[1fr_65px_65px] gap-x-2 border-b border-zinc-700 pb-1 mb-1 font-bold text-zinc-400">
+              <div className="grid grid-cols-[1fr_55px_55px_55px_60px] gap-x-2 border-b border-zinc-700 pb-1 mb-1 font-bold text-zinc-400">
                 <div>Name</div>
                 <div className="text-right">Gross</div>
                 <div className="text-right">Margin</div>
+                <div className="text-right">Fixed</div>
+                <div className="text-right text-zinc-300">Total</div>
               </div>
               {Object.keys(metrics.dispBreakdown).sort((a, b) => (a.startsWith('ALL') === b.startsWith('ALL')) ? a.localeCompare(b) : (a.startsWith('ALL') ? -1 : 1)).map((name) => {
                 const vals = metrics.dispBreakdown[name];
-                const isFixed = vals.fixed !== 0;
-                const grossVal = isFixed ? vals.fixed : vals.gross;
+                const rowSubtotal = vals.gross + vals.margin + vals.fixed;
                 return (
-                  <div key={name} className="grid grid-cols-[1fr_65px_65px] gap-x-2 py-0.5 items-center">
-                    <div className="text-sky-400 whitespace-nowrap">{name}</div>
+                  <div key={name} className="grid grid-cols-[1fr_55px_55px_55px_60px] gap-x-2 py-0.5 items-center">
+                    <div className="text-sky-400 truncate" title={name}>{name}</div>
                     <div className="text-right font-mono text-zinc-300">
-                      {grossVal < 0 ? '-' : ''}{formatCurrency(Math.abs(val(grossVal, div)))}
+                      {vals.gross < 0 ? '-' : ''}{formatCurrency(Math.abs(val(vals.gross, div)))}
                     </div>
                     <div className="text-right font-mono text-zinc-300">
-                      {!isFixed ? `${vals.margin < 0 ? '-' : ''}${formatCurrency(Math.abs(val(vals.margin, div)))}` : ''}
+                      {vals.margin < 0 ? '-' : ''}{formatCurrency(Math.abs(val(vals.margin, div)))}
+                    </div>
+                    <div className="text-right font-mono text-zinc-300">
+                      {vals.fixed < 0 ? '-' : ''}{formatCurrency(Math.abs(val(vals.fixed, div)))}
+                    </div>
+                    <div className="text-right font-mono font-bold text-zinc-200">
+                      {rowSubtotal < 0 ? '-' : ''}{formatCurrency(Math.abs(val(rowSubtotal, div)))}
                     </div>
                   </div>
                 )
@@ -1699,10 +1712,22 @@ const MasterTable: React.FC<{
                     const m = calculateMetrics(drvRecords, true);
                     if (m.pnlZeroMiDrop < 0) {
                       count++;
-                      const originalRevBase = Math.abs(m.pnlZeroMiDrop) - m.pnlBalanceChange - m.pnlProrated;
-                      revBase += originalRevBase;
-                      balChange += m.pnlBalanceChange;
-                      prorated += m.pnlProrated;
+                      drvRecords.forEach(d => {
+                        const dMiles = Number((d as any).total_miles ?? d.milesDriven ?? 0);
+                        if (dMiles === 0) {
+                          const dm = calculateMetrics([d], true);
+                          if (dm.pnlZeroMiDrop < 0) {
+                            let effectiveBalChange = dm.pnlBalanceChange;
+                            if (d.contractType === 'TPOG' && !!d.franchiseId && !(d as any).isFranchiseStub) {
+                                effectiveBalChange = 0;
+                            }
+                            const originalRevBase = Math.abs(dm.pnlZeroMiDrop) - effectiveBalChange - dm.pnlProrated;
+                            revBase += originalRevBase;
+                            balChange += effectiveBalChange;
+                            prorated += dm.pnlProrated;
+                          }
+                        }
+                      });
                     }
                   });
                   return { count, revBase, balChange, prorated };
@@ -1970,27 +1995,34 @@ const MasterTable: React.FC<{
                     </td>
                     <td className="group/disp relative hover:z-[99999] px-1 py-1 text-right text-blue-400 font-medium !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
                       <span>{val(dynamicTotals.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(dynamicTotals.dispatcherPay, div))}</span>
-                      <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[350px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                      <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[540px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                         <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
                         {dynamicTotals.dispBreakdown && Object.keys(dynamicTotals.dispBreakdown).length > 0 && (
                           <div className="mb-2 w-full text-[10px]">
-                            <div className="grid grid-cols-[1fr_65px_65px] gap-x-2 border-b border-zinc-700 pb-1 mb-1 font-bold text-zinc-400">
+                            <div className="grid grid-cols-[1fr_55px_55px_55px_60px] gap-x-2 border-b border-zinc-700 pb-1 mb-1 font-bold text-zinc-400">
                               <div>Name</div>
                               <div className="text-right">Gross</div>
                               <div className="text-right">Margin</div>
+                              <div className="text-right">Fixed</div>
+                              <div className="text-right text-zinc-300">Total</div>
                             </div>
                             {Object.keys(dynamicTotals.dispBreakdown).sort((a, b) => (a.startsWith('ALL') === b.startsWith('ALL')) ? a.localeCompare(b) : (a.startsWith('ALL') ? -1 : 1)).map((name) => {
                               const vals = dynamicTotals.dispBreakdown[name];
-                              const isFixed = vals.fixed !== 0;
-                              const grossVal = isFixed ? vals.fixed : vals.gross;
+                              const rowSubtotal = vals.gross + vals.margin + vals.fixed;
                               return (
-                                <div key={name} className="grid grid-cols-[1fr_65px_65px] gap-x-2 py-0.5 items-center">
-                                  <div className="text-sky-400 whitespace-nowrap">{name}</div>
+                                <div key={name} className="grid grid-cols-[1fr_55px_55px_55px_60px] gap-x-2 py-0.5 items-center">
+                                  <div className="text-sky-400 truncate" title={name}>{name}</div>
                                   <div className="text-right font-mono text-zinc-300">
-                                    {grossVal < 0 ? '-' : ''}{formatCurrency(Math.abs(val(grossVal, div)))}
+                                    {vals.gross < 0 ? '-' : ''}{formatCurrency(Math.abs(val(vals.gross, div)))}
                                   </div>
                                   <div className="text-right font-mono text-zinc-300">
-                                    {!isFixed ? `${vals.margin < 0 ? '-' : ''}${formatCurrency(Math.abs(val(vals.margin, div)))}` : ''}
+                                    {vals.margin < 0 ? '-' : ''}{formatCurrency(Math.abs(val(vals.margin, div)))}
+                                  </div>
+                                  <div className="text-right font-mono text-zinc-300">
+                                    {vals.fixed < 0 ? '-' : ''}{formatCurrency(Math.abs(val(vals.fixed, div)))}
+                                  </div>
+                                  <div className="text-right font-mono font-bold text-zinc-200">
+                                    {rowSubtotal < 0 ? '-' : ''}{formatCurrency(Math.abs(val(rowSubtotal, div)))}
                                   </div>
                                 </div>
                               )
