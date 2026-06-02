@@ -10,6 +10,7 @@ interface PnlEditorProps {
 const PNL_ITEMS = [
   { id: 'revenue_collected', label: 'Revenue Collected' },
   { id: 'fuel_rebate', label: 'Fuel Rebate' },
+  { id: 'dispatcher_pay', label: 'Disp. Pay' },
   { id: 'weekly_expenses', label: 'Weekly Expenses' },
   { id: 'po', label: 'PO' },
   { id: 'tolls', label: 'Tolls' },
@@ -56,7 +57,7 @@ const PnlEditor: React.FC<PnlEditorProps> = ({ pnlConfigs, setPnlConfigs, availa
             <table className="w-full text-left border-collapse">
                <thead>
                   <tr className="bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                     <th className="p-2 pl-3 font-bold w-[25%]">Contract Type</th>
+                     <th className="p-2 pl-3 font-bold w-[15%]">Contract Type</th>
                      <th className="p-2 font-bold">PNL Calculation</th>
                   </tr>
                </thead>

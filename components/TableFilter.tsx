@@ -14,7 +14,7 @@ interface TableFilterProps {
   optionsMap: Record<string, string[]>;
 }
 
-const CATEGORICAL_FIELDS = ['Contract', 'Company', 'Team', 'Franchise', 'Driver'];
+const CATEGORICAL_FIELDS = ['Contract', 'Company', 'Team', 'Franchise', 'Driver', 'Dispatcher'];
 const NUMERIC_FIELDS = ['Eff Drivers', 'Eff Non Teams', 'Eff Trailers', 'Gross', 'Margin', 'Miles', 'Net Pay', 'Net Pay Med', 'Disp. Pay', 'Ins. Exp.', 'Fuel', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Recruiting', 'PnL 4w', '4w Avg', 'Total PnL'];
 const ALL_FIELDS = [...CATEGORICAL_FIELDS, ...NUMERIC_FIELDS];
 
