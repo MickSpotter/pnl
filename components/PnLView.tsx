@@ -2982,32 +2982,32 @@ const PnLView: React.FC<PnLViewProps> = ({
         let dispMarginPerc = 0;
         const curTime = (date ? new Date(date).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
         const validDispExps = fixedExpenses.filter(e => {
-            if (!e.name || String(e.name).trim().toLowerCase() !== 'dispatcher pay') return false;
+            if (!e.name || !String(e.name).trim().toLowerCase().includes('dispatcher pay')) return false;
             const fromTime = e.valid_from ? new Date(e.valid_from).getTime() : -Infinity;
             const toTime = e.valid_to ? new Date(e.valid_to).getTime() : Infinity;
             return curTime >= fromTime && curTime <= toTime;
         });
         
-        const getRuleScore = (e: any) => {
+        const getRuleScore = (e: any, targetDriver: any = d, targetEffCt: string = effContractType) => {
             let score = 0;
-            const dispName = e.dispatcher_name || e.dispatcherName || e.dispatcher_id || e.dispatcherId;
+            const dispName = e.dispatcher_name || e.dispatcherName || e.dispatcher_id || e.dispatcherId || e.dispatcher;
             if (dispName && String(dispName).trim().toUpperCase() !== 'ALL' && String(dispName).trim() !== '' && String(dispName).trim().toLowerCase() !== 'null') {
-                if (String(dispName).trim().toLowerCase() === String(d.dispatcherId || (d as any).dispatcherName || (d as any).dispatcher_name || '').trim().toLowerCase()) score += 1000;
+                if (String(dispName).trim().toLowerCase() === String(targetDriver.dispatcherId || targetDriver.dispatcherName || targetDriver.dispatcher_name || '').trim().toLowerCase()) score += 1000;
                 else return -1;
             }
             const teamName = e.team_name || e.teamName;
             if (teamName && String(teamName).trim().toUpperCase() !== 'ALL' && String(teamName).trim() !== '' && String(teamName).trim().toLowerCase() !== 'null') {
-                if (String(teamName).trim().toLowerCase() === String(d.teamId || (d as any).teamName || (d as any).team_name || '').trim().toLowerCase()) score += 100;
+                if (String(teamName).trim().toLowerCase() === String(targetDriver.teamId || targetDriver.teamName || targetDriver.team_name || '').trim().toLowerCase()) score += 100;
                 else return -1;
             }
             const comp = e.companyId || e.company_id || e.company;
             if (comp && String(comp).trim().toUpperCase() !== 'ALL' && String(comp).trim() !== '' && String(comp).trim().toLowerCase() !== 'null') {
-                if (String(comp).trim().toLowerCase() === String(d.companyId || (d as any).company_id || '').trim().toLowerCase()) score += 10;
+                if (String(comp).trim().toLowerCase() === String(targetDriver.companyId || targetDriver.company_id || '').trim().toLowerCase()) score += 10;
                 else return -1;
             }
             const ct = e.contractType || e.contract_type;
             if (ct && String(ct).trim().toUpperCase() !== 'ALL' && String(ct).trim() !== '' && String(ct).trim().toLowerCase() !== 'null') {
-                if (String(ct).trim().toLowerCase() === String(effContractType).trim().toLowerCase()) score += 1;
+                if (String(ct).trim().toLowerCase() === String(targetEffCt).trim().toLowerCase()) score += 1;
                 else return -1;
             }
             return score;
@@ -3020,11 +3020,7 @@ const PnLView: React.FC<PnLViewProps> = ({
         let dispFixedAmount = 0;
         let ruleLabel = 'ALL';
         if (dispRule) {
-            dispGrossPerc = Number((dispRule as any).disp_gross_perc || (dispRule as any).dispatcher_gross_percent) || 0;
-            dispMarginPerc = Number((dispRule as any).disp_margin_perc || (dispRule as any).dispatcher_margin_percent) || 0;
-            let rawAmount = Number(dispRule.amount) || 0;
-            
-            const dName = dispRule.dispatcher_name || dispRule.dispatcherName || 'ALL';
+            const dName = dispRule.dispatcher_name || dispRule.dispatcherName || dispRule.dispatcher_id || dispRule.dispatcherId || dispRule.dispatcher || 'ALL';
             const cName = dispRule.companyId || dispRule.company_id || dispRule.company || 'ALL';
             const tName = dispRule.team_name || dispRule.teamName || 'ALL';
             const ctName = dispRule.contractType || dispRule.contract_type || 'ALL';
@@ -3040,15 +3036,37 @@ const PnLView: React.FC<PnLViewProps> = ({
             
             let prefix = entityType === 'ALL' ? 'ALL' : (entityType === 'Contract' ? entityName : `${entityType} ${entityName}`);
 
-            if (rawAmount !== 0) {
+            let grossP = Number((dispRule as any).disp_gross_perc || (dispRule as any).dispatcher_gross_percent || (dispRule as any).dispatcherGrossPercent || (dispRule as any).dispGrossPerc || 0);
+            let marginP = Number((dispRule as any).disp_margin_perc || (dispRule as any).dispatcher_margin_percent || (dispRule as any).dispatcherMarginPercent || (dispRule as any).dispMarginPerc || 0);
+            let rawAmount = Number(dispRule.amount) || 0;
+
+            if (dName !== 'ALL' && dName !== '' && (grossP !== 0 || marginP !== 0)) {
+                dispGrossPerc = grossP;
+                dispMarginPerc = marginP;
+                ruleLabel = `${prefix} (${dispGrossPerc}% Gross, ${dispMarginPerc}% Margin)`;
+            } else if (rawAmount !== 0) {
                 if (dispRule.unit === '%') {
                     dispGrossPerc = rawAmount;
+                    dispMarginPerc = marginP;
                     ruleLabel = `${prefix} (${dispGrossPerc}% Gross, ${dispMarginPerc}% Margin)`;
+                } else if (dispRule.unit === '$ total') {
+                    let matchingNT = 0;
+                    const weekAllDrivers = (allDrivers || drivers).filter(drv => drv.payDate === d.payDate);
+                    weekAllDrivers.forEach(drv => {
+                        if (getRuleScore(dispRule, drv, drv.contractType || '') >= 0) {
+                            matchingNT += (drv.effectiveNonTeams || 0);
+                        }
+                    });
+                    const driverShare = matchingNT > 0 ? (d.effectiveNonTeams || 0) / matchingNT : 0;
+                    dispFixedAmount = -(getWeeklyAmountFromExp(rawAmount, dispRule) * driverShare);
+                    ruleLabel = `${prefix} ($${rawAmount} total)`;
                 } else {
                     dispFixedAmount = -(getWeeklyAmountFromExp(rawAmount, dispRule) * (d.effectiveNonTeams || 0));
-                    ruleLabel = `${prefix} ($${rawAmount})`;
+                    ruleLabel = `${prefix} ($${rawAmount} per truck)`;
                 }
             } else {
+                dispGrossPerc = grossP;
+                dispMarginPerc = marginP;
                 ruleLabel = `${prefix} (${dispGrossPerc}% Gross, ${dispMarginPerc}% Margin)`;
             }
         }

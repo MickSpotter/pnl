@@ -94,11 +94,12 @@ const DispatcherPay: React.FC<DispatcherPayProps> = ({
                             <td className="py-2 px-1">
                                <select value={rule.unit || '%'} onChange={(e) => handleCompanyExpenseChange(rule.id, 'unit', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-xs text-zinc-300 focus:border-purple-500 outline-none h-7">
                                   <option value="%">%</option>
-                                  <option value="$">$</option>
+                                  <option value="$ per truck">$ per truck</option>
+                                  <option value="$ total">$ total</option>
                                 </select>
                             </td>
                             <td className="py-2 px-1">
-                               {rule.unit === '$' ? (
+                               {rule.unit === '$ per truck' || rule.unit === '$ total' || rule.unit === '$' ? (
                                   <div className="relative flex items-center h-7">
                                      <span className="absolute left-2 text-zinc-500 text-[10px] pointer-events-none">$</span>
                                      <input type="number" value={rule.amount === 0 || rule.amount == null ? '' : rule.amount} onChange={(e) => handleCompanyExpenseChange(rule.id, 'amount', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-purple-500 outline-none h-full" />
