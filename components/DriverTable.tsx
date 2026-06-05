@@ -1,14 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DriverPerformance, DriverStatus, DispatcherTier } from '../types';
 import { formatCurrency, formatPercent } from '../utils';
-import { AlertCircle, CheckCircle, TrendingUp, UserMinus, ChevronDown, ChevronUp, AlertTriangle, X, Minus, Filter, Info } from 'lucide-react';
+import { AlertCircle, CheckCircle, TrendingUp, UserMinus, ChevronDown, ChevronUp, AlertTriangle, X, Minus, Filter, Info, Settings } from 'lucide-react';
 import HistoricalChart from './HistoricalChart';
+import DriverSettings from './DriverSettings';
+import { supabase } from '../lib/supabase';
 
 interface DriverTableProps {
   drivers: DriverPerformance[];
 }
 
-const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any }) => {
+const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>('TOTAL');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['pnl']);
   const [showSwaps, setShowSwaps] = useState(false);
@@ -50,13 +52,12 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
 
       if (sortedDates.length > 0) {
         // Find the primary record for the very first date to establish the baseline
-        const firstPrimary = recordsByDate[sortedDates[0]].reduce((prev: any, curr: any) => ((curr.totalGross || 0) > (prev.totalGross || 0)) ? curr : prev);
+        const firstPrimary = recordsByDate[sortedDates[0]].reduce((prev: any, curr: any) => ((curr.grossRevenue || curr.driver_gross || 0) > (prev.grossRevenue || prev.driver_gross || 0)) ? curr : prev);
         lastComp = firstPrimary.companyId;
         lastCont = firstPrimary.contractType;
 
         sortedDates.forEach((date: string) => {
-          // For the current date, find the record with the highest gross
-          const primaryForDate = recordsByDate[date].reduce((prev: any, curr: any) => ((curr.totalGross || 0) > (prev.totalGross || 0)) ? curr : prev);
+          const primaryForDate = recordsByDate[date].reduce((prev: any, curr: any) => ((curr.grossRevenue || curr.driver_gross || 0) > (prev.grossRevenue || prev.driver_gross || 0)) ? curr : prev);
           
           if (primaryForDate.companyId !== lastComp || primaryForDate.contractType !== lastCont) {
             let changes = [];
@@ -73,7 +74,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
     return { longevities, currentCompany: companies[companies.length - 1] as string, franchise: franchise as string, hasSwapped: swapHistory.length > 0, swapHistory };
   }, [driver.records]);
 
-  const calcGross = filteredRecords.reduce((s: number, r: any) => s + (r.totalGross || r.grossRevenue || 0), 0);
+  const calcGross = filteredRecords.reduce((s: number, r: any) => s + (r.grossRevenue || r.driver_gross || 0), 0);
   const expFuel = filteredRecords.reduce((s: number, r: any) => s + (r.fuelCost || 0), 0);
   const expMaint = filteredRecords.reduce((s: number, r: any) => s + (r.maintenanceCost || 0), 0);
   const expFaults = filteredRecords.reduce((s: number, r: any) => s + (r.driverFaultExpenses || 0), 0);
@@ -123,67 +124,63 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
       return { issues: iss, perfStats: emptyStats };
     }
 
-    const applyDiv = (r: any) => (r.contractType === 'TPOG' && !!r.franchiseId) ? 0.5 : 1;
-    const mclooMult = (r: any) => r.contractType === 'MCLOO' ? 0.3 : 1;
-    const avgGross = filteredRecords.reduce((s: number, r: any) => s + ((r.totalGross || r.grossRevenue || 0) * applyDiv(r)), 0) / count;
-    const avgMargin = filteredRecords.reduce((s: number, r: any) => s + ((r.marginAmount || 0) * applyDiv(r)), 0) / count;
-    const avgNetPay = filteredRecords.reduce((s: number, r: any) => s + ((r.netPay || 0) * applyDiv(r)), 0) / count;
-    const avgDispPay = filteredRecords.reduce((s: number, r: any) => s + ((r.dispatcherCommission || 0) * applyDiv(r)), 0) / count;
-    const avgInsExp = filteredRecords.reduce((s: number, r: any) => s + (((r.liability || 0) + (r.cargo_insurance || 0) + (r.physical_damage || 0)) * applyDiv(r)), 0) / count;
+    const avgGross = filteredRecords.reduce((s: number, r: any) => s + (r.grossRevenue || r.driver_gross || 0), 0) / count;
+    const avgMargin = filteredRecords.reduce((s: number, r: any) => s + (r.marginAmount || 0), 0) / count;
+    const avgNetPay = filteredRecords.reduce((s: number, r: any) => s + (r.netPay || 0), 0) / count;
+    const avgDispPay = filteredRecords.reduce((s: number, r: any) => s + (r.dispatcherCommission || 0), 0) / count;
+    const avgInsExp = filteredRecords.reduce((s: number, r: any) => s + ((r.liability || 0) + (r.cargo_insurance || 0) + (r.physical_damage || 0)), 0) / count;
     const sumMiles = filteredRecords.reduce((s: number, r: any) => s + (r.milesDriven || 0), 0);
-    const avgFuel = sumMiles > 0 ? filteredRecords.reduce((s: number, r: any) => s + (((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)) * applyDiv(r)), 0) / sumMiles : 0;
-    const avgRev = filteredRecords.reduce((s: number, r: any) => s + ((r.companyPay || 0) * applyDiv(r)), 0) / count;
-    const avgFuelReb = filteredRecords.reduce((s: number, r: any) => s + (((r.fuel_quantity || 0) * 0.20) * applyDiv(r)), 0) / count;
-    const avgWklyExp = filteredRecords.reduce((s: number, r: any) => s + ((r.calculatedFixedCost || r.fixed_costs || 0) * applyDiv(r)), 0) / count;
-    const avgTolls = filteredRecords.reduce((s: number, r: any) => s + (Math.abs(r.tollCost || 0) * (r.contractType === 'MCLOO' ? 0 : 1)), 0) / count;
-    const avgPO = filteredRecords.reduce((s: number, r: any) => s + ((r.poCoverage ? -Math.abs(r.poCoverage) : 0) * mclooMult(r) * applyDiv(r)), 0) / count;
-    const avgRecruiting = filteredRecords.reduce((s: number, r: any) => s + ((r.recruitingCost || 0) * applyDiv(r)), 0) / count;
-    const avgPnL = filteredRecords.reduce((s: number, r: any) => s + (((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)) * applyDiv(r)), 0) / count;
+    const avgFuel = sumMiles > 0 ? filteredRecords.reduce((s: number, r: any) => s + ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)), 0) / sumMiles : 0;
+    const avgRev = filteredRecords.reduce((s: number, r: any) => s + (r.companyPay || 0), 0) / count;
+    const avgFuelReb = filteredRecords.reduce((s: number, r: any) => s + ((r.fuel_quantity || 0) * 0.20), 0) / count;
+    const avgWklyExp = filteredRecords.reduce((s: number, r: any) => s + (r.calculatedFixedCost || r.fixed_costs || 0), 0) / count;
+    const avgTolls = filteredRecords.reduce((s: number, r: any) => s + Math.abs(r.tollCost || 0), 0) / count;
+    const avgPO = filteredRecords.reduce((s: number, r: any) => s + (r.poCoverage ? -Math.abs(r.poCoverage) : 0), 0) / count;
+    const avgRecruiting = filteredRecords.reduce((s: number, r: any) => s + (r.recruitingCost || 0), 0) / count;
+    const avgPnL = filteredRecords.reduce((s: number, r: any) => s + ((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)), 0) / count;
+
+    const activeConf = settings?.[selectedEntity] || settings?.[`CTR:${primaryContract}`] || settings?.[`CMP:${driverStats.currentCompany}`] || settings?.['GLOBAL'] || {};
+    
+    const getSeverity = (metricId: string, val: number) => {
+        const rules = activeConf[metricId] || settings?.['GLOBAL']?.[metricId];
+        if (!rules || (rules.redMax === 0 && rules.greenMin === 0 && rules.orangeMax === 0)) return 'neutral';
+        
+        // Automatski prepoznaje da li je veće bolje (npr. Gross) ili manje bolje (npr. Expenses)
+        if (rules.greenMin >= rules.redMax) {
+            if (val <= rules.redMax) return 'critical';
+            if (val >= rules.greenMin) return 'good';
+            if (val > rules.redMax && val <= rules.orangeMax) return 'warning';
+            if (val > rules.orangeMax && val < rules.greenMin) return 'neutral';
+        } else {
+            if (val >= rules.redMax) return 'critical';
+            if (val <= rules.greenMin) return 'good';
+            if (val < rules.redMax && val >= rules.orangeMin) return 'warning';
+            if (val < rules.orangeMin && val > rules.greenMin) return 'neutral';
+        }
+        return 'neutral';
+    };
 
     const metrics = [
-      { name: 'Gross', val: avgGross, fleet: 4000, invert: false },
-      { name: 'Margin', val: avgMargin, fleet: targetAvg.margin || 0, invert: false },
-      { name: 'Net Pay', val: avgNetPay, fleet: targetAvg.netPay || 0, invert: false },
-      { name: 'Disp. Pay', val: avgDispPay, fleet: targetAvg.dispPay || 0, invert: false },
-      { name: 'Ins. Exp.', val: avgInsExp, fleet: targetAvg.insExp || 0, invert: true },
-      { name: 'Fuel', val: avgFuel, fleet: targetAvg.fuel || -0.5, invert: false, isFuel: true },
-      { name: 'Rev. Col.', val: avgRev, fleet: targetAvg.rev || 400, invert: false },
-      { name: 'Fuel Reb.', val: avgFuelReb, fleet: targetAvg.fuelRebate || 0, invert: false },
-      { name: 'Wkly Exp.', val: avgWklyExp, fleet: targetAvg.wklyExp || 0, invert: true },
-      { name: 'Tolls', val: avgTolls, fleet: targetAvg.tolls || 0, invert: true },
-      { name: 'PO', val: avgPO, fleet: targetAvg.poCov || 0, invert: false },
-      { name: 'Recruiting', val: avgRecruiting, fleet: targetAvg.recruiting || 0, invert: true },
-      { name: 'PnL', val: avgPnL, fleet: 100, invert: false }
+      { id: 'gross', name: 'Gross', val: avgGross },
+      { id: 'margin', name: 'Margin', val: avgMargin },
+      { id: 'netPay', name: 'Net Pay', val: avgNetPay },
+      { id: 'dispPay', name: 'Disp. Pay', val: avgDispPay },
+      { id: 'insExp', name: 'Ins. Exp.', val: avgInsExp },
+      { id: 'fuel', name: 'Fuel', val: avgFuel },
+      { id: 'revCol', name: 'Rev. Col.', val: avgRev },
+      { id: 'fuelReb', name: 'Fuel Reb.', val: avgFuelReb },
+      { id: 'wklyExp', name: 'Wkly Exp.', val: avgWklyExp },
+      { id: 'tolls', name: 'Tolls', val: avgTolls },
+      { id: 'po', name: 'PO', val: avgPO },
+      { id: 'recruiting', name: 'Recruiting', val: avgRecruiting },
+      { id: 'pnl', name: 'PnL', val: avgPnL }
     ];
 
     const perfStats = metrics.map(m => {
-        let diff = 0;
-        if (m.isFuel) {
-            diff = m.fleet !== 0 ? ((m.val - m.fleet) / Math.abs(m.fleet)) * 100 : (m.val < -0.5 ? ((m.val - (-0.5)) / 0.5) * 100 : 0);
-        } else if (m.invert) {
-            diff = m.fleet !== 0 ? ((m.fleet - m.val) / Math.abs(m.fleet)) * 100 : (m.val > 0 ? -100 : 0);
-        } else {
-            diff = m.fleet !== 0 ? ((m.val - m.fleet) / Math.abs(m.fleet)) * 100 : (m.val < -50 && m.name === 'PO' ? ((m.val - (-50)) / 50) * 100 : 0);
-        }
-        
-        let severity = 'neutral';
-        if (m.isFuel) {
-            severity = diff <= -50 ? 'critical' : (diff <= -30 ? 'warning' : (diff >= 5 ? 'good' : 'neutral'));
-        } else {
-            if (diff >= 5) severity = 'good';
-            else if (diff >= -5) severity = 'neutral';
-            else if (diff >= -15) severity = 'warning';
-            else severity = 'critical';
-        }
-        
-        if (m.name === 'Rev. Col.') {
-            severity = m.val < 0 ? 'critical' : (m.val <= 50 ? 'warning' : (m.val <= 200 ? 'neutral' : 'good'));
-        }
-
-        if (severity === 'critical') iss.push({ label: `Low ${m.name} Avg`, diff, severity });
-        else if (severity === 'warning') iss.push({ label: `Slightly Low ${m.name} Avg`, diff, severity });
-
-        return { name: m.name, val: m.val, fleet: m.fleet, diff, severity };
+        const severity = getSeverity(m.id, m.val);
+        if (severity === 'critical') iss.push({ label: `Critical ${m.name} Level`, diff: 0, severity });
+        else if (severity === 'warning') iss.push({ label: `Warning ${m.name} Level`, diff: 0, severity });
+        return { name: m.name, val: m.val, severity };
     });
 
     return { issues: iss, perfStats };
@@ -200,8 +197,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
           const metrics: any = {
             'revenue collected': r.companyPay,
             'revenue collected avg/w': recordsSoFar.reduce((s:number, x:any) => s + (x.companyPay || 0), 0) / count,
-            'gross': r.totalGross,
-            'gross avg/w': recordsSoFar.reduce((s:number, x:any) => s + (x.totalGross || 0), 0) / count,
+            'gross': r.grossRevenue || r.driver_gross || 0,
+            'gross avg/w': recordsSoFar.reduce((s:number, x:any) => s + (x.grossRevenue || x.driver_gross || 0), 0) / count,
             'margin': r.marginAmount,
             'margin avg/w': recordsSoFar.reduce((s:number, x:any) => s + (x.marginAmount || 0), 0) / count,
             'pnl': pnlVal,
@@ -316,15 +313,15 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
                 </details>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="md:col-span-2 h-48">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-80 items-stretch">
+              <div className="md:col-span-2 h-full">
                  <HistoricalChart 
                    data={historyChartData} 
                    series={activeSeries} 
                    type="line" 
                  />
               </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded p-2 flex flex-col">
+              <div className="bg-zinc-900 border border-zinc-800 rounded p-3 flex flex-col h-full overflow-y-auto">
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-[10px] font-bold text-zinc-400 uppercase">Diagnosis {selectedContract !== 'ALL' && `(${selectedContract})`}</h4>
                   <div className="group relative cursor-help text-zinc-500 hover:text-emerald-500 transition-colors">
@@ -387,7 +384,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
                             <span className="text-zinc-300">{issue.label}</span>
                           </div>
                           <span className={issue.severity === 'critical' ? 'text-rose-500 font-bold' : 'text-amber-500 font-bold'}>
-                            {issue.diff < 0 ? `${issue.diff.toFixed(1)}%` : `+${issue.diff.toFixed(1)}%`}
+                            Alert
                           </span>
                         </li>
                       ))}
@@ -417,14 +414,9 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages }: {
                                <span className="text-zinc-500">{stat.name} Avg</span>
                             </div>
                             <div className="flex items-center gap-2">
-                               <span className="text-zinc-300">
+                               <span className={`font-bold text-right ${getTextColor(stat.severity)}`}>
                                  {stat.val === null ? 'N/A' : (stat.name === 'Fuel' ? (stat.val < 0 ? `-$${Math.abs(stat.val).toFixed(2)}` : `$${stat.val.toFixed(2)}`) : formatCurrency(stat.val))}
                                </span>
-                               {stat.val !== null && (
-                                 <span className={`font-bold w-12 text-right ${getTextColor(stat.severity)}`}>
-                                    {stat.diff > 0 ? '+' : ''}{stat.diff.toFixed(1)}%
-                                 </span>
-                               )}
                             </div>
                          </div>
                       );
@@ -447,10 +439,51 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
   const [filterComp, setFilterComp] = useState<string[]>([]);
   const [filterCont, setFilterCont] = useState<string[]>([]);
   const [filterFran, setFilterFran] = useState<string[]>([]);
+  const [showSettings, setShowSettings] = useState(false);
+  const [driverSettings, setDriverSettings] = useState<any>({});
+
+  useEffect(() => {
+    const fetchSettings = async () => {
+      const { data, error } = await supabase.from('driver_settings').select('*');
+      if (!error && data) {
+        const formatted: any = {};
+        data.forEach((row: any) => {
+          const key = row.entity_type === 'GLOBAL' ? 'GLOBAL' : `${row.entity_type === 'CONTRACT' ? 'CTR' : 'CMP'}:${row.entity_value}`;
+          formatted[key] = row.settings;
+        });
+        setDriverSettings(formatted);
+      }
+    };
+    fetchSettings();
+  }, []);
+
+  const handleSaveSettings = async (newSettings: any) => {
+    setDriverSettings(newSettings);
+    for (const key of Object.keys(newSettings)) {
+      let entity_type = 'GLOBAL';
+      let entity_value = 'ALL';
+      if (key.startsWith('CTR:')) {
+        entity_type = 'CONTRACT';
+        entity_value = key.split(':')[1];
+      } else if (key.startsWith('CMP:')) {
+        entity_type = 'COMPANY';
+        entity_value = key.split(':')[1];
+      }
+      await supabase.from('driver_settings').upsert({
+        entity_type,
+        entity_value,
+        settings: newSettings[key]
+      }, { onConflict: 'entity_type,entity_value' });
+    }
+  };
 
   const aggregatedDrivers = React.useMemo(() => {
+    const dates = Array.from(new Set(drivers.map(d => d.payDate).filter(Boolean)));
+    const sortedDates = dates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
+    const allowedDates = new Set(sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates);
     const map = new Map<string, any>();
     drivers.forEach(d => {
+      if (!allowedDates.has(d.payDate)) return;
       const nameLower = (d.name || '').toLowerCase();
       const compLower = (d.companyId || '').toLowerCase();
       if (nameLower.includes('unassigned') || nameLower.includes('unreconciled') || compLower.includes('unassigned') || compLower.includes('unreconciled')) return;
@@ -490,29 +523,25 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
         });
       }
       const agg = map.get(d.name);
-      const isMcloo = d.contractType === 'MCLOO';
-      const isTpogFran = d.contractType === 'TPOG' && !!d.franchiseId;
-      const tpogDiv = isTpogFran ? 0.5 : 1;
-      const mclooMult = isMcloo ? 0.3 : 1;
-      const pnl = ((d.companyPay || 0) - (d.fixed_costs || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tollCost || 0)) * tpogDiv;
+      const pnl = (d.companyPay || 0) - (d.fixed_costs || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tollCost || 0);
 
-      agg.totalGross += (d.totalGross || d.grossRevenue || 0) * tpogDiv;
-      agg.companyPay += (d.companyPay || 0) * tpogDiv;
+      agg.totalGross += (d.grossRevenue || d.driver_gross || 0);
+      agg.companyPay += (d.companyPay || 0);
       agg.totalPnL += pnl;
-      agg.marginAmount += (d.marginAmount || 0) * tpogDiv;
-      agg.poCoverage += (d.poCoverage ? -Math.abs(d.poCoverage) : 0) * mclooMult * tpogDiv;
-      agg.fuelCost += (d.fuelCost ? -Math.abs(d.fuelCost) : 0) * tpogDiv;
-      agg.fuelSavings += (d.fuelSavings || 0) * tpogDiv;
+      agg.marginAmount += (d.marginAmount || 0);
+      agg.poCoverage += (d.poCoverage ? -Math.abs(d.poCoverage) : 0);
+      agg.fuelCost += (d.fuelCost ? -Math.abs(d.fuelCost) : 0);
+      agg.fuelSavings += (d.fuelSavings || 0);
       agg.totalFuel = agg.fuelCost + agg.fuelSavings;
-      agg.tollCost += (d.tollCost ? -Math.abs(d.tollCost) : 0) * (isMcloo ? 0 : 1);
-      agg.maintenanceCost += (d.maintenanceCost || 0) * tpogDiv;
-      agg.driverFaultExpenses += (d.driverFaultExpenses || 0) * tpogDiv;
-      agg.netPay += (d.netPay || 0) * tpogDiv;
-      agg.dispatcherPay += (d.dispatcherCommission || 0) * tpogDiv;
-      agg.insuranceExp += ((d.liability || 0) + (d.cargo_insurance || 0) + (d.physical_damage || 0)) * tpogDiv;
-      agg.fuelRebate += ((d.fuel_quantity || 0) * 0.20) * tpogDiv;
-      agg.wklyExp += (d.calculatedFixedCost || d.fixed_costs || 0) * tpogDiv;
-      agg.recruitingCost += (d.recruitingCost || 0) * tpogDiv;
+      agg.tollCost += (d.tollCost ? -Math.abs(d.tollCost) : 0);
+      agg.maintenanceCost += (d.maintenanceCost || 0);
+      agg.driverFaultExpenses += (d.driverFaultExpenses || 0);
+      agg.netPay += (d.netPay || 0);
+      agg.dispatcherPay += (d.dispatcherCommission || 0);
+      agg.insuranceExp += ((d.liability || 0) + (d.cargo_insurance || 0) + (d.physical_damage || 0));
+      agg.fuelRebate += ((d.fuel_quantity || 0) * 0.20);
+      agg.wklyExp += (d.calculatedFixedCost || d.fixed_costs || 0);
+      agg.recruitingCost += (d.recruitingCost || 0);
       
       if (d.tpogPercentage) agg.tpogPercentages.push(d.tpogPercentage);
       if (d.contractType) agg.contracts.add(d.contractType);
@@ -530,80 +559,42 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
         const fullWeeks = agg.records.filter((r: any) => (r.effectiveDrivers || 0) >= 1);
         const count = fullWeeks.length || 1;
         
-        const grossRecs = fullWeeks.filter((r: any) => (r.totalGross || r.grossRevenue || 0) !== 0);
-        const cGross = grossRecs.length || 1;
-        const sumGross = grossRecs.reduce((s: number, r: any) => s + (r.totalGross || r.grossRevenue || 0), 0);
-        
-        const marginRecs = fullWeeks.filter((r: any) => (r.marginAmount || 0) !== 0);
-        const cMargin = marginRecs.length || 1;
-        const sumMargin = marginRecs.reduce((s: number, r: any) => s + (r.marginAmount || 0), 0);
-        
-        const poRecs = fullWeeks.filter((r: any) => (r.poCoverage ? -Math.abs(r.poCoverage) : 0) !== 0);
-        const cPOCov = poRecs.length || 1;
-        const sumPOCov = poRecs.reduce((s: number, r: any) => s + (r.poCoverage ? -Math.abs(r.poCoverage) : 0), 0);
-        
-        const compRecs = fullWeeks.filter((r: any) => (r.companyPay || 0) !== 0);
-        const cCompPay = compRecs.length || 1;
-        const sumCompPay = compRecs.reduce((s: number, r: any) => s + (r.companyPay || 0), 0);
-        
         const fuelAggRecords = agg.records.filter((r: any) => ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)) !== 0);
-        const sumFuel = fuelAggRecords.reduce((s: number, r: any) => s + (r.fuelCost ? -Math.abs(r.fuelCost) : 0), 0);
-        const sumFuelSavings = fuelAggRecords.reduce((s: number, r: any) => s + (r.fuelSavings || 0), 0);
         const sumFuelMiles = fuelAggRecords.reduce((s: number, r: any) => s + (r.milesDriven || 0), 0);
-        
-        const tollRecs = fullWeeks.filter((r: any) => (r.tollCost || 0) !== 0);
-        const cTolls = tollRecs.length || 1;
-        const sumTolls = tollRecs.reduce((s: number, r: any) => s + (r.tollCost || 0), 0);
-        
-        const maintRecs = fullWeeks.filter((r: any) => (r.maintenanceCost || 0) !== 0);
-        const cMaint = maintRecs.length || 1;
-        const sumMaint = maintRecs.reduce((s: number, r: any) => s + (r.maintenanceCost || 0), 0);
-        
-        const faultRecs = fullWeeks.filter((r: any) => (r.driverFaultExpenses || 0) !== 0);
-        const cFaults = faultRecs.length || 1;
-        const sumFaults = faultRecs.reduce((s: number, r: any) => s + (r.driverFaultExpenses || 0), 0);
-        
-        const pnlRecs = fullWeeks.filter((r: any) => ((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)) !== 0);
-        const cPnL = pnlRecs.length || 1;
-        const sumPnL = pnlRecs.reduce((s: number, r: any) => s + ((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)), 0);
-        
-        const tpogRecs = fullWeeks.filter((r: any) => (r.tpogPercentage || 0) !== 0);
-        const cTpog = tpogRecs.length || 1;
-        const sumTpog = tpogRecs.reduce((s: number, r: any) => s + (r.tpogPercentage || 0), 0);
 
         return {
           ...agg,
-          totalGross: sumGross / cGross,
-          marginAmount: sumMargin / cMargin,
-          poCoverage: sumPOCov / cPOCov,
-          companyPay: sumCompPay / cCompPay,
-          fuelCost: sumFuelMiles > 0 ? sumFuel / sumFuelMiles : 0,
-          fuelSavings: sumFuelMiles > 0 ? sumFuelSavings / sumFuelMiles : 0,
-          totalFuel: sumFuelMiles > 0 ? (sumFuel + sumFuelSavings) / sumFuelMiles : 0,
-          tollCost: sumTolls / cTolls,
-          maintenanceCost: sumMaint / cMaint,
-          driverFaultExpenses: sumFaults / cFaults,
-          totalPnL: sumPnL / cPnL,
-          tpogPercentage: sumTpog / cTpog,
+          totalGross: agg.totalGross / count,
+          marginAmount: agg.marginAmount / count,
+          poCoverage: agg.poCoverage / count,
+          companyPay: agg.companyPay / count,
+          fuelCost: sumFuelMiles > 0 ? agg.fuelCost / sumFuelMiles : 0,
+          fuelSavings: sumFuelMiles > 0 ? agg.fuelSavings / sumFuelMiles : 0,
+          totalFuel: sumFuelMiles > 0 ? agg.totalFuel / sumFuelMiles : 0,
+          tollCost: agg.tollCost / count,
+          maintenanceCost: agg.maintenanceCost / count,
+          driverFaultExpenses: agg.driverFaultExpenses / count,
+          totalPnL: agg.totalPnL / count,
+          tpogPercentage: agg.tpogPercentages.length > 0 ? agg.tpogPercentages.reduce((a: number, b: number) => a + b, 0) / agg.tpogPercentages.length : 0,
           netPay: agg.netPay / count,
           dispatcherPay: agg.dispatcherPay / count,
           insuranceExp: agg.insuranceExp / count,
           fuelRebate: agg.fuelRebate / count,
           wklyExp: agg.wklyExp / count,
           recruitingCost: agg.recruitingCost / count,
-          contracts: Array.from(agg.contracts),
-          records: agg.records.sort((a: any, b: any) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())
-        };
-      }
+          contracts: Array.from(agg.contracts),
+          records: agg.records.sort((a: any, b: any) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())
+        };
+      }
       
-      const avgTpog = agg.tpogPercentages.length > 0 ? agg.tpogPercentages.reduce((a: number, b: number) => a + b, 0) / agg.tpogPercentages.length : 0;
-      return {
-        ...agg,
-        tpogPercentage: avgTpog,
-        contracts: Array.from(agg.contracts),
-        records: agg.records.sort((a: any, b: any) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())
-      };
-    });
+      const avgTpog = agg.tpogPercentages.length > 0 ? agg.tpogPercentages.reduce((a: number, b: number) => a + b, 0) / agg.tpogPercentages.length : 0;
+      return {
+        ...agg,
+        tpogPercentage: avgTpog,
+        contracts: Array.from(agg.contracts),
+        records: agg.records.sort((a: any, b: any) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())
+      };
+    });
 
     return result.sort((a, b) => {
       const aVal = a[sortConfig.key];
@@ -628,24 +619,19 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             };
          }
          
-         const isMcloo = r.contractType === 'MCLOO';
-         const isTpogFran = r.contractType === 'TPOG' && !!r.franchiseId;
-         const tpogDiv = isTpogFran ? 0.5 : 1;
-         const mclooMult = isMcloo ? 0.3 : 1;
-
-         if (r.totalGross) { contractAvgs[cType].grossSum += r.totalGross * tpogDiv; contractAvgs[cType].grossCount++; }
-         if (r.companyPay) { contractAvgs[cType].revSum += r.companyPay * tpogDiv; contractAvgs[cType].revCount++; }
-         if (r.marginAmount) { contractAvgs[cType].marginSum += r.marginAmount * tpogDiv; contractAvgs[cType].marginCount++; }
-         if (r.poCoverage) { contractAvgs[cType].poCovSum += -Math.abs(r.poCoverage) * mclooMult * tpogDiv; contractAvgs[cType].poCovCount++; }
-         if (r.fuelCost || r.fuelSavings) { contractAvgs[cType].fuelSum += ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)) * tpogDiv; contractAvgs[cType].fuelMilesSum += (r.milesDriven || 0); }
-         if (r.netPay) { contractAvgs[cType].netPaySum += r.netPay * tpogDiv; }
-         if (r.dispatcherCommission) { contractAvgs[cType].dispPaySum += r.dispatcherCommission * tpogDiv; }
-         if (r.liability || r.cargo_insurance || r.physical_damage) { contractAvgs[cType].insExpSum += ((r.liability || 0) + (r.cargo_insurance || 0) + (r.physical_damage || 0)) * tpogDiv; }
-         if (r.fuel_quantity) { contractAvgs[cType].fuelRebateSum += (r.fuel_quantity * 0.20) * tpogDiv; }
-         if (r.calculatedFixedCost || r.fixed_costs) { contractAvgs[cType].wklyExpSum += (r.calculatedFixedCost || r.fixed_costs) * tpogDiv; }
-         if (r.tollCost) { contractAvgs[cType].tollsSum += Math.abs(r.tollCost) * (isMcloo ? 0 : 1); }
-         if (r.recruitingCost) { contractAvgs[cType].recruitingSum += r.recruitingCost * tpogDiv; }
-         contractAvgs[cType].pnlSum += ((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)) * tpogDiv;
+         if (r.grossRevenue || r.driver_gross) { contractAvgs[cType].grossSum += (r.grossRevenue || r.driver_gross); contractAvgs[cType].grossCount++; }
+         if (r.companyPay) { contractAvgs[cType].revSum += r.companyPay; contractAvgs[cType].revCount++; }
+         if (r.marginAmount) { contractAvgs[cType].marginSum += r.marginAmount; contractAvgs[cType].marginCount++; }
+         if (r.poCoverage) { contractAvgs[cType].poCovSum += -Math.abs(r.poCoverage); contractAvgs[cType].poCovCount++; }
+         if (r.fuelCost || r.fuelSavings) { contractAvgs[cType].fuelSum += ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)); contractAvgs[cType].fuelMilesSum += (r.milesDriven || 0); }
+         if (r.netPay) { contractAvgs[cType].netPaySum += r.netPay; }
+         if (r.dispatcherCommission) { contractAvgs[cType].dispPaySum += r.dispatcherCommission; }
+         if (r.liability || r.cargo_insurance || r.physical_damage) { contractAvgs[cType].insExpSum += ((r.liability || 0) + (r.cargo_insurance || 0) + (r.physical_damage || 0)); }
+         if (r.fuel_quantity) { contractAvgs[cType].fuelRebateSum += (r.fuel_quantity * 0.20); }
+         if (r.calculatedFixedCost || r.fixed_costs) { contractAvgs[cType].wklyExpSum += (r.calculatedFixedCost || r.fixed_costs); }
+         if (r.tollCost) { contractAvgs[cType].tollsSum += Math.abs(r.tollCost); }
+         if (r.recruitingCost) { contractAvgs[cType].recruitingSum += r.recruitingCost; }
+         contractAvgs[cType].pnlSum += ((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0));
          contractAvgs[cType].pnlCount++;
       });
     });
@@ -720,6 +706,15 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
 
   return (
     <div className="flex flex-col h-full gap-2 relative">
+      {showSettings && (
+        <DriverSettings 
+          onClose={() => setShowSettings(false)} 
+          settings={driverSettings} 
+          onSave={handleSaveSettings}
+          contracts={Array.from(new Set(drivers.map(d => d.contractType))).filter(c => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c?.toUpperCase()))}
+          companies={Array.from(new Set(drivers.map(d => d.companyId))).filter(c => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c?.toUpperCase()))}
+        />
+      )}
       <div className="flex justify-between items-center px-1 mb-2">
         <input 
           type="text" 
@@ -729,7 +724,13 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           className="bg-zinc-900 border border-zinc-800 text-[11px] p-1.5 rounded w-64 text-zinc-300 focus:border-emerald-500 focus:outline-none" 
         />
         <div className="flex items-center gap-2">
-          <div className="relative">
+          <div className="relative flex items-center gap-2">
+            <button
+              onClick={() => setShowSettings(true)}
+              className="px-3 py-1 rounded text-[10px] font-bold border transition-colors cursor-pointer bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white flex items-center gap-1"
+            >
+              <Settings size={10} /> SETTINGS
+            </button>
             <button 
               onClick={() => setShowFilters(!showFilters)} 
               className={`px-3 py-1 rounded text-[10px] font-bold border transition-colors cursor-pointer ${filterComp.length || filterCont.length || filterFran.length ? 'bg-blue-500/20 text-blue-400 border-blue-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
@@ -812,7 +813,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             <tr>
               <th className="px-2 py-1.5 w-6 bg-zinc-900 border-b border-zinc-800"></th>
               <th onClick={() => requestSort('name')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left">Driver</th>
-              <th onClick={() => requestSort('totalGross')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none">Gross{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('totalGross')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none">Drv. Gross{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('marginAmount')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none">Margin{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('netPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Net Pay{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('dispatcherPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Disp. Pay{isAvgPerWeek ? ' / wk' : ''}</th>
@@ -835,6 +836,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
               isExpanded={expandedDriverId === driver.id} 
               onToggle={handleToggle}
               fleetAverages={fleetAverages}
+              settings={driverSettings}
             />
           ))}
         </tbody>

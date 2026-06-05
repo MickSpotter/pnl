@@ -353,7 +353,7 @@ const MasterTable: React.FC<{
       if (d.name === 'Unassigned') {
           if (!acc.some((x: any) => x.name === 'Unassigned')) acc.push(d);
       } else {
-          acc.push(d);
+          if (!acc.some((x: any) => x.name === d.name)) acc.push(d);
       }
       return acc;
   }, [] as any[]).sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')).filter((d: any) => !searchQuery || String(d.name || 'Unassigned').toLowerCase().startsWith(searchQuery.toLowerCase()));
@@ -558,7 +558,7 @@ const MasterTable: React.FC<{
         } else if (groupBy === 'Driver') {
           rows = driverRows.map(d => {
               const isMergedUnassigned = (!d.name || String(d.name).toLowerCase() === 'unassigned' || String(d.name).toLowerCase() === 'unknown driver');
-              return { name: d.name, drivers: isMergedUnassigned ? (groupedDrivers.get('Unassigned') || []) : [d] };
+              return { name: d.name, drivers: groupedDrivers.get(isMergedUnassigned ? 'Unassigned' : d.name) || [] };
           });
         }
         const activeDrivers = rows.flatMap(r => r.drivers);
@@ -600,7 +600,7 @@ const MasterTable: React.FC<{
 
      const computedArr = arr.map(item => {
         let name = type === 'Driver' ? (item.name || 'Unassigned') : (item || 'Unassigned');
-        let drvs = type === 'Driver' ? (name === 'Unassigned' ? (groupedDrivers.get(name) || []) : [item]) : (groupedDrivers.get(name) || []);
+        let drvs = type === 'Driver' ? (groupedDrivers.get(name) || []) : (groupedDrivers.get(name) || []);
         const metrics = getAdjustedGroupMetrics(drvs);
         const w4 = get4wMetrics(name);
         const div = metrics.effNonTeamsCount > 0 ? metrics.effNonTeamsCount : metrics.effCount;
@@ -1044,12 +1044,7 @@ const MasterTable: React.FC<{
           let drvs: any[] = [];
           if (groupBy === 'Driver') {
               const isMergedUnassigned = (!entity || String(entity).toLowerCase() === 'unassigned' || String(entity).toLowerCase() === 'unknown driver');
-              if (isMergedUnassigned) {
-                  drvs = groupedDrivers.get('Unassigned') || [];
-              } else {
-                  const drvObj = driverRows.find(d => d.name === entity);
-                  drvs = drvObj ? [drvObj] : [];
-              }
+              drvs = groupedDrivers.get(isMergedUnassigned ? 'Unassigned' : entity) || [];
           } else {
               drvs = groupedDrivers.get(entity || 'Unassigned') || [];
           }
@@ -1123,12 +1118,7 @@ const MasterTable: React.FC<{
             let drvs: any[] = [];
             if (groupBy === 'Driver') {
                 const isMergedUnassigned = (!entity || String(entity).toLowerCase() === 'unassigned' || String(entity).toLowerCase() === 'unknown driver');
-                if (isMergedUnassigned) {
-                    drvs = groupedDrivers.get('Unassigned') || [];
-                } else {
-                    const drvObj = driverRows.find(d => d.name === entity);
-                    drvs = drvObj ? [drvObj] : [];
-                }
+                drvs = groupedDrivers.get(isMergedUnassigned ? 'Unassigned' : entity) || [];
             } else {
                 drvs = groupedDrivers.get(entity || 'Unassigned') || [];
             }
@@ -1310,7 +1300,7 @@ const MasterTable: React.FC<{
               </div>
             </th>}
            <th onClick={() => requestSort('gross')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-yellow-400 text-[10px] cursor-pointer hover:text-yellow-300 !overflow-visible">
-              Gross {sortConfig?.key === 'gross' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+              Drv. Gross {sortConfig?.key === 'gross' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[200px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                 <div className="font-bold text-white mb-0.5">Gross Calculation:</div>
                 <div>This represents the Driver Gross.</div>
@@ -1685,7 +1675,7 @@ const MasterTable: React.FC<{
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.franchiseId || '-')}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.dispatcherId || '-')}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.contractType || '-')}</td>
-                {renderRowCells(metrics, w4, isStub, displayLabel, isMergedUnassigned ? drvRecords : [d])}
+                {renderRowCells(metrics, w4, isStub, displayLabel, groupedDrivers.get(displayLabel) || [])}
               </tr>
             );
           })}
@@ -2194,7 +2184,7 @@ const PnLView: React.FC<PnLViewProps> = ({
     { id: 'Eff Drv', label: 'Eff Drv', pinned: null, hidden: false },
     { id: 'Eff NonTm', label: 'Eff NonTm', pinned: null, hidden: false },
     { id: 'Eff Trls', label: 'Eff Trls', pinned: null, hidden: false },
-    { id: 'Gross', label: 'Gross', pinned: null, hidden: false },
+    { id: 'Gross', label: 'Drv. Gross', pinned: null, hidden: false },
     { id: 'Margin', label: 'Margin', pinned: null, hidden: false },
     { id: 'Net Pay', label: 'Net Pay', pinned: null, hidden: false },
     { id: 'Med. Net Pay', label: 'Med. Net Pay', pinned: null, hidden: false },
@@ -3744,6 +3734,10 @@ if (isCategorical) {
     let pnlProrated = 0;
     let pnlZeroMiDrop = 0;
     
+    const sortedDatesForBal = Array.from(new Set(initialDrivers.map(x => x.payDate))).filter(Boolean).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
+    const latestDateInSelection = sortedDatesForBal.length > 0 ? sortedDatesForBal[0] : null;
+    const isCombinedDates = sortedDatesForBal.length > 1;
+
     initialDrivers.forEach(d => {
         fcTruck += (d as any).fcTruck || 0;
         fcCpm += (d as any).fcCpm || 0;
@@ -3805,11 +3799,12 @@ if (isCategorical) {
         const effTr = (d as any).effectiveTrailers || 0;
 
         const rBase = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0);
-        const poDed = Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0);
-        const poSet = Number((d as any).po_settle ?? (d as any).poSettle ?? 0);
-        const balSet = Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0);
-        const nPay = Number((d as any).net_pay ?? d.netPay ?? 0);
-        const escDed = Number((d as any).escrow_deduction ?? (d as any).escrowDeduct ?? 0);
+        const isLatestWeek = d.payDate === latestDateInSelection;
+        const poDed = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0);
+        const poSet = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).po_settle ?? (d as any).poSettle ?? 0);
+        const balSet = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0);
+        const nPay = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).net_pay ?? d.netPay ?? 0);
+        const escDed = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).escrow_deduction ?? (d as any).escrowDeduct ?? 0);
         
         const tFloat = Number((d as any).truck_float ?? (d as any).truckFloat ?? 0);
         const tWkly = Number((d as any).truck_wkly ?? (d as any).truckWkly ?? 0);
