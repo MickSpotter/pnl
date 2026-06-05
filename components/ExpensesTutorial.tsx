@@ -5,7 +5,7 @@ interface TutorialModalProps {
   isOpen: boolean;
   onClose: () => void;
   activeTab: string;
-  tutorialType?: 'rules' | 'mcloo' | 'reductions' | null;
+  tutorialType?: 'rules' | 'reductions' | null;
 }
 
 const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTab, tutorialType = 'rules' }) => {
@@ -32,13 +32,17 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
   const [conTypeOpen, setConTypeOpen] = React.useState(false);
 
   const [dispExpanded, setDispExpanded] = React.useState(false);
+  const [dispPayTab, setDispPayTab] = React.useState<'gross_margin' | 'shared_responsibility'>('gross_margin');
   const [dispContract, setDispContract] = React.useState('');
-  const [dispContractOpen, setDispContractOpen] = React.useState(false);
+  const [dispCompany, setDispCompany] = React.useState('');
+  const [dispTeam, setDispTeam] = React.useState('');
+  const [dispDispatcher, setDispDispatcher] = React.useState('');
+  const [dispType, setDispType] = React.useState('%');
   const [dispValidFrom, setDispValidFrom] = React.useState('');
   const [dispValidTo, setDispValidTo] = React.useState('');
   const [dispGross, setDispGross] = React.useState('');
   const [dispMargin, setDispMargin] = React.useState('');
-  const [dispMclooOpen, setDispMclooOpen] = React.useState(false);
+  const [dispAmount, setDispAmount] = React.useState('');
   const [dispMclooPay, setDispMclooPay] = React.useState('');
 
      const [cpmExpanded, setCpmExpanded] = React.useState(false);
@@ -50,6 +54,11 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
   const [frRows, setFrRows] = React.useState<{id: string, type: 'global'|'company'|'contract', target: string, amount: string, validFrom?: string, validTo?: string}[]>([]);
   const [frAddDropdownOpen, setFrAddDropdownOpen] = React.useState(false);
   const [frTargetOpen, setFrTargetOpen] = React.useState(false);
+
+  const [fixRevExpanded, setFixRevExpanded] = React.useState(false);
+  const [fixRevRows, setFixRevRows] = React.useState<{id: string, type: 'global'|'company'|'contract'|'franchise', target: string, amount: string, validFrom?: string, validTo?: string}[]>([]);
+  const [fixRevDropdownOpen, setFixRevDropdownOpen] = React.useState(false);
+  const [fixRevTargetOpen, setFixRevTargetOpen] = React.useState(false);
 
       const contractSteps = [
       { title: 'Tutorial Overview', text: "Let's learn how to configure Contract Rules step by step.", focus: null, x: 50, y: 35, setup: () => { setConExpanded(false); setConNewRule(false); setConGross(''); setConMargin(''); setConValidFrom(''); setConValidTo(''); setConTypeOpen(false); } },
@@ -64,19 +73,19 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
   ];
 
   const dispatcherSteps = [
-      { title: 'Tutorial Overview', text: "Let's learn how to configure Dispatcher Pay rules step by step.", focus: null, x: 50, y: 40, setup: () => { setDispExpanded(false); setDispContract(''); setDispContractOpen(false); setDispValidFrom(''); setDispValidTo(''); setDispGross(''); setDispMargin(''); setDispMclooOpen(false); setDispMclooPay(''); } },
-           { title: 'Step 1: Add Rule', text: "Click ADD RULE to create a new dispatcher pay rule.", focus: 'dispChevron', x: 35, y: 55, setup: () => { setDispExpanded(false); setDispContract(''); setDispContractOpen(false); setDispValidFrom(''); setDispValidTo(''); setDispGross(''); setDispMargin(''); setDispMclooOpen(false); setDispMclooPay(''); } },
-      { title: 'Step 2: New Rule Added', text: "A new dispatcher pay rule is now added. Next, choose which contract this rule applies to.", focus: 'dispContractInput', x: 45, y: 35, setup: () => { setDispExpanded(true); setDispContract(''); setDispContractOpen(false); setDispValidFrom(''); setDispValidTo(''); setDispGross(''); setDispMargin(''); setDispMclooOpen(false); setDispMclooPay(''); } },
-      { title: 'Step 3: Select ALL', text: "In this example, we'll select 'ALL' to apply this pay structure to all contracts by default.", focus: 'dispContractAll', x: 45, y: 45, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom(''); setDispValidTo(''); setDispGross(''); setDispMargin(''); setDispMclooOpen(false); setDispMclooPay(''); } },
-      { title: 'Step 4: Set Valid From', text: "Define when this rule starts taking effect.", focus: 'dispValidFromInput', x: 40, y: 55, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross(''); setDispMargin(''); setDispMclooOpen(false); setDispMclooPay(''); } },
-      { title: 'Step 5: Set Valid To', text: "Optionally, set an end date. Leave empty if it applies indefinitely.", focus: 'dispValidToInput', x: 50, y: 55, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross(''); setDispMargin(''); setDispMclooOpen(false); setDispMclooPay(''); } },
-      { title: 'Step 6: Enter Gross %', text: "Set the percentage of gross the dispatcher receives.", focus: 'dispGrossInput', x: 60, y: 55, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross('3'); setDispMargin(''); setDispMclooOpen(false); setDispMclooPay(''); } },
-      { title: 'Step 7: Enter Margin %', text: "Set the margin percentage, if applicable.", focus: 'dispMarginInput', x: 70, y: 55, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross('3'); setDispMargin('30'); setDispMclooOpen(false); setDispMclooPay(''); } },
-      { title: 'Step 8: Open MCLOO Pay', text: "If the contract is ALL or MCLOO, you can configure how dispatcher shares liability insurance costs. Click here.", focus: 'dispMclooToggle', x: 75, y: 55, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross('3'); setDispMargin('30'); setDispMclooOpen(false); setDispMclooPay(''); } },
-      { title: 'Step 9: Review Shared Amount', text: "You can see companies and their configured Shared Liability amount. This is how much the company expects to collect.", focus: 'dispMclooShared', x: 50, y: 70, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross('3'); setDispMargin('30'); setDispMclooOpen(true); setDispMclooPay(''); } },
-      { title: 'Step 10: Set Dispatcher Pay', text: "Enter how much of that shared cost the dispatcher is responsible to pay out of their pocket.", focus: 'dispMclooInput', x: 70, y: 70, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross('3'); setDispMargin('30'); setDispMclooOpen(true); setDispMclooPay('50'); } },
-      { title: 'Step 11: Save Changes', text: "Click Save and Close to apply the configuration.", focus: 'saveBtn', x: 50, y: 35, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross('3'); setDispMargin('30'); setDispMclooOpen(true); setDispMclooPay('50'); } },
-      { title: 'Done!', text: "You now know exactly how to configure Dispatcher Pay.", focus: null, x: 50, y: 40, setup: () => { setDispExpanded(true); setDispContract('ALL'); setDispContractOpen(false); setDispValidFrom('2026-05-26'); setDispValidTo(''); setDispGross('3'); setDispMargin('30'); setDispMclooOpen(true); setDispMclooPay('50'); } }
+      { title: 'Tutorial Overview', text: "Let's learn how to configure Dispatcher Pay rules step by step.", focus: null, x: 50, y: 50, setup: () => { setDispExpanded(false); setDispPayTab('gross_margin'); setDispContract(''); setDispCompany(''); setDispTeam(''); setDispDispatcher(''); setDispValidFrom(''); setDispValidTo(''); setDispType('%'); setDispGross(''); setDispMargin(''); setDispMclooPay(''); } },
+      { title: 'Step 1: Gross/Margin Tab', text: "By default, you manage standard percentage or flat pay rules here.", focus: 'dispTabGross', x: 50, y: 70, setup: () => { setDispExpanded(false); setDispPayTab('gross_margin'); } },
+      { title: 'Step 2: Add Rule', text: "Click ADD RULE to create a new dispatcher pay configuration.", focus: 'dispChevron', x: 50, y: 25, setup: () => { setDispExpanded(false); } },
+      { title: 'Step 3: New Rule Added', text: "A new rule appears. You can narrow it down by Contract, Company, Team, or specific Dispatcher.", focus: 'dispRow', x: 50, y: 80, setup: () => { setDispExpanded(true); } },
+      { title: 'Step 4: Select Contract', text: "Leave it as ALL to apply to all contracts.", focus: 'dispContractInput', x: 50, y: 80, setup: () => { setDispExpanded(true); setDispContract(''); } },
+      { title: 'Step 5: Set Dates', text: "Define when this rule starts taking effect.", focus: 'dispValidFromInput', x: 50, y: 80, setup: () => { setDispExpanded(true); setDispValidFrom('2026-05-26'); } },
+      { title: 'Step 6: Pay Type', text: "Select whether the pay is a percentage, per truck flat rate, or total flat amount.", focus: 'dispTypeInput', x: 50, y: 80, setup: () => { setDispExpanded(true); setDispType('%'); } },
+      { title: 'Step 7: Enter Gross %', text: "Set the percentage of gross the dispatcher receives.", focus: 'dispGrossInput', x: 50, y: 80, setup: () => { setDispExpanded(true); setDispGross('3'); } },
+      { title: 'Step 8: Enter Margin %', text: "Set the margin percentage, if applicable.", focus: 'dispMarginInput', x: 50, y: 80, setup: () => { setDispExpanded(true); setDispGross('3'); setDispMargin('30'); } },
+      { title: 'Step 9: Shared Insurance Tab', text: "Now click on 'Shared Insurance' to manage how dispatchers cover liability.", focus: 'dispTabShared', x: 50, y: 70, setup: () => { setDispExpanded(true); setDispGross('3'); setDispMargin('30'); setDispPayTab('shared_responsibility'); } },
+      { title: 'Step 10: Set Dispatcher Pay', text: "Enter how much of the shared cost the dispatcher is responsible to pay.", focus: 'dispMclooInput', x: 50, y: 25, setup: () => { setDispExpanded(true); setDispPayTab('shared_responsibility'); setDispMclooPay('50'); } },
+      { title: 'Step 11: Save Changes', text: "Click Save and Close to apply the configuration.", focus: 'saveBtn', x: 50, y: 25, setup: () => { setDispExpanded(true); setDispPayTab('shared_responsibility'); setDispMclooPay('50'); } },
+      { title: 'Done!', text: "You now know exactly how to configure Dispatcher Pay.", focus: null, x: 50, y: 50, setup: () => { setDispExpanded(true); setDispPayTab('shared_responsibility'); setDispMclooPay('50'); } }
   ];
 
     const cpmSteps = [
@@ -122,6 +131,21 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
       { title: 'Done!', text: "You now know exactly how to manage Fuel Rebate rules.", focus: null, x: 50, y: 40, setup: () => { setFrRows([{ id: 'f3', type: 'company', target: 'Test Company', amount: '0.30', validFrom: '06/01/2026', validTo: '' }, { id: 'f2', type: 'contract', target: 'TPOG', amount: '0.25', validFrom: '06/01/2026', validTo: '' }, { id: 'f1', type: 'global', target: 'ALL', amount: '0.20', validFrom: '05/27/2026', validTo: '' }]); setFrAddDropdownOpen(false); setFrTargetOpen(false); } }
   ];
 
+  const fixedRevenueSteps = [
+    { title: 'Tutorial Overview', text: "Let's learn how to configure Fixed Revenue rules step by step.", focus: null, x: 50, y: 40, setup: () => { setFixRevExpanded(false); setFixRevRows([]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } },
+    { title: 'Step 1: Expand Item', text: "Click on a revenue item like 'Truck Weekly' to expand it.", focus: 'fixRevChevron', x: 50, y: 45, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } },
+    { title: 'Step 2: Modify Default', text: "If there's an existing Default rule here, you can click 'Custom Value' to override its amount.", focus: 'fixRevCustomCheckbox', x: 50, y: 70, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } },
+    { title: 'Step 3: Add Global Rule', text: "Click ADD GLOBAL RULE to set a default revenue amount.", focus: 'fixRevAddGlobal', x: 25, y: 65, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } },
+    { title: 'Step 4: Set Valid From', text: "Select the start date.", focus: 'fixRevValidFromGlobal', x: 45, y: 65, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'rev1', type: 'global', target: 'ALL', amount: '', validFrom: '05/27/2026', validTo: '' }, { id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } },
+    { title: 'Step 5: Set Valid To', text: "Set the end date. You can leave this blank if it applies indefinitely.", focus: 'fixRevValidToGlobal', x: 60, y: 65, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'rev1', type: 'global', target: 'ALL', amount: '', validFrom: '05/27/2026', validTo: '' }, { id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } },
+    { title: 'Step 6: Set Amount', text: "Enter the revenue amount.", focus: 'fixRevAmountGlobal', x: 80, y: 65, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'rev1', type: 'global', target: 'ALL', amount: '250.00', validFrom: '05/27/2026', validTo: '' }, { id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } },
+    { title: 'Step 7: Add Exception', text: "To set specific revenue for a contract, company, or franchise, click 'Add Rule For'.", focus: 'fixRevAddDropdown', x: 75, y: 65, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'rev1', type: 'global', target: 'ALL', amount: '250.00', validFrom: '05/27/2026', validTo: '' }, { id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(true); setFixRevTargetOpen(false); } },
+    { title: 'Step 8: Select Scope', text: "Choose 'Contract' to apply a specific revenue rule to a contract type.", focus: 'fixRevAddContractItem', x: 65, y: 75, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'rev2', type: 'contract', target: 'Select Contract', amount: '', validFrom: '05/27/2026', validTo: '' }, { id: 'rev1', type: 'global', target: 'ALL', amount: '250.00', validFrom: '05/27/2026', validTo: '' }, { id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(true); setFixRevTargetOpen(false); } },
+    { title: 'Step 9: Target Contract', text: "Select the target contract from the dropdown.", focus: 'fixRevSelectTarget', x: 35, y: 15, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'rev2', type: 'contract', target: 'Select Contract', amount: '', validFrom: '05/27/2026', validTo: '' }, { id: 'rev1', type: 'global', target: 'ALL', amount: '250.00', validFrom: '05/27/2026', validTo: '' }, { id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(true); } },
+    { title: 'Step 10: Set Custom Amount', text: "Set the custom amount for this specific contract.", focus: 'fixRevAmountSpecific', x: 55, y: 15, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'rev2', type: 'contract', target: 'MCLOO', amount: '300.00', validFrom: '05/27/2026', validTo: '' }, { id: 'rev1', type: 'global', target: 'ALL', amount: '250.00', validFrom: '05/27/2026', validTo: '' }, { id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } },
+    { title: 'Done!', text: "You now know how to manage Fixed Revenue rules.", focus: null, x: 50, y: 50, setup: () => { setFixRevExpanded(true); setFixRevRows([{ id: 'rev2', type: 'contract', target: 'MCLOO', amount: '300.00', validFrom: '05/27/2026', validTo: '' }, { id: 'rev1', type: 'global', target: 'ALL', amount: '250.00', validFrom: '05/27/2026', validTo: '' }, { id: 'default_tpog', type: 'contract', target: 'TPOG', amount: '150.00', validFrom: '2026-05-20', validTo: '2026-05-26' }]); setFixRevDropdownOpen(false); setFixRevTargetOpen(false); } }
+  ];
+
       const fixedSteps = tutorialType === 'rules' ? [
       { title: 'Tutorial Overview', text: "Let's learn how to configure Global rules and specific exceptions safely.", focus: null, x: 50, y: 40, setup: () => { setExpExpanded(false); setExpRows([]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(false); setMclooMode('shared'); setReductionModalOpen(false); setIncludeDropdownOpen(false); } },
       { title: 'Step 1: Expand Category', text: "First, we view the rules for this expense.", focus: 'expChevron', x: 55, y: 45, setup: () => { setExpExpanded(true); setExpRows([]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(false); setMclooMode('shared'); } },
@@ -134,21 +158,10 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
       { title: 'Step 8: Add New Company', text: "If the company isn't listed, select the '+ Add new company' option from the dropdown. This will open an interactive prompt allowing you to type and create a new company on the fly.", focus: 'selectCompany', x: 65, y: 65, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: '', amount: '', validFrom: '' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(true); setMclooOpen(false); setMclooMode('shared'); } },
       { title: 'Step 9: Effective Dates', text: "Set when this specific override starts and ends. Just like before, 'Valid To' can be left empty.", focus: 'datesCompany', x: 65, y: 55, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(false); setMclooMode('shared'); } },
       { title: 'Step 10: Override Amount', text: "Enter the new amount just for this company.", focus: 'amountCompany', x: 30, y: 55, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '400.00', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(false); setMclooMode('shared'); } },
-      { title: 'Step 11: Save Changes', text: "Always remember to click Save and Close to apply your structural changes.", focus: 'saveBtn', x: 50, y: 50, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '400.00', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(false); setMclooMode('shared'); } },
-      { title: 'Done!', text: "You now know exactly how to manage hierarchical rules.", focus: null, x: 50, y: 50, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '400.00', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(false); setMclooMode('shared'); } }
-  ] : tutorialType === 'mcloo' ? [
-      { title: 'Tutorial Overview', text: "This tutorial covers shared responsibility for Liability Insurance.", focus: null, x: 50, y: 40, setup: () => { setExpExpanded(false); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '400.00', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setMclooOpen(false); setMclooMode('shared'); setReductionModalOpen(false); setIncludeDropdownOpen(false); } },
-      { title: 'Step 1: Expand Category', text: "First, we view the existing rules.", focus: 'expChevron', x: 55, y: 45, setup: () => { setExpExpanded(true); } },
-      { title: 'Step 2: Edit MCLOO Rule', text: "Click 'Edit MCLOO Rule' to configure shared responsibility parameters for the specific company.", focus: 'editMcloo', x: 35, y: 55, setup: () => { setExpExpanded(true); setMclooOpen(false); } },
-      { title: 'Step 3: MCLOO Shared Mode', text: "In 'Shared' mode, you input a cap amount. The system calculates 'Comp Pay' automatically based on the actual Total cost.", focus: 'mclooPanel', x: 50, y: 25, setup: () => { setExpExpanded(true); setMclooOpen(true); setMclooMode('shared'); } },
-      { title: 'Step 4: Comp Pay Profit (Negative)', text: "When the actual total cost is lower than the shared responsibility cap, the 'Comp Pay' becomes negative (green). This indicates a surplus, effectively generating a profit for the company.", focus: 'compPayNegative', x: 50, y: 20, setup: () => { setExpExpanded(true); setMclooOpen(true); setMclooMode('shared'); } },
-      { title: 'Step 5: Comp Pay Cost (Positive)', text: "When the actual total cost exceeds the cap, the 'Comp Pay' becomes positive (red). This represents an out-of-pocket expense the company must cover.", focus: 'compPayPositive', x: 50, y: 20, setup: () => { setExpExpanded(true); setMclooOpen(true); setMclooMode('shared'); } },
-      { title: 'Step 6: Comp Pay Breakeven (Zero)', text: "When the actual total matches the cap exactly, the 'Comp Pay' is zero (green). The company incurs neither a profit nor an additional cost.", focus: 'compPayZero', x: 50, y: 20, setup: () => { setExpExpanded(true); setMclooOpen(true); setMclooMode('shared'); } },
-      { title: 'Step 7: MCLOO Base Mode', text: "Switching to 'Base' mode applies a fixed flat rate. The company will always pay exactly the specified base amount, regardless of the actual total cost variations.", focus: 'mclooBase', x: 50, y: 30, setup: () => { setExpExpanded(true); setMclooOpen(true); setMclooMode('base'); } },
-      { title: 'Step 8: Include in Limit', text: "You can combine other insurances (like Cargo or Physical Damage) into this company's limit by clicking here.", focus: 'mclooIncludeBtn', x: 45, y: 35, setup: () => { setExpExpanded(true); setMclooOpen(true); setMclooMode('base'); setIncludeDropdownOpen(false); } },
-            { title: 'Step 9: Select Insurances', text: "Check the boxes for any additional insurances that should count towards this base responsibility cap.", focus: 'mclooIncludeDrop', x: 12, y: 35, setup: () => { setExpExpanded(true); setMclooOpen(true); setMclooMode('base'); setIncludeDropdownOpen(true); } },
-      { title: 'Step 10: Save Changes', text: "Always remember to click Save and Close to apply your structural changes.", focus: 'saveBtn', x: 50, y: 50, setup: () => { setExpExpanded(true); setMclooOpen(false); setIncludeDropdownOpen(false); } },
-      { title: 'Done!', text: "You now know exactly how to manage MCLOO modes and inclusions.", focus: null, x: 50, y: 50, setup: () => { setExpExpanded(true); setMclooOpen(false); setIncludeDropdownOpen(false); } }
+      { title: 'Step 11: Edit MCLOO Rule', text: "If this expense is Liability Insurance, you can configure shared responsibility by clicking 'Edit MCLOO Rule'.", focus: 'editMcloo', x: 30, y: 65, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '400.00', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(false); setMclooMode('shared'); } },
+      { title: 'Step 12: MCLOO Panel', text: "The MCLOO panel opens, allowing you to configure shared responsibility for this specific rule.", focus: 'mclooPanel', x: 50, y: 25, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '400.00', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(true); setMclooMode('shared'); } },
+      { title: 'Step 13: Save Changes', text: "Always remember to click Save and Close to apply your structural changes.", focus: 'saveBtn', x: 50, y: 50, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '400.00', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(true); setMclooMode('shared'); } },
+      { title: 'Done!', text: "You now know exactly how to manage hierarchical rules.", focus: null, x: 50, y: 50, setup: () => { setExpExpanded(true); setExpRows([{ id: 'r2', type: 'company', target: 'Test Company', amount: '400.00', validFrom: '2026-06-01' }, { id: 'r1', type: 'global', target: 'ALL', amount: '350.50', validFrom: '2026-05-26' }]); setDropdownOpen(false); setCompSelectOpen(false); setMclooOpen(true); setMclooMode('shared'); } }
   ] : [
       { title: 'Tutorial Overview', text: "Learn how to apply custom reductions to Truck or Trailer prices, and how they combine.", focus: null, x: 50, y: 20, setup: () => { setExpExpanded(false); setExpRows([]); setReductionModalOpen(false); setDropdownOpen(false); setIncludeDropdownOpen(false); } },
       { title: 'Step 1: Expand Category', text: "Expand the category to see the base rules.", focus: 'expChevron', x: 50, y: 20, setup: () => { setExpExpanded(true); setReductionModalOpen(false); } },
@@ -164,7 +177,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
            { title: 'Done!', text: "You now understand how truck and trailer price reductions work.", focus: null, x: 50, y: 50, setup: () => { setExpExpanded(true); setReductionModalOpen(false); } }
   ];
 
-  const steps = localTab === 'contracts' ? contractSteps : (localTab === 'dispatcher' ? dispatcherSteps : (localTab === 'cpm' ? cpmSteps : (localTab === 'pnl' ? pnlSteps : (localTab === 'fuel_rebate' ? fuelRebateSteps : fixedSteps))));
+  const steps = localTab === 'contracts' ? contractSteps : (localTab === 'dispatcher' ? dispatcherSteps : (localTab === 'fixed_revenue' ? fixedRevenueSteps : (localTab === 'cpm' ? cpmSteps : (localTab === 'pnl' ? pnlSteps : (localTab === 'fuel_rebate' ? fuelRebateSteps : fixedSteps)))));
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -185,13 +198,17 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
       setConValidTo('');
       setConTypeOpen(false);
       setDispExpanded(false);
+      setDispPayTab('gross_margin');
       setDispContract('');
-      setDispContractOpen(false);
+      setDispCompany('');
+      setDispTeam('');
+      setDispDispatcher('');
+      setDispType('%');
       setDispValidFrom('');
       setDispValidTo('');
       setDispGross('');
       setDispMargin('');
-      setDispMclooOpen(false);
+      setDispAmount('');
       setDispMclooPay('');
       setCpmRows([]);
       setCpmAddDropdownOpen(false);
@@ -201,6 +218,10 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
       setFrRows([]);
       setFrAddDropdownOpen(false);
       setFrTargetOpen(false);
+      setFixRevExpanded(false);
+      setFixRevRows([]);
+      setFixRevDropdownOpen(false);
+      setFixRevTargetOpen(false);
       setReductionModalOpen(false);
       setMessage({ title: '', text: '', visible: false, x: 50, y: 50 });
       return;
@@ -231,10 +252,10 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
         {focusArea && !reductionModalOpen && <div className="absolute inset-0 z-[9998] bg-black/20 pointer-events-none transition-all duration-300"></div>}
         
         
-                              {(localTab === 'fixed' || localTab === 'contracts' || localTab === 'dispatcher' || localTab === 'cpm' || localTab === 'pnl' || localTab === 'fuel_rebate') && (
+                              {(localTab === 'fixed' || localTab === 'contracts' || localTab === 'dispatcher' || localTab === 'fixed_revenue' || localTab === 'cpm' || localTab === 'pnl' || localTab === 'fuel_rebate') && (
           <div
-            className={`${tutorialType === 'mcloo' && step === 9 ? 'fixed z-[1000000]' : 'absolute z-[10000]'} transition-all duration-500 ease-in-out bg-zinc-900 border border-emerald-500 shadow-[0_10px_40px_rgba(16,185,129,0.4)] p-4 rounded-lg w-[320px] pointer-events-auto flex flex-col gap-3`}
-            style={tutorialType === 'mcloo' && step === 9 ? { left: '24px', top: '35vh', transform: 'translateY(-50%)' } : { left: `${steps[step]?.x || 50}%`, top: `${steps[step]?.y || 50}%`, transform: 'translate(-50%, -50%)' }}
+            className="absolute z-[10000] transition-all duration-500 ease-in-out bg-zinc-900 border border-emerald-500 shadow-[0_10px_40px_rgba(16,185,129,0.4)] p-4 rounded-lg w-[320px] pointer-events-auto flex flex-col gap-3"
+            style={{ left: `${steps[step]?.x || 50}%`, top: `${steps[step]?.y || 50}%`, transform: 'translate(-50%, -50%)' }}
           >
             <div>
                <h4 className="text-emerald-500 font-bold text-sm mb-1">{steps[step]?.title}</h4>
@@ -247,7 +268,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
             </div>
           </div>
         )}
-                {(localTab !== 'fixed' && localTab !== 'contracts' && localTab !== 'dispatcher' && localTab !== 'cpm' && localTab !== 'pnl' && localTab !== 'fuel_rebate') && (
+                {(localTab !== 'fixed' && localTab !== 'contracts' && localTab !== 'dispatcher' && localTab !== 'fixed_revenue' && localTab !== 'cpm' && localTab !== 'pnl' && localTab !== 'fuel_rebate') && (
            <div className="absolute z-[10000] transition-all duration-500 ease-out bg-zinc-900 border border-emerald-500 p-4 rounded-lg shadow-[0_10px_40px_rgba(16,185,129,0.4)] min-w-[280px] max-w-sm pointer-events-none" style={{ left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }}>
             <h4 className="text-emerald-500 font-bold text-sm mb-1">{localTab.toUpperCase()}</h4>
             <p className="text-zinc-300 text-xs leading-relaxed">Explore the structure mirroring exactly what you'll see in the live app.</p>
@@ -274,6 +295,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'fixed' ? 'border-blue-500 text-blue-500' : 'border-transparent text-zinc-500'}`}>Expenses</div>
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'contracts' ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-zinc-500'}`}>Contract Rules</div>
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'dispatcher' ? 'border-purple-500 text-purple-500' : 'border-transparent text-zinc-500'}`}>Dispatcher Pay</div>
+            <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'fixed_revenue' ? 'border-indigo-500 text-indigo-500' : 'border-transparent text-zinc-500'}`}>Fixed Revenue</div>
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'cpm' ? 'border-pink-500 text-pink-500' : 'border-transparent text-zinc-500'}`}>CPM REVENUE</div>
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'pnl' ? 'border-cyan-500 text-cyan-500' : 'border-transparent text-zinc-500'}`}>PNL CALCULATION</div>
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'fuel_rebate' ? 'border-rose-500 text-rose-500' : 'border-transparent text-zinc-500'}`}>FUEL REBATE</div>
@@ -295,7 +317,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
                       <tr>
                         <td className={`p-3 px-4 text-sm font-bold flex items-center gap-2 ${expExpanded ? 'text-blue-400 bg-zinc-800/30' : 'text-blue-400'} ${focusArea === 'expChevron' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)] rounded' : 'transition-colors'}`}>
                           <ChevronDown size={14} className={`transition-transform ${expExpanded ? 'rotate-180' : '-rotate-90'}`} />
-                          <span>{tutorialType === 'reductions' ? 'Truck Price' : (tutorialType === 'rules' ? 'Cargo Insurance' : 'Liability Insurance (Auto)')}</span>
+                          <span>{tutorialType === 'reductions' ? 'Truck Price' : 'Liability Insurance'}</span>
                         </td>
                       </tr>
                       {expExpanded && (
@@ -518,8 +540,8 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
                                         </td>
                                         <td className="py-2 px-3 text-right">
                                            <div className="flex items-center justify-end gap-3">
-                                               {tutorialType === 'mcloo' && (
-                                                  <div className={`px-2 py-0.5 bg-amber-950 text-amber-500/70 text-[10px] rounded border border-amber-900/50 transition-colors h-max whitespace-nowrap cursor-pointer ${focusArea === 'editMcloo' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : ''}`}>Edit MCLOO Rule</div>
+                                               {tutorialType === 'rules' && (
+                                                  <div className={`px-2 py-0.5 bg-amber-950 text-amber-500/70 text-[10px] rounded border border-amber-900/50 transition-colors h-max whitespace-nowrap cursor-pointer ${focusArea === 'editMcloo' && row.id === 'r2' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : ''}`}>Edit MCLOO Rule</div>
                                                )}
                                                <button className="text-zinc-500 hover:text-rose-500 transition-colors p-1 rounded flex justify-center items-center"><Trash2 size={14}/></button>
                                            </div>
@@ -529,92 +551,24 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
                                         <tr className="bg-amber-500/5">
                                           <td colSpan={5} className="px-3 pb-3 pt-0 border-t-0">
                                             <div className={`flex flex-col gap-3 bg-zinc-950/50 p-3 rounded-lg border border-amber-500/20 w-full relative ml-4 mt-2 transition-all ${focusArea === 'mclooPanel' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_20px_rgba(16,185,129,0.4)]' : ''}`}>
+                                              <div className="absolute -top-2.5 -left-3 text-amber-500/30">
+                                                  <CornerDownRight size={16} />
+                                              </div>
                                               <div className="flex items-center gap-4 pl-4">
-                                                <div className="flex flex-col gap-1">
-                                                  <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Edit Mode</label>
-                                                  <div className={`flex items-center gap-2 h-5 transition-all ${focusArea === 'mclooBase' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 rounded px-2 shadow-[0_0_15px_rgba(16,185,129,0.5)] -ml-2' : ''}`}>
-                                                    <label className="flex items-center gap-1 cursor-pointer">
-                                                      <input type="checkbox" checked={mclooMode === 'shared'} readOnly className="w-2.5 h-2.5 accent-emerald-500" />
-                                                      <span className="text-[9px] text-zinc-300">Shared</span>
-                                                    </label>
-                                                    <label className="flex items-center gap-1 cursor-pointer">
-                                                      <input type="checkbox" checked={mclooMode === 'base'} readOnly className="w-2.5 h-2.5 accent-emerald-500" />
-                                                      <span className="text-[9px] text-zinc-300">Base</span>
-                                                    </label>
+                                                <div className="flex flex-col gap-1 w-full">
+                                                  <div className="flex items-center gap-1">
+                                                    <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Shared Insurance (Per Unit)</label>
+                                                    <div className="relative group/mcloo-tooltip flex items-center justify-center">
+                                                      <Info size={12} className="text-amber-500/70 hover:text-amber-500 cursor-help transition-colors" />
+                                                    </div>
+                                                  </div>
+                                                  <div className="flex items-center gap-3">
+                                                    <div className="relative h-7 w-32">
+                                                      <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
+                                                      <input type="number" value="250" readOnly className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 outline-none h-full" />
+                                                    </div>
                                                   </div>
                                                 </div>
-                                                <div className="flex flex-col gap-1 w-full">
-                    <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">{mclooMode === 'shared' ? 'Shared Insurance (Per Unit)' : 'Base Insurance (Per Unit)'}</label>
-                    <div className="flex items-center gap-3">
-                      <div className="relative h-7 w-32">
-                        <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
-                        <input type="number" value="250" readOnly className="w-full bg-zinc-900 border border-amber-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 outline-none h-full" />
-                      </div>
-                      {mclooMode === 'base' && (
-                        <div className="relative">
-                          <button className={`h-7 px-3 flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded text-[10px] text-zinc-300 hover:border-amber-500/50 transition-colors ${focusArea === 'mclooIncludeBtn' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : ''}`}>
-                            <span>Include in Limit</span>
-                            <ChevronDown size={12} className="text-zinc-500" />
-                          </button>
-                          {(includeDropdownOpen || focusArea === 'mclooIncludeDrop') && (
-                            <div className={`absolute left-0 bottom-full mb-1 w-48 bg-zinc-950 border border-zinc-700 rounded-md shadow-2xl p-2 flex flex-col gap-1.5 z-[10000] ${focusArea === 'mclooIncludeDrop' ? 'ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : ''}`}>
-                              {['Liability Insurance (General)', 'Cargo Insurance', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].map(ins => (
-                                <label key={ins} className="flex items-center gap-2 px-2 py-1 hover:bg-white/5 rounded cursor-pointer group/item">
-                                  <input type="checkbox" checked={ins === 'Cargo Insurance' && step >= 9} readOnly className="w-3 h-3 accent-amber-500" />
-                                  <span className="text-[10px] text-zinc-400 group-hover/item:text-zinc-200">{ins}</span>
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                                              </div>
-                                              <div className="flex flex-col gap-1 pl-4 text-[11px] font-mono">
-                                                {mclooMode === 'shared' ? (
-                                                  <>
-                                                    <div className={`flex items-center gap-6 py-1 border-b border-zinc-800/50 transition-all ${focusArea === 'compPayNegative' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 rounded px-2 shadow-[0_0_15px_rgba(16,185,129,0.5)] -ml-2' : 'text-zinc-400'}`}>
-                                                      <span className="text-zinc-300 w-20">2026-05-21</span>
-                                                      <span className="w-28">Total (PU): 239.11</span>
-                                                      <span className="text-emerald-500 font-bold w-32">Comp Pay: -10.89</span>
-                                                      <span className="text-amber-500 font-bold">Shared Resp: 250.00</span>
-                                                    </div>
-                                                    <div className={`flex items-center gap-6 py-1 border-b border-zinc-800/50 transition-all ${focusArea === 'compPayPositive' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 rounded px-2 shadow-[0_0_15px_rgba(16,185,129,0.5)] -ml-2' : 'text-zinc-400'}`}>
-                                                      <span className="text-zinc-300 w-20">2026-05-14</span>
-                                                      <span className="w-28">Total (PU): 260.50</span>
-                                                      <span className="text-rose-500 font-bold w-32">Comp Pay: +10.50</span>
-                                                      <span className="text-amber-500 font-bold">Shared Resp: 250.00</span>
-                                                    </div>
-                                                    <div className={`flex items-center gap-6 py-1 transition-all ${focusArea === 'compPayZero' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 rounded px-2 shadow-[0_0_15px_rgba(16,185,129,0.5)] -ml-2' : 'text-zinc-400'}`}>
-                                                      <span className="text-zinc-300 w-20">2026-05-07</span>
-                                                      <span className="w-28">Total (PU): 250.00</span>
-                                                      <span className="text-emerald-500 font-bold w-32">Comp Pay: 0.00</span>
-                                                      <span className="text-amber-500 font-bold">Shared Resp: 250.00</span>
-                                                    </div>
-                                                  </>
-                                                ) : (
-                                                                                                   <>
-                                                    <div className="flex items-center gap-6 py-1 text-zinc-400 border-b border-zinc-800/50">
-                                                      <span className="text-zinc-300 w-20">2026-05-21</span>
-                                                      <span className="w-28">Total (PU): 239.11</span>
-                                                      <span className="text-rose-500 font-bold w-32">Comp Pay: +239.11</span>
-                                                      <span className="text-amber-500 font-bold">Shared Liability: 0.00</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-6 py-1 text-zinc-400 border-b border-zinc-800/50">
-                                                      <span className="text-zinc-300 w-20">2026-05-14</span>
-                                                      <span className="w-28">Total (PU): 260.50</span>
-                                                      <span className="text-rose-500 font-bold w-32">Comp Pay: +250.00</span>
-                                                      <span className="text-amber-500 font-bold">Shared Liability: 10.50</span>
-                                                    </div>
-                                                    <div className="flex items-center gap-6 py-1 text-zinc-400">
-                                                      <span className="text-zinc-300 w-20">2026-05-07</span>
-                                                      <span className="w-28">Total (PU): 250.00</span>
-                                                      <span className="text-rose-500 font-bold w-32">Comp Pay: +250.00</span>
-                                                      <span className="text-amber-500 font-bold">Shared Liability: 0.00</span>
-                                                    </div>
-                                                  </>
-                                                )}
                                               </div>
                                             </div>
                                           </td>
@@ -726,96 +680,297 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
             )}
 
             {localTab === 'dispatcher' && (
-                            <div className="w-full border border-zinc-800 rounded-lg overflow-visible bg-zinc-950/50 p-4 relative">
-                <table className="w-full text-left border-collapse table-fixed overflow-visible">
-                  <thead>
-                    <tr className="border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
-                      <th className="py-2 pr-2 font-bold w-[20%]">Contract</th>
-                      <th className="py-2 px-1 font-bold w-[13%]">Valid From</th>
-                      <th className="py-2 px-1 font-bold w-[13%]">Valid To</th>
-                      <th className="py-2 px-1 font-bold w-[10%]">Gross %</th>
-                      <th className="py-2 px-1 font-bold w-[10%]">Margin %</th>
-                      <th className="py-2 px-1 font-bold w-[28%] text-center">MCLOO Pay</th>
-                      <th className="w-[6%]"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-zinc-800/30">
-                    {dispExpanded && (
-                      <>
-                      <tr className="bg-purple-500/5 group/row">
-                                                <td className="py-2 pr-2 relative overflow-visible">
-                          <div className={`w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold h-7 flex items-center justify-between cursor-pointer ${focusArea === 'dispContractInput' ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
-                            <span>{dispContract || 'Select Contract'}</span>
-                            <ChevronDown size={12} className="text-zinc-500" />
+              <div className="w-full relative">
+                 <div className="sticky top-[-24px] z-[50] flex items-center justify-between pb-3 pt-6 border-b border-zinc-800/50 mb-2 bg-zinc-950/95 backdrop-blur-sm -mx-2 px-2 rounded-b-lg">
+                    <div className={`flex bg-zinc-900/50 p-1 rounded-lg border border-zinc-800 transition-all ${focusArea === 'dispTabGross' || focusArea === 'dispTabShared' ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : ''}`}>
+                       <button className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${dispPayTab === 'gross_margin' ? 'bg-purple-500 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}>Gross/Margin %</button>
+                       <button className={`px-4 py-1.5 text-xs font-bold rounded-md transition-all ${dispPayTab === 'shared_responsibility' ? 'bg-purple-500 text-white shadow-lg' : 'text-zinc-500 hover:text-zinc-300'}`}>Shared Insurance</button>
+                    </div>
+                 </div>
+                 <div className="w-full border border-zinc-800 rounded-lg overflow-visible bg-zinc-950/50 p-4 relative">
+                    {dispPayTab === 'gross_margin' ? (
+                       <>
+                          <table className="w-full text-left border-collapse table-fixed">
+                             <thead>
+                                <tr className="border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
+                                   <th className="py-2 pr-1 font-bold w-[10%]">Contract</th>
+                                   <th className="py-2 px-1 font-bold w-[12%]">Company</th>
+                                   <th className="py-2 px-1 font-bold w-[12%]">Team</th>
+                                   <th className="py-2 px-1 font-bold w-[12%]">Dispatcher</th>
+                                   <th className="py-2 px-1 font-bold w-[11%]">Valid From</th>
+                                   <th className="py-2 px-1 font-bold w-[11%]">Valid To</th>
+                                   <th className="py-2 px-1 font-bold w-[8%]">Type</th>
+                                   <th className="py-2 px-1 font-bold w-[19%]">Values</th>
+                                   <th className="w-[5%]"></th>
+                                </tr>
+                             </thead>
+                             <tbody className="divide-y divide-zinc-800/30">
+                                {dispExpanded && (
+                                   <tr className={`hover:bg-zinc-800/30 transition-colors group/row ${focusArea === 'dispRow' ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] bg-zinc-900' : ''}`}>
+                                      <td className="py-2 pr-1">
+                                         <select value={dispContract} readOnly className={`w-full bg-zinc-950 border border-purple-700/50 rounded px-1 py-1 text-xs text-purple-500 font-bold outline-none h-7 ${focusArea === 'dispContractInput' ? 'ring-2 ring-emerald-500' : ''}`}>
+                                            <option value="">ALL</option>
+                                         </select>
+                                      </td>
+                                      <td className="py-2 px-1">
+                                         <select value={dispCompany} readOnly className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-xs text-zinc-300 outline-none h-7">
+                                            <option value="">ALL</option>
+                                         </select>
+                                      </td>
+                                      <td className="py-2 px-1">
+                                         <select value={dispTeam} readOnly className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-xs text-zinc-300 outline-none h-7">
+                                            <option value="">ALL</option>
+                                         </select>
+                                      </td>
+                                      <td className="py-2 px-1">
+                                         <select value={dispDispatcher} readOnly className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-xs text-zinc-300 outline-none h-7">
+                                            <option value="">ALL</option>
+                                         </select>
+                                      </td>
+                                      <td className="py-2 px-1">
+                                         <input type="date" value={dispValidFrom} readOnly style={{ colorScheme: 'dark' }} className={`w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-[10px] text-zinc-200 outline-none h-7 ${focusArea === 'dispValidFromInput' ? 'ring-2 ring-emerald-500' : ''}`} />
+                                      </td>
+                                      <td className="py-2 px-1">
+                                         <input type="date" value={dispValidTo} readOnly style={{ colorScheme: 'dark' }} className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-[10px] text-zinc-200 outline-none h-7" />
+                                      </td>
+                                      <td className="py-2 px-1">
+                                         <select value={dispType} readOnly className={`w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-xs text-zinc-300 outline-none h-7 ${focusArea === 'dispTypeInput' ? 'ring-2 ring-emerald-500' : ''}`}>
+                                            <option value="%">%</option>
+                                         </select>
+                                      </td>
+                                      <td className="py-2 px-1">
+                                         <div className="flex gap-1 h-7">
+                                            <div className={`relative flex items-center flex-1 h-full ${focusArea === 'dispGrossInput' ? 'ring-2 ring-emerald-500 rounded' : ''}`}>
+                                               <input type="number" value={dispGross} readOnly className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-1 pr-4 text-[11px] text-zinc-200 font-mono outline-none h-full" placeholder="Gross" />
+                                               <span className="absolute right-1 text-zinc-500 text-[9px] pointer-events-none">%</span>
+                                            </div>
+                                            <div className={`relative flex items-center flex-1 h-full ${focusArea === 'dispMarginInput' ? 'ring-2 ring-emerald-500 rounded' : ''}`}>
+                                               <input type="number" value={dispMargin} readOnly className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-1 pr-4 text-[11px] text-zinc-200 font-mono outline-none h-full" placeholder="Margin" />
+                                               <span className="absolute right-1 text-zinc-500 text-[9px] pointer-events-none">%</span>
+                                            </div>
+                                         </div>
+                                      </td>
+                                      <td className="py-2 pl-2 text-right">
+                                         <button className="text-zinc-600 p-1 rounded flex justify-center items-center w-8 h-7"><Trash2 size={14} /></button>
+                                      </td>
+                                   </tr>
+                                )}
+                             </tbody>
+                          </table>
+                          <div className={`w-max px-4 py-1.5 border border-dashed border-purple-500/30 bg-purple-500/5 text-purple-500 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mt-3 ${focusArea === 'dispChevron' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'transition-colors'}`}>
+                            <Plus size={12} /> ADD RULE
                           </div>
-                          {dispContractOpen && (
-                            <div className="absolute top-full left-0 mt-1 w-full min-w-[180px] bg-zinc-900 border border-zinc-700 rounded shadow-xl overflow-visible flex flex-col z-[10000]">
-                               <div className={`px-2 py-1.5 text-[10px] text-zinc-300 hover:bg-zinc-800 cursor-pointer ${focusArea === 'dispContractAll' ? 'bg-zinc-800 ring-2 ring-inset ring-emerald-500' : ''}`}>ALL</div>
-                               <div className="px-2 py-1.5 text-[10px] text-zinc-300 hover:bg-zinc-800 cursor-pointer">MCLOO</div>
-                               <div className="px-2 py-1.5 text-[10px] text-zinc-300 hover:bg-zinc-800 cursor-pointer">TPOG</div>
-                            </div>
-                          )}
-                        </td>
-                        <td className="py-2 px-1">
-                          <div className={`w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-200 h-7 flex items-center ${focusArea === 'dispValidFromInput' ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>{dispValidFrom || 'mm/dd/yyyy'}</div>
-                        </td>
-                        <td className="py-2 px-1">
-                          <div className={`w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-200 h-7 flex items-center opacity-50 ${focusArea === 'dispValidToInput' ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] opacity-100' : ''}`}>{dispValidTo || 'mm/dd/yyyy'}</div>
-                        </td>
-                        <td className="py-2 px-1">
-                          <div className={`relative flex items-center h-7 ${focusArea === 'dispGrossInput' ? 'relative z-[9999] ring-2 ring-emerald-500 rounded shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
-                            <div className="w-full bg-zinc-950 border border-purple-500 rounded py-1 pl-2 pr-5 text-xs text-zinc-200 font-mono h-full flex items-center">{dispGross}</div>
-                            <span className="absolute right-2 text-zinc-500 text-[10px]">%</span>
+                       </>
+                    ) : (
+                       <div className="flex flex-col gap-3 w-full">
+                          <div className="flex items-center gap-4 py-1.5">
+                             <div className="w-32 text-xs font-bold text-zinc-300 truncate">Test Company</div>
+                             <div className="w-32 text-xs text-amber-500 font-mono">Shared: $250.00</div>
+                             <div className="flex items-center gap-2">
+                                <label className="text-[10px] text-purple-500/70 font-bold uppercase">DISPATCHER PAYS:</label>
+                                <div className={`relative h-7 w-24 ${focusArea === 'dispMclooInput' ? 'relative z-[9999] ring-2 ring-emerald-500 rounded shadow-[0_0_15px_rgba(16,185,129,0.3)] bg-zinc-900' : ''}`}>
+                                   <span className="absolute left-2 top-1.5 text-purple-500/50 text-[10px] pointer-events-none">$</span>
+                                   <input type="number" value={dispMclooPay} readOnly className="w-full bg-zinc-900 border border-purple-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 outline-none h-full" />
+                                </div>
+                             </div>
                           </div>
-                        </td>
-                        <td className="py-2 px-1">
-                          <div className={`relative flex items-center h-7 ${focusArea === 'dispMarginInput' ? 'relative z-[9999] ring-2 ring-emerald-500 rounded shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
-                            <div className="w-full bg-zinc-950 border border-purple-500 rounded py-1 pl-2 pr-5 text-xs text-zinc-200 font-mono h-full flex items-center">{dispMargin}</div>
-                            <span className="absolute right-2 text-zinc-500 text-[10px]">%</span>
-                          </div>
-                        </td>
-                        <td className="py-2 px-1 text-center">
-                          <button className={`px-3 py-1 rounded text-[10px] font-bold uppercase transition-all ${dispMclooOpen ? 'bg-purple-500 text-white' : 'bg-purple-500/10 text-purple-500 border border-purple-500/30'} ${focusArea === 'dispMclooToggle' ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
-                             {dispMclooOpen ? 'Close' : 'MCLOO Pay'}
-                          </button>
-                        </td>
-                        <td className="py-2 pl-2 text-right">
-                           <button className="text-zinc-600 hover:text-rose-500 transition-colors p-1 rounded opacity-0 group-hover/row:opacity-100 flex justify-center items-center w-8 h-7"><Trash2 size={14} /></button>
+                       </div>
+                    )}
+                 </div>
+              </div>
+            )}
+
+            {localTab === 'fixed_revenue' && (
+              <div className="w-full relative">
+                <div className="w-full border border-zinc-800 rounded-lg overflow-visible bg-zinc-950/50">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
+                        <th className="p-2 font-bold px-4">Revenue Item</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800">
+                      <tr>
+                        <td className={`p-3 px-4 text-sm font-bold flex items-center gap-2 ${fixRevExpanded ? 'text-indigo-400 bg-zinc-800/30' : 'text-indigo-400'} ${focusArea === 'fixRevChevron' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)] rounded' : 'transition-colors'}`}>
+                          <ChevronDown size={14} className={`transition-transform ${fixRevExpanded ? 'rotate-180' : '-rotate-90'}`} />
+                          <span>Truck Weekly</span>
                         </td>
                       </tr>
-                      {dispMclooOpen && (
-                        <tr className="bg-purple-500/5">
-                           <td colSpan={6} className="px-3 pb-3 pt-0 border-t-0">
-                              <div className="flex flex-col gap-3 bg-zinc-950/50 p-3 rounded-lg border border-purple-500/20 w-full relative ml-4 mt-2">
-                                 <div className="absolute -top-2.5 -left-3 text-purple-500/30">
-                                    <CornerDownRight size={16} />
-                                 </div>
-                                 <div className="flex items-center gap-4">
-                                    <div className="w-32 text-xs font-bold text-zinc-300 truncate">Test Company</div>
-                                    <div className={`w-32 text-xs text-amber-500 font-mono ${focusArea === 'dispMclooShared' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 rounded px-2 py-1 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>Shared: $250.00</div>
-                                    <div className="flex items-center gap-2">
-                                       <label className="text-[10px] text-purple-500/70 font-bold uppercase">Dispatcher Pays:</label>
-                                       <div className={`relative h-7 w-24 ${focusArea === 'dispMclooInput' ? 'relative z-[9999] ring-2 ring-emerald-500 rounded shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
-                                          <span className="absolute left-2 top-1.5 text-purple-500/50 text-[10px] pointer-events-none">$</span>
-                                          <div className="w-full bg-zinc-900 border border-purple-700/50 rounded py-0 pl-6 pr-2 text-xs text-zinc-200 h-full flex items-center">{dispMclooPay}</div>
-                                       </div>
-                                    </div>
-                                 </div>
-                              </div>
-                           </td>
+                      {fixRevExpanded && (
+                        <tr>
+                          <td colSpan={1} className="p-0">
+                            <div className="p-4 bg-zinc-900/30 border-t border-zinc-800">
+                               <div className="flex items-center justify-between mb-4">
+                                  <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider">Rules History</h4>
+                                  <div className="flex items-center gap-3">
+                                      <div className={`px-3 py-1.5 border border-emerald-500/30 text-emerald-500 bg-emerald-500/10 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all ${focusArea === 'fixRevAddGlobal' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : ''}`}>
+                                          <Plus size={12} /> ADD GLOBAL RULE
+                                      </div>
+                                      <div className="relative">
+                                         <div className={`px-3 py-1.5 border border-indigo-500/30 text-indigo-500 bg-indigo-500/10 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 transition-all ${focusArea === 'fixRevAddDropdown' ? 'relative z-[9999] ring-2 ring-indigo-500 bg-zinc-900 shadow-[0_0_15px_rgba(99,102,241,0.5)]' : ''}`}>
+                                            <Plus size={12} /> Add Rule For <ChevronDown size={10} />
+                                         </div>
+                                         {fixRevDropdownOpen && (
+                                            <div className="absolute flex flex-col top-full right-0 mt-1 w-32 z-[9999]">
+                                               <div className="bg-zinc-900 border border-zinc-700 rounded shadow-xl overflow-hidden flex flex-col w-full">
+                                                  <div className={`px-4 py-2 text-left text-[10px] font-bold text-purple-500 hover:bg-zinc-800 transition-colors border-b border-zinc-800 ${focusArea === 'fixRevAddContractItem' ? 'ring-2 ring-inset ring-emerald-500 bg-zinc-800' : ''}`}>Contract</div>
+                                                  <div className="px-4 py-2 text-left text-[10px] font-bold text-amber-500 hover:bg-zinc-800 transition-colors border-b border-zinc-800">Company</div>
+                                                  <div className="px-4 py-2 text-left text-[10px] font-bold text-indigo-500 hover:bg-zinc-800 transition-colors">Franchise</div>
+                                               </div>
+                                            </div>
+                                         )}
+                                      </div>
+                                  </div>
+                               </div>
+                              <table className="w-full text-left border-collapse">
+                                <thead>
+                                  <tr className="border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
+                                    <th className="py-2 px-3 font-bold w-[15%]">Valid From</th>
+                                    <th className="py-2 px-3 font-bold w-[15%]">Valid To</th>
+                                    <th className="py-2 px-3 font-bold w-[25%]">Type / Scope</th>
+                                    <th className="py-2 px-3 font-bold">Amount</th>
+                                    <th className="py-2 px-3 font-bold text-right">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-zinc-800/30">
+                                  {step >= 1 && step <= 11 && (
+                                      <tr className={`hover:bg-zinc-800/30 transition-colors ${focusArea === 'fixRevCustomCheckbox' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
+                                        <td className="py-1.5 px-3">
+                                          <input type="date" value="2026-05-20" disabled className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-500 cursor-not-allowed h-7" />
+                                        </td>
+                                        <td className="py-1.5 px-3">
+                                          <input type="date" value="2026-05-26" disabled className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-500 cursor-not-allowed h-7" />
+                                        </td>
+                                        <td className="py-2 px-3 text-xs text-zinc-500 font-bold uppercase tracking-wider">
+                                          Contract: TPOG
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          <div className="flex items-center gap-4">
+                                            <div className={`relative flex items-center justify-start bg-zinc-950 border border-zinc-700 rounded h-7 overflow-hidden ${step === 2 ? '' : 'opacity-50'}`}>
+                                              <span className="pl-2 text-zinc-500 text-xs pointer-events-none flex-shrink-0">$</span>
+                                              <input type="number" value="150" readOnly className="w-20 pr-1 text-zinc-200 bg-transparent border-none outline-none py-1 pl-1 text-xs font-mono h-full" />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="flex items-center gap-1 text-[9px] text-zinc-400 cursor-pointer hover:text-zinc-200">
+                                                <input type="checkbox" checked={step !== 2} readOnly className="accent-indigo-500" /> Default Value
+                                              </label>
+                                              <label className="flex items-center gap-1 text-[9px] text-zinc-400 cursor-pointer hover:text-zinc-200">
+                                                <input type="checkbox" checked={step === 2} readOnly className="accent-indigo-500" /> Custom Value
+                                              </label>
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="py-1.5 px-3 text-right">
+                                        </td>
+                                      </tr>
+                                  )}
+                                  {fixRevRows.map((row) => (
+                                      <tr key={row.id} className="transition-colors bg-amber-500/5 hover:bg-amber-500/10">
+                                        <td className="py-2 px-3">
+                                          <div className={`w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-200 h-7 flex items-center justify-between ${(row.type === 'global' && focusArea === 'fixRevValidFromGlobal') ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] bg-zinc-900' : ''}`}>
+                                            <span>{row.validFrom || 'mm/dd/yyyy'}</span>
+                                          </div>
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          <div className={`w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-500 h-7 flex items-center justify-between ${(row.type === 'global' && focusArea === 'fixRevValidToGlobal') ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] bg-zinc-900 opacity-100' : 'opacity-50'}`}>
+                                              <span>{row.validTo || 'mm/dd/yyyy'}</span>
+                                          </div>
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          {row.type === 'global' ? (
+                                            <div className="text-xs font-bold text-emerald-500 uppercase tracking-wider h-7 flex items-center px-2">Global (ALL)</div>
+                                          ) : (
+                                            <div className={`w-full relative ${row.type === 'contract' && focusArea === 'fixRevSelectTarget' && row.id !== 'default_tpog' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-950 rounded shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
+                                                <select value={row.target} readOnly className="w-full bg-zinc-950 border border-purple-700/50 rounded px-2 py-1 text-xs text-purple-500 font-bold outline-none h-7 appearance-none">
+                                                   <option value="" disabled>Select Contract</option>
+                                                   <option value="TPOG">TPOG</option>
+                                                   <option value="MCLOO">MCLOO</option>
+                                                </select>
+                                                {fixRevTargetOpen && row.id !== 'default_tpog' && (
+                                                   <div className="absolute flex flex-col top-full left-0 mt-1 w-full z-[9999]">
+                                                      <div className="bg-zinc-900 border border-zinc-700 rounded shadow-xl overflow-hidden flex flex-col w-full">
+                                                         <div className={`px-4 py-2 text-left text-[10px] font-bold text-purple-500 hover:bg-zinc-800 transition-colors`}>MCLOO</div>
+                                                      </div>
+                                                   </div>
+                                                )}
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          {row.id === 'default_tpog' ? (
+                                            <div className={`flex items-center gap-4 ${focusArea === 'fixRevCustomCheckbox' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)] p-1 rounded' : ''}`}>
+                                              <div className={`relative flex items-center justify-start bg-zinc-950 border border-zinc-700 rounded h-7 overflow-hidden ${step === 2 ? '' : 'opacity-50'}`}>
+                                                <span className="pl-2 text-zinc-500 text-xs pointer-events-none flex-shrink-0">$</span>
+                                                <input type="number" value="150" readOnly className="w-20 pr-1 text-zinc-200 bg-transparent border-none outline-none py-1 pl-1 text-xs font-mono h-full" />
+                                              </div>
+                                              <div className="flex flex-col gap-1">
+                                                <label className="flex items-center gap-1 text-[9px] text-zinc-400 cursor-pointer hover:text-zinc-200">
+                                                  <input type="checkbox" checked={step !== 2} readOnly className="accent-indigo-500" /> Default Value
+                                                </label>
+                                                <label className="flex items-center gap-1 text-[9px] text-zinc-400 cursor-pointer hover:text-zinc-200">
+                                                  <input type="checkbox" checked={step === 2} readOnly className="accent-indigo-500" /> Custom Value
+                                                </label>
+                                              </div>
+                                            </div>
+                                          ) : (
+                                            <div className={`relative flex items-center h-7 w-32 bg-zinc-950 border border-amber-700/50 rounded ${(row.type === 'global' && focusArea === 'fixRevAmountGlobal') || (row.type === 'contract' && focusArea === 'fixRevAmountSpecific') ? 'relative z-[9999] ring-2 ring-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.3)] bg-zinc-900' : ''}`}>
+                                              <span className={`absolute left-2 text-xs pointer-events-none text-amber-500/50`}>$</span>
+                                              <div className="w-full bg-transparent py-1 text-xs text-zinc-200 font-mono h-full pl-5 pr-8 flex items-center">{row.amount}</div>
+                                            </div>
+                                          )}
+                                        </td>
+                                        <td className="py-2 px-3 text-right">
+                                           <button className="text-zinc-500 hover:text-rose-500 transition-colors p-1 rounded flex justify-center items-center"><Trash2 size={14}/></button>
+                                        </td>
+                                      </tr>
+                                  ))}
+                                  {step >= 9 && (
+                                      <tr className={`hover:bg-zinc-800/30 transition-colors ${focusArea === 'fixRevCustomCheckbox' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
+                                        <td className="py-1.5 px-3">
+                                          <input type="date" value="2026-05-20" disabled className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-500 cursor-not-allowed h-7" />
+                                        </td>
+                                        <td className="py-1.5 px-3">
+                                          <input type="date" value="2026-05-26" disabled className="w-full bg-zinc-900 border border-zinc-800 rounded px-2 py-1 text-xs text-zinc-500 cursor-not-allowed h-7" />
+                                        </td>
+                                        <td className="py-2 px-3 text-xs text-zinc-500 font-bold uppercase tracking-wider">
+                                          Contract: TPOG
+                                        </td>
+                                        <td className="py-2 px-3">
+                                          <div className="flex items-center gap-4">
+                                            <div className="relative flex items-center justify-start bg-zinc-950 border border-zinc-700 rounded h-7 overflow-hidden">
+                                              <span className="pl-2 text-zinc-500 text-xs pointer-events-none flex-shrink-0">$</span>
+                                              <input type="number" value="150" readOnly className="w-20 pr-1 text-zinc-200 bg-transparent border-none outline-none py-1 pl-1 text-xs font-mono h-full" />
+                                            </div>
+                                            <div className="flex flex-col gap-1">
+                                              <label className="flex items-center gap-1 text-[9px] text-zinc-400 cursor-pointer hover:text-zinc-200">
+                                                <input type="checkbox" checked={false} readOnly className="accent-indigo-500" /> Default Value
+                                              </label>
+                                              <label className="flex items-center gap-1 text-[9px] text-zinc-400 cursor-pointer hover:text-zinc-200">
+                                                <input type="checkbox" checked={true} readOnly className="accent-indigo-500" /> Custom Value
+                                              </label>
+                                            </div>
+                                          </div>
+                                        </td>
+                                        <td className="py-1.5 px-3 text-right">
+                                            <button className="p-1 text-zinc-600 hover:text-rose-500 transition-colors">
+                                              <Trash2 size={14} />
+                                            </button>
+                                        </td>
+                                      </tr>
+                                  )}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
                         </tr>
                       )}
-                      </>
-                    )}
-                  </tbody>
-                </table>
-                <div className={`w-max px-4 py-1.5 border border-dashed border-purple-500 bg-purple-500/20 text-purple-400 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5 mt-3 shadow-[0_0_15px_rgba(168,85,247,0.2)] ${focusArea === 'dispChevron' ? 'relative z-[9999] ring-2 ring-emerald-500 bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.5)]' : 'transition-colors'}`}>
-                  <Plus size={12} /> ADD RULE
+                    </tbody>
+                  </table>
                 </div>
               </div>
             )}
 
-                       {localTab === 'cpm' && (
+            {localTab === 'cpm' && (
               <div className="w-full border border-zinc-800 rounded-lg overflow-visible bg-zinc-950/50 p-4">
                 <table className="w-full text-left border-collapse table-fixed overflow-visible">
                   <thead>

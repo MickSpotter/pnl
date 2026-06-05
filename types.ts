@@ -41,6 +41,18 @@ export interface FinImportRecord {
 }
 
 
+export interface FixedRevenueItem {
+  id: string;
+  name: string;
+  companyId?: string;
+  contractType?: string;
+  franchiseId?: string;
+  amount: number;
+  valid_from?: string;
+  valid_to?: string;
+  is_standalone?: boolean;
+}
+
 export interface ExpenseItem {
   id: string;
   category: 'Fixed' | 'Variable' | 'OneTime';

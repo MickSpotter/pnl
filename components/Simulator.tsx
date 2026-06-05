@@ -51,8 +51,8 @@ const Simulator: React.FC<SimulatorProps> = ({
   const [activeSimulator, setActiveSimulator] = useState<string>('revenueSplits');
   const [hasModified, setHasModified] = useState<boolean>(false);
   const [sortConfig, setSortConfig] = useState<{key: string, direction: 'asc' | 'desc'}>({ key: 'activeOldPercent', direction: 'asc' });
-  const [selectedContractSim, setSelectedContractSim] = useState<string>('TPOG');
-  const [tableContractFilter, setTableContractFilter] = useState<string>('TPOG');
+  const [selectedContractSim, setSelectedContractSim] = useState<string>('ALL');
+  const [tableContractFilter, setTableContractFilter] = useState<string>('ALL');
   
   const [simCompanyTake, setSimCompanyTake] = useState<number>(0);
   const [simMarginTake, setSimMarginTake] = useState<number>(0);
@@ -65,17 +65,18 @@ const Simulator: React.FC<SimulatorProps> = ({
   const [simDispatcherTakeFran, setSimDispatcherTakeFran] = useState<number>(0);
   const [simDispatcherMarginTakeFran, setSimDispatcherMarginTakeFran] = useState<number>(0);
   const [simCalcTypeFran, setSimCalcTypeFran] = useState<string>('TPOG_FRANCHISE');
+  const [simFuelRebate, setSimFuelRebate] = useState<number>(0);
   
   const availableContracts = useMemo(() => {
     let baseContracts = Array.from(new Set(driverWithEffectiveContracts.map(d => d.contractType))).filter(Boolean) as string[];
     if (configContracts) {
       baseContracts = baseContracts.filter(c => c !== 'TPOG WITH FRANCHISE' && c !== 'OO WITH FRANCHISE');
     }
-    return baseContracts.filter(c => c !== 'TCPML' && c !== 'CMPL' && c !== 'MCLPOO').sort();
+    return baseContracts.filter(c => c !== 'TCPML' && c !== 'CMPL' && c !== 'MCLPOO' && c !== 'CPML').sort();
   }, [driverWithEffectiveContracts, configContracts]);
 
   useEffect(() => {
-    if (availableContracts.length > 0 && !availableContracts.includes(selectedContractSim)) {
+    if (availableContracts.length > 0 && selectedContractSim !== 'ALL' && !availableContracts.includes(selectedContractSim)) {
       setSelectedContractSim(availableContracts.includes('TPOG') ? 'TPOG' : availableContracts[0]);
     }
   }, [availableContracts, selectedContractSim]);
@@ -117,8 +118,16 @@ const Simulator: React.FC<SimulatorProps> = ({
   }, [selectedContractSim, configContracts]);
   
   useEffect(() => {
-    if (selectedContractSim !== 'TPOG' && activeSimulator !== 'revenueSplits') {
-      setActiveSimulator('revenueSplits');
+    const allowedForTPOG = ['weeksOut', 'safety', 'speeding', 'grossTarget', 'tenure', 'fuel', 'fuelRebate'];
+    const allowedForHiddenRev = ['fuelRebate']; 
+    const allowedForOthers = ['revenueSplits', 'fuelRebate'];
+    
+    if (['POG', 'CPM', 'ALL'].includes(selectedContractSim)) {
+        if (!allowedForHiddenRev.includes(activeSimulator)) setActiveSimulator('fuelRebate');
+    } else if (selectedContractSim === 'TPOG') {
+        if (!allowedForTPOG.includes(activeSimulator)) setActiveSimulator('weeksOut');
+    } else {
+        if (!allowedForOthers.includes(activeSimulator)) setActiveSimulator('revenueSplits');
     }
   }, [selectedContractSim, activeSimulator]);
   
@@ -145,6 +154,8 @@ const Simulator: React.FC<SimulatorProps> = ({
 
   const [enableFuel, setEnableFuel] = useState<boolean>(true);
   const [fuelMpgRules, setFuelMpgRules] = useState<any[]>([]);
+  const [fuelRebateRules, setFuelRebateRules] = useState<any[]>([]);
+
   useEffect(() => {
     if (isOpen) {
       const fetchLockedData = async () => {
@@ -160,6 +171,12 @@ const Simulator: React.FC<SimulatorProps> = ({
         setLockedDataRecords(allData);
       };
       fetchLockedData();
+
+      const fetchFuelRebateRules = async () => {
+        const { data } = await supabase.from('fixed_expenses').select('*').eq('name', 'Fuel Rebate');
+        if (data) setFuelRebateRules(data);
+      };
+      fetchFuelRebateRules();
     }
   }, [isOpen]);
 
@@ -268,6 +285,27 @@ const Simulator: React.FC<SimulatorProps> = ({
     return dateFiltered.filter(d => d.contractType === tableContractFilter);
   }, [driverWithEffectiveContracts, targetDate, tableContractFilter, configContracts]);
 
+  useEffect(() => {
+    if (activeSimulator === 'fuelRebate' && !hasModified) {
+      const dateStr = String(targetDate).split('T')[0];
+      const validRules = fuelRebateRules.filter(r => {
+         const f = r.valid_from || '2000-01-01';
+         const t = r.valid_to || '2099-12-31';
+         return dateStr >= f && dateStr <= t;
+      }).sort((a, b) => new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime());
+
+      let match = null;
+      if (selectedContractSim !== 'ALL') {
+         match = validRules.find(r => r.contract_type === selectedContractSim || (selectedContractSim === 'TPOG' && r.contract_type === 'TPOG WITH FRANCHISE') || (selectedContractSim === 'OO' && r.contract_type === 'OO WITH FRANCHISE'));
+      }
+      if (!match) {
+         match = validRules.find(r => r.company_id === 'ALL');
+      }
+
+      setSimFuelRebate(match ? Number(match.amount || 0) : 0);
+    }
+  }, [activeSimulator, selectedContractSim, hasModified, fuelRebateRules, targetDate]);
+
   const targetDateRecords = useMemo(() => {
     if (!targetDate) return [];
     const records = lockedDataRecords
@@ -325,7 +363,7 @@ const Simulator: React.FC<SimulatorProps> = ({
   }, [lockedDataRecords, targetDate, activeDrivers]);
 
   const rowLevelData = useMemo(() => {
-    if (selectedContractSim === 'ALL') return activeDrivers.map(d => ({ driver: d, isTarget: false }));
+    if (selectedContractSim === 'ALL' && activeSimulator !== 'fuelRebate') return activeDrivers.map(d => ({ driver: d, isTarget: false }));
     
     const currentConfig = [...(configContracts || [])]
       .filter(c => c.contract_type === selectedContractSim)
@@ -352,6 +390,9 @@ const Simulator: React.FC<SimulatorProps> = ({
         if (selectedContractSim === 'OO') {
              isTarget = driver.contractType === 'OO' || driver.contractType === 'OO WITH FRANCHISE';
         }
+        if (selectedContractSim === 'ALL') {
+             isTarget = true;
+        }
         
         if (!isTarget) return { driver, isTarget: false };
 
@@ -366,11 +407,43 @@ const Simulator: React.FC<SimulatorProps> = ({
       let activeOldPercent: number | string = 0;
       let activeNewPercent: number | string = 0;
       let activeOldDollars = 0;
-      let activeNewDollars = 0;
-      let activePnlImpact = 0;
-      
-      if (activeSimulator === 'revenueSplits') {
-        const isFran = driver.contractType === 'TPOG WITH FRANCHISE';
+          let activeNewDollars = 0;
+          let activePnlImpact = 0;
+          
+          if (activeSimulator === 'fuelRebate') {
+             const oldFR = Number(driver.fuelRebate ?? driver.fuel_rebate ?? driver.metrics?.fuelRebate ?? driver.metrics?.fuel_rebate ?? 0);
+             
+             const dateStr = String(targetDate).split('T')[0];
+             const validRules = fuelRebateRules.filter(r => {
+                 const f = r.valid_from || '2000-01-01';
+                 const t = r.valid_to || '2099-12-31';
+                 return dateStr >= f && dateStr <= t;
+             }).sort((a, b) => new Date(b.valid_from || '1970-01-01').getTime() - new Date(a.valid_from || '1970-01-01').getTime());
+             
+             let match = validRules.find(r => r.contract_type === driver.contractType || r.contract_type === driver.originalContractType);
+             if (!match) {
+                 match = validRules.find(r => r.company_id === 'ALL');
+             }
+             const oldRate = match ? Number(match.amount || 0) : 0;
+             
+             let newFR = oldFR;
+             if (hasModified) {
+                 if (oldRate > 0) {
+                     newFR = (oldFR / oldRate) * Number(simFuelRebate);
+                 } else {
+                     const fallbackMiles = Number(driver.milesDriven || driver.distance || driver.metrics?.milesDriven || driver.metrics?.distance || driver.milesWeek || 0);
+                     newFR = fallbackMiles * Number(simFuelRebate);
+                 }
+             }
+             
+             activeOldPercent = 0;
+             activeNewPercent = 0;
+             activeOldDollars = oldFR;
+             activeNewDollars = newFR;
+             activePnlImpact = newFR - oldFR;
+             totalDiffDollars = 0;
+          } else if (activeSimulator === 'revenueSplits') {
+            const isFran = driver.contractType === 'TPOG WITH FRANCHISE';
         const newC = isFran ? (hasModified ? simCompanyTakeFran : oldCompTakeFran) : (hasModified ? simCompanyTake : oldCompTake);
         const newM = isFran ? (hasModified ? simMarginTakeFran : oldMargTakeFran) : (hasModified ? simMarginTake : oldMargTake);
         const newD = isFran ? (hasModified ? simDispatcherTakeFran : oldDispTakeFran) : (hasModified ? simDispatcherTake : oldDispTake);
@@ -667,7 +740,7 @@ const Simulator: React.FC<SimulatorProps> = ({
           newTakeRatio
       };
     });
-  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, simCompanyTakeFran, simMarginTakeFran, simDispatcherTakeFran, simDispatcherMarginTakeFran, simCalcTypeFran, configContracts]);
+  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, simCompanyTakeFran, simMarginTakeFran, simDispatcherTakeFran, simDispatcherMarginTakeFran, simCalcTypeFran, simFuelRebate, configContracts, fuelRebateRules, targetDate]);
 
   const processedData = useMemo(() => {
     const rawData = rowLevelData.filter(d => d.isTarget);
@@ -727,12 +800,14 @@ const Simulator: React.FC<SimulatorProps> = ({
       }
 
       return {
-        ...drv,
-        netPay: drv.netPay + d.totalDiffDollars,
-        companyPay: (drv.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits') ? drv.companyPay : drv.companyPay - d.totalDiffDollars
-      };
-    });
-  }, [rowLevelData, activeSimulator]);
+            ...drv,
+            netPay: drv.netPay + d.totalDiffDollars,
+            companyPay: activeSimulator === 'fuelRebate' ? ((drv.companyPay || 0) + d.activePnlImpact) : ((drv.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits') ? drv.companyPay : drv.companyPay - d.totalDiffDollars),
+            fuelRebate: activeSimulator === 'fuelRebate' ? d.activeNewDollars : drv.fuelRebate,
+            fuel_rebate: activeSimulator === 'fuelRebate' ? d.activeNewDollars : drv.fuel_rebate
+          };
+        });
+      }, [rowLevelData, activeSimulator]);
 
   const totalModuleImpact = useMemo(() => processedData.reduce((sum, d) => sum + d.activePnlImpact, 0), [processedData]);
 
@@ -769,7 +844,7 @@ const Simulator: React.FC<SimulatorProps> = ({
               <h3 className="text-xs font-bold text-zinc-400 uppercase tracking-wider">Original Data</h3>
               <select value={tableContractFilter} onChange={e => setTableContractFilter(e.target.value)} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-purple-500 cursor-pointer">
                 <option value="ALL">ALL</option>
-                {availableContracts.filter(c => c !== 'UNRECONCILED' && c !== 'Unassigned').map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
+                {availableContracts.filter(c => c !== 'GLOBAL' && c !== 'UNRECONCILED' && c !== 'Unassigned').map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
               </select>
             </div>
             <div className="flex items-center gap-4">
@@ -835,33 +910,38 @@ const Simulator: React.FC<SimulatorProps> = ({
         <div className="p-3 border-b border-zinc-800 bg-zinc-900/50 shrink-0 space-y-3">
           <div>
             <label className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold block mb-1.5">Select Contract</label>
-            <select 
-              value={selectedContractSim} 
-              onChange={e => { setSelectedContractSim(e.target.value); setHasModified(false); }} 
-              className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white outline-none focus:border-purple-500 cursor-pointer"
-            >
-              {availableContracts.filter(c => c !== 'UNRECONCILED' && c !== 'Unassigned').map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
-            </select>
+           <select 
+          value={selectedContractSim} 
+          onChange={e => { setSelectedContractSim(e.target.value); setHasModified(false); }} 
+          className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white outline-none focus:border-purple-500 cursor-pointer"
+        >
+          <option value="ALL">ALL</option>
+          {availableContracts.filter(c => c !== 'GLOBAL' && c !== 'UNRECONCILED' && c !== 'Unassigned').map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
+        </select>
           </div>
           <div>
             <label className="text-[10px] text-zinc-500 uppercase tracking-wider font-bold block mb-1.5">Select Simulator Module</label>
-            <select 
+          <select 
+     
               value={activeSimulator} 
-              onChange={e => setActiveSimulator(e.target.value)} 
+              onChange={e => { setActiveSimulator(e.target.value); setHasModified(false); }} 
               className="w-full bg-zinc-950 border border-zinc-700 rounded px-2 py-1.5 text-sm text-white outline-none focus:border-purple-500 cursor-pointer"
             >
-              <option value="revenueSplits">Revenue Splits</option>
-              {selectedContractSim === 'TPOG' && (
-                <>
-                  <option value="weeksOut">Retention & Streak (Weeks Out)</option>
-                  <option value="safety">Safety Score Bonus</option>
-                  <option value="speeding">Speeding Penalties</option>
-                  <option value="grossTarget">Gross Target Bonus</option>
-                  <option value="tenure">Tenure Milestones</option>
-                  <option value="fuel">Fuel Efficiency (MPG)</option>
-                </>
-              )}
-            </select>
+          {!['TPOG', 'POG', 'CPM', 'ALL'].includes(selectedContractSim) && (
+            <option value="revenueSplits">Revenue Splits</option>
+          )}
+          {selectedContractSim === 'TPOG' && (
+            <>
+              <option value="weeksOut">Retention & Streak (Weeks Out)</option>
+              <option value="safety">Safety Score Bonus</option>
+              <option value="speeding">Speeding Penalties</option>
+              <option value="grossTarget">Gross Target Bonus</option>
+              <option value="tenure">Tenure Milestones</option>
+              <option value="fuel">Fuel Efficiency (MPG)</option>
+            </>
+          )}
+          <option value="fuelRebate">Fuel Rebate</option>
+        </select>
           </div>
         </div>
 
@@ -1240,14 +1320,32 @@ const Simulator: React.FC<SimulatorProps> = ({
                       <input type="number" step="0.1" value={rule.percent} onChange={e => { setHasModified(true); const n = [...fuelMpgRules]; n[i] = {...n[i], percent: e.target.value}; setFuelMpgRules(n); }} className="flex-1 w-full min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none text-center focus:border-purple-500" />
                       <button onClick={() => { setHasModified(true); setFuelMpgRules(fuelMpgRules.filter((_, idx) => idx !== i)); }} className="text-zinc-600 hover:text-rose-500 w-5 flex justify-center items-center"><X size={12}/></button>
                     </div>
-                  ))}
-                </div>
+                 ))}
+                    </div>
+                  </div>
+                )}
+
+                {activeSimulator === 'fuelRebate' && (
+                  <div className="bg-zinc-950 border border-zinc-800 rounded p-3 space-y-2">
+                    <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800 pb-1.5 flex items-center gap-1.5">
+                      <span>Fuel Rebate Simulator</span>
+                      <div className="group relative cursor-help flex items-center">
+                        <Info size={12} className="text-zinc-500 hover:text-rose-400 transition-colors" />
+                        <div className="hidden group-hover:block absolute right-8 mt-12 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[9999] pointer-events-none text-left border border-zinc-600 whitespace-pre-wrap">
+                          Simulates a flat Fuel Rebate amount applied to the driver. This will directly impact the Fuel Rebate column and the Total PnL.
+                        </div>
+                      </div>
+                    </h4>
+                    <div className="flex items-center gap-4 pt-1">
+                      <label className="text-xs text-zinc-400 flex-1">Rebate Amount ($/mile)</label>
+                      <input type="number" step="0.01" value={simFuelRebate} onChange={e => handleChange(setSimFuelRebate, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-rose-500 text-right" />
+                    </div>
+                  </div>
+                )}
+
               </div>
-            )}
 
-          </div>
-
-          <div className="bg-zinc-950 border border-zinc-800 rounded p-3 flex flex-col mt-4 flex-1 min-h-[300px]">
+              <div className="bg-zinc-950 border border-zinc-800 rounded p-3 flex flex-col mt-4 flex-1 min-h-[300px]">
             <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800 pb-1.5 mb-1.5 flex justify-between items-center shrink-0">
               <span>Simulated Drivers</span>
               <span className="bg-purple-900/50 text-purple-400 px-2 py-0.5 rounded-full">{processedData.length}</span>
@@ -1264,6 +1362,15 @@ const Simulator: React.FC<SimulatorProps> = ({
                         </th>
                         <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('potentialRevenue')}>
                           {selectedContractSim === 'TPOG WITH FRANCHISE' ? 'Potential PnL' : 'Potential Rev.'} {sortConfig.key === 'potentialRevenue' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                        </th>
+                      </>
+                    ) : activeSimulator === 'fuelRebate' ? (
+                      <>
+                        <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('activeOldDollars')}>
+                          OLD FR {sortConfig.key === 'activeOldDollars' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                        </th>
+                        <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('activeNewDollars')}>
+                          NEW FR {sortConfig.key === 'activeNewDollars' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </th>
                       </>
                     ) : (
@@ -1290,6 +1397,15 @@ const Simulator: React.FC<SimulatorProps> = ({
                           </td>
                           <td className="py-2 px-1 text-right font-mono whitespace-nowrap text-zinc-300 font-bold">
                             {formatMoney(d.potentialRevenue)}
+                          </td>
+                        </>
+                      ) : activeSimulator === 'fuelRebate' ? (
+                        <>
+                          <td className="py-2 px-1 text-right font-mono whitespace-nowrap">
+                            <span className="text-zinc-400">{formatMoney(d.activeOldDollars)}</span>
+                          </td>
+                          <td className="py-2 px-1 text-right font-mono whitespace-nowrap">
+                            <span className="text-zinc-300 font-bold">{formatMoney(d.activeNewDollars)}</span>
                           </td>
                         </>
                       ) : (

@@ -7,7 +7,8 @@ import PnlEditor from './PnlEditor';
 import FuelRebate from './FuelRebate';
 import DispatcherPay from './DispatcherPay';
 import TutorialModal from './ExpensesTutorial';
-import { SimulationConfig, ExpenseItem, ConfigContract, PnlConfig } from '../types';
+import FixedRevenue from './FixedRevenue';
+import { SimulationConfig, ExpenseItem, ConfigContract, PnlConfig, FixedRevenueItem } from '../types';
 
 interface SimulationModalProps {
   isOpen: boolean;
@@ -44,9 +45,10 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [localSimConfig, setLocalSimConfig] = React.useState<SimulationConfig>(simulationConfig);
   const [localFixedExpenses, setLocalFixedExpenses] = React.useState<ExpenseItem[]>(fixedExpenses);
   const [localConfigContracts, setLocalConfigContracts] = React.useState<ConfigContract[]>(configContracts || []);
+  const [localRevenues, setLocalRevenues] = React.useState<FixedRevenueItem[]>([]);
   const [isSaving, setIsSaving] = React.useState(false);
   const [loadingMessage, setLoadingMessage] = React.useState('Saving...');
-  const [activeTab, setActiveTab] = React.useState<'fixed' | 'contracts' | 'dispatcher' | 'cpm' | 'pnl' | 'fuel_rebate'>('fixed');
+  const [activeTab, setActiveTab] = React.useState<'fixed' | 'contracts' | 'dispatcher' | 'fixed_revenue' | 'cpm' | 'pnl' | 'fuel_rebate'>('fixed');
   const [selectedContractType, setSelectedContractType] = React.useState('');
   const [pnlConfigs, setPnlConfigs] = React.useState<PnlConfig[]>([]);
   const [selectedExpenseName, setSelectedExpenseName] = React.useState('');
@@ -86,7 +88,7 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
       const [editingReduction, setEditingReduction] = React.useState<{ source: 'fixed' | 'fin', groupIds: string[] } | null>(null);
     const [expenseFilter, setExpenseFilter] = React.useState({ company: '', contract: '', date: '', sort: 'A-Z' });
   const [isFilterVisible, setIsFilterVisible] = React.useState(false);
-  const [tutorialState, setTutorialState] = React.useState<{ isOpen: boolean, type: 'rules' | 'mcloo' | 'reductions' | null }>({ isOpen: false, type: null });
+  const [tutorialState, setTutorialState] = React.useState<{ isOpen: boolean, type: 'rules' | 'reductions' | null }>({ isOpen: false, type: null });
   const [isTopTutorialDropdownOpen, setIsTopTutorialDropdownOpen] = React.useState(false);
   const [isTabTutorialDropdownOpen, setIsTabTutorialDropdownOpen] = React.useState(false);
 
@@ -291,6 +293,16 @@ const fixedExpenseNames = Array.from(new Set([
              const { fetchPnlConfigs } = await import('../lib/supabase');
              const loadedPnlConfigs = await fetchPnlConfigs();
              setPnlConfigs(loadedPnlConfigs.filter((c: any) => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE'));
+             const { data: revData } = await supabase.from('custom_fixed_revenue').select('*');
+             if (revData) {
+                setLocalRevenues(revData.map((r: any) => ({
+                    ...r,
+                    companyId: r.company_id,
+                    contractType: r.contract_type,
+                    franchiseId: r.franchise_id,
+                    is_standalone: true
+                })));
+             }
           };
           fetchFinData();
     }
@@ -520,6 +532,49 @@ const fixedExpenseNames = Array.from(new Set([
 
     try {
       setLoadingMessage("Recalculating and syncing...");
+
+      if (activeTab === 'fixed_revenue') {
+        const { data: currentRevs } = await supabase.from('custom_fixed_revenue').select('id');
+        const currentRevIds = currentRevs?.map(r => String(r.id)) || [];
+        const newRevIds = localRevenues.map(r => String(r.id));
+        const revsToDelete = currentRevIds.filter(id => !newRevIds.includes(id));
+        
+        if (revsToDelete.length > 0) {
+            await supabase.from('custom_fixed_revenue').delete().in('id', revsToDelete);
+        }
+        
+        const toUpdateRev: any[] = [];
+        const toInsertRev: any[] = [];
+        localRevenues.forEach(r => {
+            const out: any = {
+                name: r.name,
+                amount: Number(r.amount) || 0,
+                company_id: r.companyId || null,
+                contract_type: r.contractType || null,
+                franchise_id: r.franchiseId || null,
+                valid_from: r.valid_from || null,
+                valid_to: r.valid_to || null
+            };
+            if (r.id && currentRevIds.includes(String(r.id))) {
+                out.id = r.id;
+                toUpdateRev.push(out);
+            } else {
+                toInsertRev.push(out);
+            }
+        });
+        
+        if (toUpdateRev.length > 0) {
+            await supabase.from('custom_fixed_revenue').upsert(toUpdateRev);
+        }
+        if (toInsertRev.length > 0) {
+            await supabase.from('custom_fixed_revenue').insert(toInsertRev);
+        }
+
+        if (onDataSync) await onDataSync();
+        setIsSaving(false);
+        onClose();
+        return;
+      }
 
       let rawFinalExpenses: ExpenseItem[] = [...localFixedExpenses];
 
@@ -759,6 +814,7 @@ const fixedExpenseNames = Array.from(new Set([
               console.error("Error saving fixed expenses:", error);
           }
       }
+      
 
       if (onSaveExpenses) {
         await onSaveExpenses(processedExpandedExpenses);
@@ -876,7 +932,6 @@ const fixedExpenseNames = Array.from(new Set([
                  {activeTab === 'fixed' && isTopTutorialDropdownOpen && (
                    <div className="absolute top-full right-0 mt-1 w-56 bg-zinc-900 border border-zinc-700 rounded shadow-xl overflow-hidden flex flex-col z-[100]">
                       <button onClick={() => { setTutorialState({ isOpen: true, type: 'rules' }); setIsTopTutorialDropdownOpen(false); }} className="px-4 py-3 text-left text-[11px] font-bold text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800">Add expense rules</button>
-                      <button onClick={() => { setTutorialState({ isOpen: true, type: 'mcloo' }); setIsTopTutorialDropdownOpen(false); }} className="px-4 py-3 text-left text-[11px] font-bold text-zinc-300 hover:bg-zinc-800 transition-colors border-b border-zinc-800">Configure MCLOO Rule</button>
                       <button onClick={() => { setTutorialState({ isOpen: true, type: 'reductions' }); setIsTopTutorialDropdownOpen(false); }} className="px-4 py-3 text-left text-[11px] font-bold text-zinc-300 hover:bg-zinc-800 transition-colors">Truck/Trailer Price Reductions</button>
                    </div>
                  )}
@@ -891,6 +946,7 @@ const fixedExpenseNames = Array.from(new Set([
             <button onClick={() => setActiveTab('fixed')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fixed' ? 'border-blue-500 text-blue-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Expenses</button>
             <button onClick={() => setActiveTab('contracts')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'contracts' ? 'border-emerald-500 text-emerald-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Contract Rules</button>
             <button onClick={() => setActiveTab('dispatcher')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'dispatcher' ? 'border-purple-500 text-purple-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Dispatcher Pay</button>
+            <button onClick={() => setActiveTab('fixed_revenue')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fixed_revenue' ? 'border-indigo-500 text-indigo-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>Fixed Revenue</button>
             <button onClick={() => setActiveTab('cpm')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'cpm' ? 'border-pink-500 text-pink-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>CPM REVENUE</button>
             <button onClick={() => setActiveTab('pnl')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'pnl' ? 'border-cyan-500 text-cyan-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>PNL CALCULATION</button>
             <button onClick={() => setActiveTab('fuel_rebate')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fuel_rebate' ? 'border-rose-500 text-rose-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>FUEL REBATE</button>
@@ -1030,7 +1086,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                            </select>
                                                                            <div className="flex items-center whitespace-nowrap text-[11px] text-zinc-300 font-mono bg-zinc-900/50 px-2 pt-4 pb-1.5 rounded border border-zinc-800 w-max relative z-10">
                                                                               {calcType === 'NEW_CPM_FORMULA' ? (
-                                                                                 <>Gross - Gross Pay - (Gross * {mcGrossInput})</>
+                                                                                 <>Gross - Gross Pay</>
                                                                               ) : (
                                                                                  <>(Gross + Margin * {mcMarginInput}) - Net Pay</>
                                                                               )}
@@ -1115,6 +1171,17 @@ const fixedExpenseNames = Array.from(new Set([
               />
            </div>
 
+           <div className={activeTab === 'fixed_revenue' ? 'block' : 'hidden'}>
+              <FixedRevenue 
+                availableContractTypes={availableContractTypes}
+                companies={allCompanies}
+                drivers={drivers}
+                localRevenues={localRevenues}
+                setLocalRevenues={setLocalRevenues}
+                allDates={Array.from(new Set(finImportData.map(d => d.week_ending)))}
+              />
+           </div>
+
            <div className={activeTab === 'cpm' ? 'block' : 'hidden'}>
               <RevenueCpm 
                 localFixedExpenses={localFixedExpenses}
@@ -1163,52 +1230,54 @@ const fixedExpenseNames = Array.from(new Set([
 
            <div className={activeTab === 'fixed' ? 'block' : 'hidden'}>
            <div className="max-w-6xl mx-auto -mt-4">
-              <div className="flex justify-end mb-2 gap-2">
-                 {isFilterVisible && (
-                    <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded px-2 py-1">
-                       <select value={expenseFilter.company} onChange={(e) => setExpenseFilter({...expenseFilter, company: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
-                          <option value="">All Companies</option>
-                          {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
-                       </select>
-                       <select value={expenseFilter.contract} onChange={(e) => setExpenseFilter({...expenseFilter, contract: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
-                          <option value="">All Contracts</option>
-                          {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
-                       </select>
-                       <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-700 rounded px-2 py-1">
-                          <span className="text-[9px] text-zinc-500 font-bold uppercase">Pay Date:</span>
-                          <input type="date" value={expenseFilter.date} onChange={(e) => {
-                             let val = e.target.value;
-                             if (val) {
-                                const d = new Date(val);
-                                const day = d.getUTCDay();
-                                const diff = 4 - day;
-                                d.setUTCDate(d.getUTCDate() + (diff > 3 ? diff - 7 : (diff < -3 ? diff + 7 : diff)));
-                                val = d.toISOString().split('T')[0];
-                             }
-                             setExpenseFilter({...expenseFilter, date: val});
-                          }} style={{ colorScheme: 'dark' }} className="bg-transparent text-[10px] text-zinc-300 outline-none" />
-                       </div>
-                       <select value={expenseFilter.sort} onChange={(e) => setExpenseFilter({...expenseFilter, sort: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
-                          <option value="A-Z">Sort: A-Z</option>
-                          <option value="Z-A">Sort: Z-A</option>
-                       </select>
-                       <button onClick={() => setExpenseFilter({ company: '', contract: '', date: '', sort: 'A-Z' })} className="text-zinc-500 hover:text-rose-500 ml-1" title="Clear Filters"><X size={14}/></button>
-                    </div>
-                 )}
-                 <button onClick={() => setIsFilterVisible(!isFilterVisible)} className={`flex items-center gap-1.5 px-3 py-1.5 border rounded text-[10px] font-bold uppercase transition-colors ${isFilterVisible || expenseFilter.company || expenseFilter.contract || expenseFilter.date || expenseFilter.sort !== 'A-Z' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:bg-zinc-800'}`}>
-                    <Filter size={14} />
-                    Filter
-                 </button>
-                 <button onClick={() => setHideOverriddenRules(!hideOverriddenRules)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-bold uppercase transition-colors" title={hideOverriddenRules ? "View default overrides" : "Hide default overrides"}>
-                {hideOverriddenRules ? <EyeOff size={14} /> : <Eye size={14} />}
-                {hideOverriddenRules ? 'Show Overrides' : 'Hide Overrides'}
-             </button>
-          </div>
-          <div className="w-full border border-zinc-800 rounded-lg overflow-hidden bg-zinc-950/50">
+              <div className="w-full border border-zinc-800 rounded-lg bg-zinc-950/50 mt-4">
                     <table className="w-full text-left border-collapse">
-                       <thead>
+                       <thead className="sticky top-[-24px] z-[50]">
                                           <tr className="bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-zinc-400 uppercase tracking-wider">
-                                              <th className="p-2 font-bold">Expense Name</th>
+                                              <th className="p-2 font-bold flex items-center justify-between rounded-t-lg bg-zinc-900 shadow-md">
+                                                 <span>Expense Name</span>
+                                                 <div className="flex items-center gap-2 font-normal normal-case">
+                                                    {isFilterVisible && (
+                                                       <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 rounded px-2 py-1">
+                                                          <select value={expenseFilter.company} onChange={(e) => setExpenseFilter({...expenseFilter, company: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
+                                                             <option value="">All Companies</option>
+                                                             {allCompanies.map(c => <option key={c} value={c}>{c}</option>)}
+                                                          </select>
+                                                          <select value={expenseFilter.contract} onChange={(e) => setExpenseFilter({...expenseFilter, contract: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
+                                                             <option value="">All Contracts</option>
+                                                             {availableContractTypes.map(c => <option key={c as string} value={c as string}>{c as string}</option>)}
+                                                          </select>
+                                                          <div className="flex items-center gap-1.5 bg-zinc-950 border border-zinc-700 rounded px-2 py-1">
+                                                             <span className="text-[9px] text-zinc-500 font-bold uppercase">Pay Date:</span>
+                                                             <input type="date" value={expenseFilter.date} onChange={(e) => {
+                                                                let val = e.target.value;
+                                                                if (val) {
+                                                                   const d = new Date(val);
+                                                                   const day = d.getUTCDay();
+                                                                   const diff = 4 - day;
+                                                                   d.setUTCDate(d.getUTCDate() + (diff > 3 ? diff - 7 : (diff < -3 ? diff + 7 : diff)));
+                                                                   val = d.toISOString().split('T')[0];
+                                                                }
+                                                                setExpenseFilter({...expenseFilter, date: val});
+                                                             }} style={{ colorScheme: 'dark' }} className="bg-transparent text-[10px] text-zinc-300 outline-none" />
+                                                          </div>
+                                                          <select value={expenseFilter.sort} onChange={(e) => setExpenseFilter({...expenseFilter, sort: e.target.value})} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none">
+                                                             <option value="A-Z">Sort: A-Z</option>
+                                                             <option value="Z-A">Sort: Z-A</option>
+                                                          </select>
+                                                          <button onClick={() => setExpenseFilter({ company: '', contract: '', date: '', sort: 'A-Z' })} className="text-zinc-500 hover:text-rose-500 ml-1" title="Clear Filters"><X size={14}/></button>
+                                                       </div>
+                                                    )}
+                                                    <button onClick={() => setIsFilterVisible(!isFilterVisible)} className={`flex items-center gap-1.5 px-3 py-1.5 border rounded text-[10px] font-bold uppercase transition-colors ${isFilterVisible || expenseFilter.company || expenseFilter.contract || expenseFilter.date || expenseFilter.sort !== 'A-Z' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-zinc-900 text-zinc-400 border-zinc-700 hover:bg-zinc-800'}`}>
+                                                       <Filter size={14} />
+                                                       Filter
+                                                    </button>
+                                                    <button onClick={() => setHideOverriddenRules(!hideOverriddenRules)} className="flex items-center gap-1.5 px-3 py-1.5 bg-zinc-900 border border-zinc-700 hover:bg-zinc-800 text-zinc-400 hover:text-zinc-200 rounded text-[10px] font-bold uppercase transition-colors" title={hideOverriddenRules ? "View default overrides" : "Hide default overrides"}>
+                                                       {hideOverriddenRules ? <EyeOff size={14} /> : <Eye size={14} />}
+                                                       {hideOverriddenRules ? 'Show Overrides' : 'Hide Overrides'}
+                                                    </button>
+                                                 </div>
+                                              </th>
                                            </tr>
                                        </thead>
                        <tbody className="divide-y divide-zinc-800">
@@ -1776,7 +1845,15 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                                 </div>
                                                                                                                 <div className="flex items-center gap-4 pl-4">
                                                                                                                    <div className="flex flex-col gap-1 w-full">
-                                                                                                                      <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Shared Insurance (Per Unit)</label>
+                                                                                                                      <div className="flex items-center gap-1">
+                                                                                                                         <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Shared Insurance (Per Unit)</label>
+                                                                                                                         <div className="relative group/mcloo-tooltip flex items-center justify-center">
+                                                                                                                            <Info size={12} className="text-amber-500/70 hover:text-amber-500 cursor-help transition-colors" />
+                                                                                                                            <div className="hidden group-hover/mcloo-tooltip:block absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-[100] w-[200px] bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl border border-zinc-700 whitespace-normal font-sans normal-case tracking-normal text-center">
+                                                                                                                               Enter the shared liability insurance amount here. This specific value is used directly in the calculation of Revenue Collected.
+                                                                                                                            </div>
+                                                                                                                         </div>
+                                                                                                                      </div>
                                                                                                                       <div className="flex items-center gap-3">
                                                                                                                          <div className="relative h-7 w-32">
                                                                                                                             <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
@@ -2149,7 +2226,15 @@ if (isTotalField) return null;
                                                                                               return (
                                                                                                  <div className="flex items-center gap-4">
                                                                                                     <div className="flex flex-col gap-0.5 pl-2">
-                                                                                                       <label className="text-[8px] text-zinc-400 font-bold uppercase">Shared Insurance (Per Unit)</label>
+                                                                                                       <div className="flex items-center gap-1">
+                                                                                                          <label className="text-[8px] text-zinc-400 font-bold uppercase">Shared Insurance (Per Unit)</label>
+                                                                                                          <div className="relative group/mcloo-tooltip flex items-center justify-center">
+                                                                                                             <Info size={12} className="text-zinc-400 hover:text-zinc-200 cursor-help transition-colors" />
+                                                                                                             <div className="hidden group-hover/mcloo-tooltip:block absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-[100] w-[200px] bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl border border-zinc-700 whitespace-normal font-sans normal-case tracking-normal text-center">
+                                                                                                                Enter the shared liability insurance amount here. This specific value is used directly in the calculation of Revenue Collected.
+                                                                                                             </div>
+                                                                                                          </div>
+                                                                                                       </div>
                                                                                                        <div className="flex items-center gap-2">
                                                                                                           <div className="relative h-5 w-24">
                                                                                                              <span className="absolute left-1.5 top-0.5 text-zinc-500 text-[9px] pointer-events-none">$</span>
@@ -2417,7 +2502,15 @@ if (isTotalField) return null;
                                                                                                                 </div>
                                                                                                                 <div className="flex items-center gap-4 pl-4">
                                                                                                                    <div className="flex flex-col gap-1 w-full">
-                                                                                                                      <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Shared Insurance (Per Unit)</label>
+                                                                                                                      <div className="flex items-center gap-1">
+                                                                                                                         <label className="text-[8px] text-amber-500/70 font-bold uppercase tracking-wider">Shared Insurance (Per Unit)</label>
+                                                                                                                         <div className="relative group/mcloo-tooltip flex items-center justify-center">
+                                                                                                                            <Info size={12} className="text-amber-500/70 hover:text-amber-500 cursor-help transition-colors" />
+                                                                                                                            <div className="hidden group-hover/mcloo-tooltip:block absolute bottom-full mb-1 left-1/2 -translate-x-1/2 z-[100] w-[200px] bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl border border-zinc-700 whitespace-normal font-sans normal-case tracking-normal text-center">
+                                                                                                                               Enter the shared liability insurance amount here. This specific value is used directly in the calculation of Revenue Collected.
+                                                                                                                            </div>
+                                                                                                                         </div>
+                                                                                                                      </div>
                                                                                                                       <div className="flex items-center gap-3">
                                                                                                                          <div className="relative h-7 w-32">
                                                                                                                             <span className="absolute left-2 top-1.5 text-amber-500/50 text-[10px] pointer-events-none">$</span>
