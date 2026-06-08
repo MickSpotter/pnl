@@ -12,6 +12,7 @@ import Simulator from './Simulator';
 import TableFilter, { FilterRule } from './TableFilter';
 import { ColumnsEditor } from './Columns';
 
+
 let hasPlayedInitialAnimations = false;
 
 const getWeeklyAmountFromExp = (amount: number, exp?: any) => {
@@ -319,7 +320,7 @@ const MasterTable: React.FC<{
     }
   };
 
-  const val = (amount: number, divisor: number) => isAverageView ? (divisor > 0 ? amount / divisor : 0) : amount;
+  const val = (amount: number, divisor: number) => isAverageView ? (divisor > 0 ? amount / divisor : amount) : amount;
     const getContractRuleForDate = (contractType: string, refDate?: string | null) => {
     const rules = (configContracts || []).filter((c: any) => c.contract_type === contractType);
     const targetTime = refDate && refDate !== 'ALL' && refDate !== 'LATEST' ? new Date(refDate).getTime() : null;
@@ -349,11 +350,13 @@ const MasterTable: React.FC<{
   const uniqueFranchises = Array.from(new Set(drivers.map(d => d.franchiseId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueTeams = Array.from(new Set(drivers.map(d => d.teamId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueDrivers = Array.from(new Set(drivers.map(d => (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned') ? 'Unassigned' : d.name))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const driverRows = [...drivers].map(d => ({ ...d, name: (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned') ? 'Unassigned' : d.name })).reduce((acc, d) => {
-      if (d.name === 'Unassigned') {
-          if (!acc.some((x: any) => x.name === 'Unassigned')) acc.push(d);
-      } else {
-          if (!acc.some((x: any) => x.name === d.name)) acc.push(d);
+ const driverRows = [...drivers].map(d => {
+      const isUnassigned = (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned');
+      const compositeKey = isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`;
+      return { ...d, _compositeKey: compositeKey, name: isUnassigned ? 'Unassigned' : d.name };
+  }).reduce((acc, d) => {
+      if (!acc.some((x: any) => x._compositeKey === d._compositeKey)) {
+          acc.push(d);
       }
       return acc;
   }, [] as any[]).sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')).filter((d: any) => !searchQuery || String(d.name || 'Unassigned').toLowerCase().startsWith(searchQuery.toLowerCase()));
@@ -532,12 +535,14 @@ const MasterTable: React.FC<{
   const groupedDrivers = useMemo(() => {
                  const map = new Map<string, DriverPerformance[]>();
                  drivers.forEach(d => {
+                    const isUnassigned = (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned');
                     let key = groupBy === 'Contract' ? d.contractType :
                                 groupBy === 'Company' ? d.companyId :
                                 groupBy === 'Franchise' ? d.franchiseId :
-                                groupBy === 'Team' ? d.teamId : d.name;
+                                groupBy === 'Team' ? d.teamId : 
+                                (isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`);
                     if (groupBy === 'Company' && (key === 'UNRECONCILED' || !key)) key = 'Unassigned';
-                    if (groupBy === 'Driver' && (!key || String(key).toLowerCase() === 'unknown driver' || String(key).toLowerCase() === 'unassigned')) key = 'Unassigned';
+                    if (groupBy === 'Driver' && isUnassigned) key = 'Unassigned';
                     const safeKey = key || 'Unassigned';
         if (!map.has(safeKey)) map.set(safeKey, []);
         map.get(safeKey)!.push(d);
@@ -558,7 +563,7 @@ const MasterTable: React.FC<{
         } else if (groupBy === 'Driver') {
           rows = driverRows.map(d => {
               const isMergedUnassigned = (!d.name || String(d.name).toLowerCase() === 'unassigned' || String(d.name).toLowerCase() === 'unknown driver');
-              return { name: d.name, drivers: groupedDrivers.get(isMergedUnassigned ? 'Unassigned' : d.name) || [] };
+              return { name: d.name, drivers: groupedDrivers.get(isMergedUnassigned ? 'Unassigned' : (d as any)._compositeKey) || [] };
           });
         }
         const activeDrivers = rows.flatMap(r => r.drivers);
@@ -600,7 +605,7 @@ const MasterTable: React.FC<{
 
      const computedArr = arr.map(item => {
         let name = type === 'Driver' ? (item.name || 'Unassigned') : (item || 'Unassigned');
-        let drvs = type === 'Driver' ? (groupedDrivers.get(name) || []) : (groupedDrivers.get(name) || []);
+        let drvs = type === 'Driver' ? (groupedDrivers.get((!item.name || String(item.name).toLowerCase() === 'unassigned' || String(item.name).toLowerCase() === 'unknown driver') ? 'Unassigned' : item._compositeKey) || []) : (groupedDrivers.get(name) || []);
         const metrics = getAdjustedGroupMetrics(drvs);
         const w4 = get4wMetrics(name);
         const div = metrics.effNonTeamsCount > 0 ? metrics.effNonTeamsCount : metrics.effCount;
@@ -1028,32 +1033,54 @@ const MasterTable: React.FC<{
     );
   };
   
+  const driverSwapMap = useMemo(() => {
+      const map = new Map<string, boolean>();
+      if (groupBy !== 'Driver') return map;
+      const groupedByDateAndName = new Map<string, any[]>();
+      drivers.forEach((r: any) => {
+          if (r.name && r.companyId !== 'UNRECONCILED' && (r.effectiveDrivers || 0) > 0) {
+              const key = `${r.name}|${r.payDate}`;
+              if (!groupedByDateAndName.has(key)) groupedByDateAndName.set(key, []);
+              groupedByDateAndName.get(key)!.push(r);
+          }
+      });
+      groupedByDateAndName.forEach((recs, key) => {
+          if (recs.length > 1) {
+              const uniqueContracts = new Set(recs.map((r: any) => {
+                  let ct = r.contractType;
+                  if (ct === 'TPOG WITH FRANCHISE') ct = 'TPOG';
+                  if (ct === 'OO WITH FRANCHISE') ct = 'OO';
+                  return ct;
+              }));
+              const uniqueComps = new Set(recs.map((r: any) => r.companyId));
+              if (!(uniqueContracts.size === 1 && uniqueComps.size === 1)) {
+                  map.set(key, true);
+              }
+          }
+      });
+      return map;
+  }, [drivers, groupBy]);
+
   const poModalData = useMemo(() => {
       if (!isPoModalOpen) return { columns: [], rows: [] };
-      let entities: string[] = [];
-      if (groupBy === 'Company') entities = uniqueCompanies;
-      else if (groupBy === 'Contract') entities = uniqueContracts;
-      else if (groupBy === 'Franchise') entities = uniqueFranchises;
-      else if (groupBy === 'Team') entities = uniqueTeams;
-      else if (groupBy === 'Driver') entities = driverRows.map(d => d.name || 'Unassigned');
+      let entities: any[] = [];
+      if (groupBy === 'Company') entities = uniqueCompanies.map(c => ({ key: c, label: c }));
+      else if (groupBy === 'Contract') entities = uniqueContracts.map(c => ({ key: c, label: c }));
+      else if (groupBy === 'Franchise') entities = uniqueFranchises.map(c => ({ key: c, label: c }));
+      else if (groupBy === 'Team') entities = uniqueTeams.map(c => ({ key: c, label: c }));
+      else if (groupBy === 'Driver') entities = driverRows.map(d => ({ key: (d as any)._compositeKey || 'Unassigned', label: d.name || 'Unassigned' }));
 
       const allReasons = new Set<string>();
       const rowData: any[] = [];
 
-      entities.forEach((entity: string) => {
-          let drvs: any[] = [];
-          if (groupBy === 'Driver') {
-              const isMergedUnassigned = (!entity || String(entity).toLowerCase() === 'unassigned' || String(entity).toLowerCase() === 'unknown driver');
-              drvs = groupedDrivers.get(isMergedUnassigned ? 'Unassigned' : entity) || [];
-          } else {
-              drvs = groupedDrivers.get(entity || 'Unassigned') || [];
-          }
+      entities.forEach((entity: any) => {
+          let drvs = groupedDrivers.get(entity.key || 'Unassigned') || [];
           const m = getAdjustedGroupMetrics(drvs);
           const div = m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount;
           const pb = m.poBreakdown || {};
           Object.keys(pb).forEach(k => allReasons.add(k));
           rowData.push({
-              name: entity,
+              name: entity.label,
               breakdown: pb,
               div: div,
               total: val(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : m.totalPOCov, div)
@@ -1104,24 +1131,18 @@ const MasterTable: React.FC<{
 
     const expModalData = useMemo(() => {
         if (!isExpModalOpen) return { columns: [], rows: [] };
-        let entities: string[] = [];
-        if (groupBy === 'Company') entities = uniqueCompanies;
-        else if (groupBy === 'Contract') entities = uniqueContracts;
-        else if (groupBy === 'Franchise') entities = uniqueFranchises;
-        else if (groupBy === 'Team') entities = uniqueTeams;
-        else if (groupBy === 'Driver') entities = driverRows.map(d => d.name || 'Unassigned');
+       let entities: any[] = [];
+        if (groupBy === 'Company') entities = uniqueCompanies.map(c => ({ key: c, label: c }));
+        else if (groupBy === 'Contract') entities = uniqueContracts.map(c => ({ key: c, label: c }));
+        else if (groupBy === 'Franchise') entities = uniqueFranchises.map(c => ({ key: c, label: c }));
+        else if (groupBy === 'Team') entities = uniqueTeams.map(c => ({ key: c, label: c }));
+        else if (groupBy === 'Driver') entities = driverRows.map(d => ({ key: (d as any)._compositeKey || 'Unassigned', label: d.name || 'Unassigned' }));
 
         const columns = ['insLiabAuto', 'insLiabGen', 'insCargo', 'insLeaseGapCoverage', 'insTrailerInterchange', 'insLago', 'insPhdPremium', 'insPhdTruck', 'insPhdTrailer', 'fcTruck', 'fcCpm', 'fcTrailer', 'fcPlates', 'fcTelematics', 'fcPhone', 'fcOffice', 'fcRent', 'fcBackupMc', 'fcBoReg', 'fcBoTech', 'fcFactoring', 'adjFixed'];
         const rowData: any[] = [];
 
-        entities.forEach((entity: string) => {
-            let drvs: any[] = [];
-            if (groupBy === 'Driver') {
-                const isMergedUnassigned = (!entity || String(entity).toLowerCase() === 'unassigned' || String(entity).toLowerCase() === 'unknown driver');
-                drvs = groupedDrivers.get(isMergedUnassigned ? 'Unassigned' : entity) || [];
-            } else {
-                drvs = groupedDrivers.get(entity || 'Unassigned') || [];
-            }
+        entities.forEach((entity: any) => {
+            let drvs = groupedDrivers.get(entity.key || 'Unassigned') || [];
             const m = getAdjustedGroupMetrics(drvs);
             const div = m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount;
             
@@ -1133,7 +1154,7 @@ const MasterTable: React.FC<{
             const totalExp = columns.reduce((sum, col) => sum + (m[col] || 0), 0);
 
             rowData.push({
-                name: entity,
+                name: entity.label,
                 breakdown,
                 div,
                 total: val(totalExp, div)
@@ -1262,7 +1283,7 @@ const MasterTable: React.FC<{
         <thead className="bg-zinc-950 text-zinc-500 font-medium uppercase sticky top-0 z-[60] shadow-sm select-none">
          <tr>
             <th onClick={() => requestSort('name')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-[10px] sticky left-0 z-30 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)] cursor-pointer hover:text-white">Segment {sortConfig?.key === 'name' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
-            {!isAverageView && groupBy === 'Driver' && (
+            {groupBy === 'Driver' && (
               <>
                 <th onClick={() => requestSort('companyId')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-left text-zinc-400 text-[10px] cursor-pointer hover:text-white">Company {sortConfig?.key === 'companyId' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
                 <th onClick={() => requestSort('teamId')} className="px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-left text-zinc-400 text-[10px] cursor-pointer hover:text-white">Team {sortConfig?.key === 'teamId' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</th>
@@ -1611,27 +1632,17 @@ const MasterTable: React.FC<{
               </tr>
             );
           })}
-          {!isAverageView && groupBy === 'Driver' && sortedData.map((dataItem, idx) => {
+          {groupBy === 'Driver' && sortedData.map((dataItem, idx) => {
           const d = dataItem.original;
           const displayLabel = (!d.name || String(d.name).toLowerCase() === 'unassigned' || String(d.name).toLowerCase() === 'unknown driver') ? 'Unassigned' : d.name;
-          const drvRecords = groupedDrivers.get(displayLabel) || [];
+          const drvRecords = dataItem.drvs;
           const isMergedUnassigned = displayLabel === 'Unassigned';
           const metrics = dataItem.metrics;
           const w4 = dataItem.w4;
           
-          const validRecordsForSwap = drvRecords.filter(r => r.companyId !== 'UNRECONCILED' && (r.effectiveDrivers || 0) > 0);
-          let isSwap = validRecordsForSwap.length > 1;
-          if (isSwap) {
-              const uniqueContractsInSwap = new Set(validRecordsForSwap.map(r => {
-                  let ct = r.contractType;
-                  if (ct === 'TPOG WITH FRANCHISE') ct = 'TPOG';
-                  if (ct === 'OO WITH FRANCHISE') ct = 'OO';
-                  return ct;
-              }));
-              const uniqueCompaniesInSwap = new Set(validRecordsForSwap.map(r => r.companyId));
-              if (uniqueContractsInSwap.size === 1 && uniqueCompaniesInSwap.size === 1) {
-                  isSwap = false;
-              }
+          let isSwap = false;
+          if (!isMergedUnassigned && selectedDate !== 'ALL') {
+              isSwap = drvRecords.some((r: any) => driverSwapMap.get(`${d.name}|${r.payDate}`));
           }
 
           const isStub = metrics.effCount === 0 && (Math.abs(metrics.totalPOCov) > 0 || Math.abs(metrics.totalPO) > 0 || Math.abs(metrics.tolls) > 0);
@@ -1673,16 +1684,17 @@ const MasterTable: React.FC<{
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[100px]">{isMergedUnassigned ? '-' : (d.companyId === 'UNRECONCILED' || isStub ? '-' : (d.companyId || '-'))}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.teamId || '-')}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.franchiseId || '-')}</td>
-                <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.dispatcherId || '-')}</td>
+               <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.dispatcherId || '-')}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.contractType || '-')}</td>
-                {renderRowCells(metrics, w4, isStub, displayLabel, groupedDrivers.get(displayLabel) || [])}
+                {renderRowCells(metrics, w4, isStub, displayLabel, drvRecords)}
+            
               </tr>
             );
           })}
                      
           <tr className="h-full">
             <td className="p-0 border-0 pointer-events-none sticky left-0 z-10 bg-zinc-950 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
-            {!isAverageView && groupBy === 'Driver' && Array.from({ length: 5 }).map((_, i) => (
+            {groupBy === 'Driver' && Array.from({ length: 5 }).map((_, i) => (
               <td key={`empty-driver-cols-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
             ))}
             {!isAverageView && Array.from({ length: 3 }).map((_, i) => (
@@ -1735,7 +1747,7 @@ const MasterTable: React.FC<{
                 return (
                   <>
                     <td className="px-1 py-1 text-white font-sans text-[10px] sticky left-0 z-50 bg-zinc-950 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">TOTAL</td>
-                    {!isAverageView && groupBy === 'Driver' && (
+                    {groupBy === 'Driver' && (
                       <>
                         <td className="px-1 py-1 bg-zinc-950"></td>
                         <td className="px-1 py-1 bg-zinc-950"></td>
@@ -2052,6 +2064,11 @@ const MasterTable: React.FC<{
   );
 };
 
+
+let globalEnrichedCache: any[] | null = null;
+let globalEnrichedCacheKey: string | null = null;
+let globalChartCache: any[] | null = null;
+let globalChartCacheKey: string | null = null;
 
 // Main Component
 const PnLView: React.FC<PnLViewProps> = ({ 
@@ -2387,7 +2404,18 @@ const PnLView: React.FC<PnLViewProps> = ({
     return stats;
   }, [allDrivers, drivers]);
 
+  const cacheKey = useMemo(() => {
+    const configHash = JSON.stringify(configContracts || []);
+    const expHash = JSON.stringify(fixedExpenses || []);
+    const fcHash = JSON.stringify(fixedCostsData || []);
+    return `${(allDrivers || drivers)?.length}-${finImportData?.length}-${simulationConfig?.globalFixedExpenseAdjustment}-${configHash}-${expHash}-${fcHash}`;
+  }, [allDrivers, drivers, fixedExpenses, finImportData, fixedCostsData, simulationConfig, configContracts]);
+
   const enrichedDrivers = useMemo(() => {
+    if (globalEnrichedCache && globalEnrichedCacheKey === cacheKey) {
+        return globalEnrichedCache;
+    }
+
     const groups: { [date: string]: DriverPerformance[] } = {};
     drivers.forEach(d => {
       if (!d.payDate) return;
@@ -3363,12 +3391,26 @@ const PnLView: React.FC<PnLViewProps> = ({
               marginAmount: 0,
               isFranchiseStub: false,
               isStub: true
-          } as any);
-      }
-    });
+         } as any);
+        }
+      });
 
-    return result;
-  }, [drivers, allDrivers, parsedFinImportData, getActiveAmount, latestPayDate, fixedCostsData, configContracts]);
+      globalEnrichedCache = result;
+      globalEnrichedCacheKey = cacheKey;
+      return result;
+    }, [drivers, allDrivers, parsedFinImportData, getActiveAmount, latestPayDate, fixedCostsData, configContracts, cacheKey]);
+
+  useEffect(() => {
+    if (enrichedDrivers && enrichedDrivers.length > 0) {
+      (window as any).__ENRICHED_DRIVERS__ = enrichedDrivers;
+    }
+  }, [enrichedDrivers]);
+
+ useEffect(() => {
+    if (enrichedDrivers && enrichedDrivers.length > 0) {
+      (window as any).__ENRICHED_DRIVERS__ = enrichedDrivers;
+    }
+  }, [enrichedDrivers]);
 
   const displayedDrivers = useMemo(() => {
     const validDates = new Set(uniqueDates);
@@ -3732,13 +3774,9 @@ if (isCategorical) {
     let pnlCpmAdj = 0;
     let pnlFuelAdj = 0;
     let pnlProrated = 0;
-    let pnlZeroMiDrop = 0;
-    
-    const sortedDatesForBal = Array.from(new Set(initialDrivers.map(x => x.payDate))).filter(Boolean).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
-    const latestDateInSelection = sortedDatesForBal.length > 0 ? sortedDatesForBal[0] : null;
-    const isCombinedDates = sortedDatesForBal.length > 1;
+        let pnlZeroMiDrop = 0;
 
-    initialDrivers.forEach(d => {
+        initialDrivers.forEach(d => {
         fcTruck += (d as any).fcTruck || 0;
         fcCpm += (d as any).fcCpm || 0;
         fcTrailer += (d as any).fcTrailer || 0;
@@ -3796,17 +3834,16 @@ if (isCategorical) {
 
         const isFranchise = d.contractType === 'TPOG' && !!d.franchiseId;
         const effNT = d.effectiveNonTeams || 0;
-        const effTr = (d as any).effectiveTrailers || 0;
+            const effTr = (d as any).effectiveTrailers || 0;
 
-        const rBase = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0);
-        const isLatestWeek = d.payDate === latestDateInSelection;
-        const poDed = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0);
-        const poSet = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).po_settle ?? (d as any).poSettle ?? 0);
-        const balSet = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0);
-        const nPay = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).net_pay ?? d.netPay ?? 0);
-        const escDed = (isCombinedDates && !isLatestWeek) ? 0 : Number((d as any).escrow_deduction ?? (d as any).escrowDeduct ?? 0);
-        
-        const tFloat = Number((d as any).truck_float ?? (d as any).truckFloat ?? 0);
+            const rBase = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0);
+            const poDed = Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0);
+            const poSet = Number((d as any).po_settle ?? (d as any).poSettle ?? 0);
+            const balSet = Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0);
+            const nPay = Number((d as any).net_pay ?? d.netPay ?? 0);
+            const escDed = Number((d as any).escrow_deduction ?? (d as any).escrowDeduct ?? 0);
+            
+            const tFloat = Number((d as any).truck_float ?? (d as any).truckFloat ?? 0);
         const tWkly = Number((d as any).truck_wkly ?? (d as any).truckWkly ?? 0);
         const oIns = Number((d as any).occ_ins ?? (d as any).occIns ?? 0);
         const dEld = Number((d as any).eld ?? 0);
@@ -4271,6 +4308,9 @@ return sortedHistory.length > 6 ? sortedHistory.slice(0, -6) : sortedHistory;
 
 
   const chartData = useMemo(() => {
+    const cKey = `${cacheKey}-${selectedDate}-${chartWeeksLimit}-${groupBy}-${selectedEntities.join(',')}`;
+    if (globalChartCache && globalChartCacheKey === cKey) return globalChartCache;
+
     if (enrichedDrivers.length === 0) return [];
 
     const driversByDate: Record<string, any[]> = {};
@@ -4458,21 +4498,33 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
 
       return row;
     });
+    globalChartCache = generatedChartData;
+    globalChartCacheKey = cKey;
     return generatedChartData;
-  }, [enrichedDrivers, uniqueContracts, uniqueCompanies, uniqueTeams, uniqueFranchises, uniqueDrivers, calculateMetrics, selectedDate, latestPayDate, chartWeeksLimit, groupBy, selectedEntities]);
+  }, [enrichedDrivers, uniqueContracts, uniqueCompanies, uniqueTeams, uniqueFranchises, uniqueDrivers, calculateMetrics, selectedDate, latestPayDate, chartWeeksLimit, groupBy, selectedEntities, cacheKey]);
 
   useEffect(() => {
-    if (onReady) {
-      if (chartData && chartData.length > 0) {
-        const timer = setTimeout(() => {
-          onReady();
-        }, 100);
-        return () => clearTimeout(timer);
-      } else if (allDrivers && allDrivers.length > 0) {
-        onReady();
-      }
-    }
-  }, [chartData, allDrivers]);
+        if (onReady) {
+          if (chartData && chartData.length > 0) {
+            const timer = setTimeout(() => {
+              onReady();
+            }, 100);
+            return () => clearTimeout(timer);
+          } else if (allDrivers && allDrivers.length > 0) {
+            onReady();
+          }
+        }
+      }, [chartData, allDrivers]);
+
+      useEffect(() => {
+        if (chartData && chartData.length > 0 && !hasPlayedInitialAnimations) {
+          // Allow the very first animation to finish, then disable it for future tab switches
+          const timer = setTimeout(() => {
+            hasPlayedInitialAnimations = true;
+          }, 1500);
+          return () => clearTimeout(timer);
+        }
+      }, [chartData]);
   const chartSeries: ChartSeries[] = useMemo(() => {
     const series: ChartSeries[] = [];
     const distinctColors = ['#3b82f6', '#ec4899', '#f59e0b', '#8b5cf6', '#14b8a6', '#f43f5e', '#84cc16', '#0ea5e9', '#6366f1', '#d946ef', '#eab308', '#06b6d4', '#f97316'];
@@ -4592,7 +4644,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
 
   const activeColIds = useMemo(() => {
     const ids = ['Segment', 'Gross', 'Margin', 'Net Pay', 'Ins. Exp.', 'Fuel', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Shared Ins', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Disp. Pay', 'Recruiting', 'Total PnL'];
-    if (!isAverageView && groupBy === 'Driver') {
+    if (groupBy === 'Driver') {
       ids.push('Company', 'Team', 'Franchise', 'Dispatcher', 'Contract');
     }
     if (!isAverageView) {
@@ -4688,14 +4740,13 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                        <option value="Company">By Company</option>
                        <option value="Franchise">By Franchise</option>
                        <option value="Team">By Team</option>
-                       {!isAverageView && <option value="Driver">By Driver</option>}
+                       <option value="Driver">By Driver</option>
                      </select>
                      <ChevronDown size={10} className="absolute right-2 text-zinc-500 pointer-events-none transition-transform peer-focus:rotate-180" />
                    </div>
                    <button
                      onClick={() => {
                         setIsAverageView(!isAverageView);
-                        if (!isAverageView && groupBy === 'Driver') setGroupBy('Contract');
                      }}
                      className={`w-[140px] h-[28px] px-2 rounded text-[10px] font-sans font-normal border transition-colors flex justify-start items-center text-left ${isAverageView ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:border-zinc-700'}`}
                    >
@@ -4811,14 +4862,13 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                      <option value="Company">By Company</option>
                      <option value="Franchise">By Franchise</option>
                      <option value="Team">By Team</option>
-                     {!isAverageView && <option value="Driver">By Driver</option>}
+                     <option value="Driver">By Driver</option>
                    </select>
                    <ChevronDown size={10} className="absolute right-2 text-zinc-500 pointer-events-none transition-transform peer-focus:rotate-180" />
                  </div>
                  <button
                    onClick={() => {
                       setIsAverageView(!isAverageView);
-                      if (!isAverageView && groupBy === 'Driver') setGroupBy('Contract');
                    }}
                    className={`w-[130px] h-[26px] px-2 rounded text-[10px] font-sans font-normal border transition-colors flex justify-start items-center text-left ${isAverageView ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:border-zinc-700'}`}
                  >
@@ -6229,13 +6279,13 @@ const finalTrailerInterchangePerUnit = filteredNT > 0 ? finalTrailerInterchangeT
                                        <td className="px-2 py-0.5 font-bold text-zinc-200">{formattedDate}</td>
                                        <td className={`px-2 py-0.5 text-right font-mono font-bold ${item.totalAmount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
                                           {(() => {
-                                              const val = isPnlHistoryAverageView ? (item.totalNT > 0 ? item.totalAmount / item.totalNT : 0) : item.totalAmount;
+                                              const val = isPnlHistoryAverageView ? (item.totalNT > 0 ? item.totalAmount / item.totalNT : item.totalAmount) : item.totalAmount;
                                               return (val < 0 ? '-' : '') + formatCurrency(Math.abs(val));
                                           })()}
                                        </td>
                                        {pnlHistoryOptions.map(opt => {
                                            const data = item.entityData[opt] || { amount: 0, nt: 0 };
-                                           const val = isPnlHistoryAverageView ? (data.nt > 0 ? data.amount / data.nt : 0) : data.amount;
+                                           const val = isPnlHistoryAverageView ? (data.nt > 0 ? data.amount / data.nt : data.amount) : data.amount;
                                            return (
                                                <td key={opt} className={`px-2 py-0.5 text-right font-mono font-medium ${val >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
                                                   {val < 0 ? '-' : ''}{formatCurrency(Math.abs(val))}

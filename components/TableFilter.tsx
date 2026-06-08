@@ -18,7 +18,7 @@ const CATEGORICAL_FIELDS = ['Contract', 'Company', 'Team', 'Franchise', 'Driver'
 const NUMERIC_FIELDS = ['Eff Drivers', 'Eff Non Teams', 'Eff Trailers', 'Gross', 'Margin', 'Miles', 'Net Pay', 'Net Pay Med', 'Disp. Pay', 'Ins. Exp.', 'Fuel', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Recruiting', 'PnL 4w', '4w Avg', 'Total PnL'];
 const ALL_FIELDS = [...CATEGORICAL_FIELDS, ...NUMERIC_FIELDS];
 
-const CAT_OPERATORS = ['is one of', 'is not one of', 'is', 'is not', 'is not empty', 'is empty'];
+const CAT_OPERATORS = ['is one of', 'is not one of', 'is', 'is not', 'is not empty', 'is empty', 'status is', 'status is not'];
 const NUM_OPERATORS = ['is equal', 'is not equal', 'is less than', 'is more than', 'is less or equal', 'is more or equal', 'is not empty', 'is empty'];
 
 const DropdownMultiSelect = ({ options, selected, onChange, placeholder }: any) => {
@@ -189,6 +189,10 @@ const TableFilter: React.FC<TableFilterProps> = ({ filters, setFilters, optionsM
     updated.value = CATEGORICAL_FIELDS.includes(f.field) ? [] : '';
   } else if (['is', 'is not'].includes(val) && Array.isArray(f.value) && f.value.length > 1) {
     updated.value = [f.value[0]];
+  } else if (['diagnosis is', 'diagnosis is not', 'status is', 'status is not'].includes(val) && !Array.isArray(f.value)) {
+    updated.value = [];
+  } else if (!['diagnosis is', 'diagnosis is not', 'status is', 'status is not', 'is one of', 'is not one of'].includes(val) && Array.isArray(f.value)) {
+    updated.value = '';
   }
 }
 
@@ -223,8 +227,9 @@ const TableFilter: React.FC<TableFilterProps> = ({ filters, setFilters, optionsM
           <div className="flex flex-col gap-2 w-full">
             {filters.map(filter => {
               const isCat = CATEGORICAL_FIELDS.includes(filter.field);
-              const operators = isCat ? CAT_OPERATORS : NUM_OPERATORS;
               const fieldOpts = optionsMap[filter.field] || [];
+              const isDiagnosisCapable = fieldOpts.includes('good') || fieldOpts.includes('critical');
+              const operators = isCat ? CAT_OPERATORS : (isDiagnosisCapable ? [...NUM_OPERATORS, 'diagnosis is', 'diagnosis is not'] : NUM_OPERATORS);
 
               return (
                 <div key={filter.id} className={`grid ${['is not empty', 'is empty'].includes(filter.operator) ? 'grid-cols-[1fr_1fr_auto]' : 'grid-cols-[1fr_1fr_minmax(0,1fr)_auto]'} gap-2 items-center bg-zinc-900/50 p-1.5 rounded border border-zinc-800 w-full min-h-[38px]`}>
@@ -249,17 +254,17 @@ const TableFilter: React.FC<TableFilterProps> = ({ filters, setFilters, optionsM
 
                   {!['is not empty', 'is empty'].includes(filter.operator) && (
   <div className="w-full h-[26px] min-h-[26px] flex items-stretch">
-    {isCat ? (
-      ['is one of', 'is not one of'].includes(filter.operator) ? (
+    {isCat || ['diagnosis is', 'diagnosis is not'].includes(filter.operator) ? (
+      ['is one of', 'is not one of', 'diagnosis is', 'diagnosis is not', 'status is', 'status is not'].includes(filter.operator) ? (
         <DropdownMultiSelect
-          options={fieldOpts}
+          options={['status is', 'status is not'].includes(filter.operator) ? ['ACTIVE', 'TERMINATED'] : fieldOpts}
           selected={Array.isArray(filter.value) ? filter.value : []}
           onChange={(val: any) => updateFilter(filter.id, 'value', val)}
           placeholder="Select options..."
         />
       ) : (
         <DropdownSingleSelect
-          options={fieldOpts}
+          options={['status is', 'status is not'].includes(filter.operator) ? ['ACTIVE', 'TERMINATED'] : fieldOpts}
           selected={Array.isArray(filter.value) ? filter.value : []}
           onChange={(val: any) => updateFilter(filter.id, 'value', val)}
           placeholder="Select one..."

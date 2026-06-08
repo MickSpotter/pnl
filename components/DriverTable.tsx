@@ -1,16 +1,284 @@
+import TableFilter, { FilterRule } from './TableFilter';
 import React, { useState, useEffect } from 'react';
 import { DriverPerformance, DriverStatus, DispatcherTier } from '../types';
 import { formatCurrency, formatPercent } from '../utils';
-import { AlertCircle, CheckCircle, TrendingUp, UserMinus, ChevronDown, ChevronUp, AlertTriangle, X, Minus, Filter, Info, Settings } from 'lucide-react';
+import { AlertCircle, CheckCircle, TrendingUp, UserMinus, ChevronDown, ChevronUp, AlertTriangle, X, Minus, Filter, Info, Settings, Circle } from 'lucide-react';
 import HistoricalChart from './HistoricalChart';
 import DriverSettings from './DriverSettings';
 import { supabase } from '../lib/supabase';
+import { getActiveAmount, getWeeklyAmountFromExp } from './WklyExpCalc';
+
+export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: Map<string, any>) => {
+  const ct = r.contractType || '';
+  let effContractType = ct;
+  if (ct === 'TPOG' && r.franchiseId) effContractType = 'TPOG WITH FRANCHISE';
+  if (ct === 'OO' && r.franchiseId) effContractType = 'OO WITH FRANCHISE';
+
+  let targetDateStr = r.payDate || r.week_ending;
+  if (!targetDateStr) {
+      targetDateStr = new Date().toISOString().split('T')[0];
+  } else if (targetDateStr.includes('T')) {
+      targetDateStr = targetDateStr.split('T')[0];
+  }
+
+  const getRuleScore = (e: any, targetDriver: any, targetEffCt: string) => {
+    let score = 0;
+    const dispName = e.dispatcher_name || e.dispatcherName || e.dispatcher_id || e.dispatcherId || e.dispatcher;
+    if (dispName && String(dispName).trim().toUpperCase() !== 'ALL' && String(dispName).trim() !== '' && String(dispName).trim().toLowerCase() !== 'null') {
+      const arr = String(dispName).split(',').map((s: string) => s.trim().toLowerCase());
+      if (arr.includes(String(targetDriver.dispatcherId || targetDriver.dispatcherName || targetDriver.dispatcher_name || '').trim().toLowerCase())) score += 1000;
+      else return -1;
+    }
+    const teamName = e.team_name || e.teamName;
+    if (teamName && String(teamName).trim().toUpperCase() !== 'ALL' && String(teamName).trim() !== '' && String(teamName).trim().toLowerCase() !== 'null') {
+      const arr = String(teamName).split(',').map((s: string) => s.trim().toLowerCase());
+      if (arr.includes(String(targetDriver.teamId || targetDriver.team_name || '').trim().toLowerCase())) score += 100;
+      else return -1;
+    }
+    const comp = e.companyId || e.company_id || e.company;
+    if (comp && String(comp).trim().toUpperCase() !== 'ALL' && String(comp).trim() !== '' && String(comp).trim().toLowerCase() !== 'null') {
+      const arr = String(comp).split(',').map((s: string) => s.trim().toLowerCase());
+      if (arr.includes(String(targetDriver.companyId || targetDriver.company_id || '').trim().toLowerCase())) score += 10;
+      else return -1;
+    }
+    const ctc = e.contractType || e.contract_type;
+    if (ctc && String(ctc).trim().toUpperCase() !== 'ALL' && String(ctc).trim() !== '' && String(ctc).trim().toLowerCase() !== 'null') {
+      const arr = String(ctc).split(',').map((s: string) => s.trim().toLowerCase());
+      if (arr.includes(String(targetEffCt).trim().toLowerCase())) score += 1;
+      else return -1;
+    }
+    return score;
+  };
+
+  const validDispExps = fixedExpenses.filter(e => {
+    if (!e.name || !String(e.name).trim().toLowerCase().includes('dispatcher pay')) return false;
+    const fromStr = e.valid_from || '2000-01-01';
+    const toStr = e.valid_to || '2099-12-31';
+    return targetDateStr >= fromStr && targetDateStr <= toStr;
+  });
+  const scoredDispRules = validDispExps.map(e => ({ rule: e, score: getRuleScore(e, r, effContractType) })).filter(x => x.score >= 0);
+  scoredDispRules.sort((a, b) => {
+      if (b.score !== a.score) return b.score - a.score;
+      const dA = new Date(a.rule.valid_from || '2000-01-01').getTime();
+      const dB = new Date(b.rule.valid_from || '2000-01-01').getTime();
+      return dB - dA;
+  });
+  let dispRule = scoredDispRules.length > 0 ? scoredDispRules[0].rule : null;
+
+  let dispGrossPerc = 0;
+  let dispMarginPerc = 0;
+  let dispFixedAmount = 0;
+  let dispSharedVal = 0;
+
+  if (dispRule) {
+      let grossP = Number(dispRule.disp_gross_perc || dispRule.dispatcher_gross_percent || dispRule.dispatcherGrossPercent || dispRule.dispGrossPerc || 0);
+      let marginP = Number(dispRule.disp_margin_perc || dispRule.dispatcher_margin_percent || dispRule.dispatcherMarginPercent || dispRule.dispMarginPerc || 0);
+      let rawAmount = Number(dispRule.amount) || 0;
+      
+      const dName = dispRule.dispatcher_name || dispRule.dispatcherName || dispRule.dispatcher_id || dispRule.dispatcherId || dispRule.dispatcher || 'ALL';
+      
+      if (dName !== 'ALL' && dName !== '' && (grossP !== 0 || marginP !== 0)) {
+          dispGrossPerc = grossP;
+          dispMarginPerc = marginP;
+      } else if (rawAmount !== 0) {
+          if (dispRule.unit === '%') {
+              dispGrossPerc = rawAmount;
+              dispMarginPerc = marginP;
+          } else if (dispRule.unit === '$ total') {
+              dispFixedAmount = rawAmount; 
+          } else {
+              dispFixedAmount = rawAmount * (r.effectiveNonTeams || 0);
+          }
+      } else {
+          dispGrossPerc = grossP;
+          dispMarginPerc = marginP;
+      }
+  }
+
+  if (ct === 'MCLOO') {
+      let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === r.companyId && targetDateStr >= (e.valid_from || '2000-01-01') && targetDateStr <= (e.valid_to || '2099-12-31')).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+      if (!liabRuleForDisp) {
+          liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && targetDateStr >= (e.valid_from || '2000-01-01') && targetDateStr <= (e.valid_to || '2099-12-31')).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+      }
+      if (liabRuleForDisp) {
+          if (liabRuleForDisp.disp_mcloo_pay !== undefined && liabRuleForDisp.disp_mcloo_pay !== null && String(liabRuleForDisp.disp_mcloo_pay).trim() !== '') {
+              dispSharedVal = Number(liabRuleForDisp.disp_mcloo_pay);
+          }
+      }
+  }
+
+  const driver_gross = r.grossRevenue || r.driver_gross || 0;
+  const margin_amt = r.marginAmount || 0;
+  const actualDispMclooPayAmount = dispSharedVal * (r.effectiveNonTeams || 0);
+
+  let calcDispPay = 0;
+  if (dispRule) {
+      calcDispPay = (driver_gross * (dispGrossPerc / 100)) + (margin_amt * (dispMarginPerc / 100)) + Math.abs(actualDispMclooPayAmount) + dispFixedAmount;
+  } else {
+      calcDispPay = Number(r.dispatcherCommission ?? r.dispatcher_pay ?? 0);
+  }
+
+  let calcFuelRebate = 0;
+  const fuelQty = Number(r.fuel_quantity ?? r.fuelUsed ?? r.fuel_gallons ?? 0);
+  
+  if (fuelQty > 0) {
+      const validRules = fixedExpenses.filter(e => 
+          e.name === 'Fuel Rebate' && 
+          targetDateStr >= (e.valid_from || '2000-01-01') && 
+          targetDateStr <= (e.valid_to || '2099-12-31')
+      ).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime());
+      
+      const specificRule = validRules.find(e => {
+          const ruleComp = String(e.companyId || e.company_id || 'ALL').toUpperCase();
+          const ruleCt = String(e.contract_type || e.contractType || 'ALL').toUpperCase();
+          const recComp = String(r.companyId || r.company_id || '').toUpperCase();
+          const recCt = String(r.contract_type || effContractType || '').toUpperCase();
+          return ruleComp !== 'ALL' && ruleComp === recComp && ruleCt !== 'ALL' && ruleCt === recCt;
+      });
+
+      const fallbackRule = validRules.find(e => {
+          const ruleComp = String(e.companyId || e.company_id || 'ALL').toUpperCase();
+          const ruleCt = String(e.contract_type || e.contractType || 'ALL').toUpperCase();
+          const recComp = String(r.companyId || r.company_id || '').toUpperCase();
+          const recCt = String(r.contract_type || effContractType || '').toUpperCase();
+          return (ruleComp === 'ALL' || ruleComp === recComp) && (ruleCt === 'ALL' || ruleCt === recCt);
+      });
+
+      const fuelRule = specificRule || fallbackRule;
+      
+      if (fuelRule) {
+          calcFuelRebate = fuelQty * Number(fuelRule.amount || 0);
+      }
+  }
+
+  const rBase = Number(r.revenue_base ?? r.revenueBase ?? 0);
+  const poDed = Number(r.po_deductions ?? r.poDeductions ?? 0);
+  const poSet = Number(r.po_settle ?? r.poSettle ?? 0);
+  const balSet = Number(r.balance_settle ?? r.balanceSettle ?? 0);
+  const nPay = Number(r.net_pay ?? r.netPay ?? 0);
+  const escDed = Number(r.escrow_deduction ?? r.escrowDeduct ?? 0);
+  const tFloat = Number(r.truck_float ?? r.truckFloat ?? 0);
+  const tWkly = Number(r.truck_wkly ?? r.truckWkly ?? 0);
+  const oIns = Number(r.occ_ins ?? r.occIns ?? 0);
+  const dEld = Number(r.eld ?? 0);
+  const dIfta = Number(r.ifta ?? 0);
+  const mSup = Number(r.maintenance_support ?? r.maintenanceSupport ?? 0);
+  const liab = Number(r.liability ?? 0);
+  const tPhd = Number(r.truck_phd ?? r.truckPhd ?? 0);
+  const dTrl = Number(r.trailer ?? 0);
+  const dTrlPhd = Number(r.trailer_phd ?? r.trailerPhd ?? 0);
+  const dCash = Number(r.cash_advance_percent ?? r.cashAdvancePercent ?? 0);
+  const dRevCpm = Number(r.revenue_cpm ?? r.revenueCpm ?? 0);
+  const dMiles = Number(r.total_miles ?? r.milesDriven ?? 0);
+  const fSaved = Number(r.fuel_saved ?? r.fuelSavings ?? 0);
+  const fSpent = Number(r.fuel_spent ?? r.fuelCost ?? 0);
+  const dTollsRaw = Number(r.originalDbTolls ?? r.rawTolls ?? r.tolls ?? r.tollCost ?? 0);
+  
+  const mileCapFactor = (Number(r.rev_without_fuel ?? r.revWithoutFuel ?? 0) > 0 && dMiles === 0) ? 0 : 1;
+  const effNT = r.effectiveNonTeams || 0;
+  const effTr = r.effectiveTrailers || 0;
+
+  const enriched = enrichedMap ? enrichedMap.get(`${r.name}_${r.payDate || r.week_ending}_${r.contractType}_${r.companyId}`) : (window as any).__ENRICHED_DRIVERS__?.find((ed: any) => ed.name === r.name && ed.payDate === (r.payDate || r.week_ending) && ed.contractType === r.contractType && ed.companyId === r.companyId);
+
+        const wklyExp = enriched ? Number(enriched.calculatedFixedCost ?? enriched.fixed_costs ?? 0) : Number(r.calculatedFixedCost ?? r.fixed_costs ?? ((tFloat + tWkly + oIns + dEld + dIfta + mSup + liab + tPhd) * effNT + (dTrl + dTrlPhd) * effTr));
+        const insExp = enriched ? Number(enriched.insuranceCost ?? 0) : ((oIns + liab + tPhd) * effNT + (dTrlPhd) * effTr);
+        const dTollsFinal = enriched ? Number(enriched.calculatedTolls ?? enriched.tolls ?? enriched.tollCost ?? 0) : Number(r.calculatedTolls ?? r.tolls ?? r.tollCost ?? r.tolls_amount ?? r.tollsAmount ?? 0);
+
+  const isGarland = r.name === 'Garland Jermaine Norris';
+  let fuel = 0;
+  if (!isGarland) {
+      fuel = ['MCLOO', 'OO', 'LOO', 'LPOO', 'MCOO'].includes(ct) ? fSaved : -Math.abs(fSpent);
+  }
+
+  const fuelRebate = calcFuelRebate;
+
+  let drvRevBase = 0;
+  let drvBalanceChange = 0;
+  let drvEscrowAdj = 0;
+  let drvTollsAdj = 0;
+  let drvCashAdv = 0;
+  let drvCpmAdj = 0;
+  let drvFuelAdj = 0;
+  
+  let drvTruckFloat = 0, drvTruckWkly = 0, drvOccIns = 0, drvEld = 0, drvIfta = 0, drvMaintSupport = 0, drvLiability = 0, drvTruckPhd = 0, drvTrailer = 0, drvTrailerPhd = 0;
+
+  if (isGarland) {
+      drvRevBase = (r.grossRevenue || 0) * 0.2;
+  } else {
+      drvRevBase = rBase;
+      const balFactor = ct === 'MCLOO' ? 0.3 : 1;
+      drvBalanceChange = (-poDed + poSet + (nPay < 0 ? nPay : 0) + balSet) * balFactor;
+      
+      drvTruckFloat = tFloat * effNT;
+      drvTruckWkly = tWkly * effNT;
+      drvOccIns = oIns * effNT;
+      drvEld = dEld * effNT;
+      drvIfta = dIfta * effNT;
+      drvMaintSupport = mSup * effNT;
+      drvLiability = liab * effNT;
+      drvTruckPhd = tPhd * effNT;
+      drvTrailer = dTrl * effTr;
+      drvTrailerPhd = dTrlPhd * effTr;
+  }
+
+  if (ct !== 'MCLOO') {
+      drvEscrowAdj = nPay < 0 ? Math.min(Math.abs(nPay), Math.abs(escDed)) : 0;
+      drvTollsAdj = ['OO', 'LOO', 'LPOO'].includes(ct) ? dTollsRaw : 0;
+      drvCashAdv = dCash;
+      drvCpmAdj = dRevCpm * dMiles;
+      drvFuelAdj = isGarland ? 0 : (['MCLOO', 'OO', 'LOO', 'LPOO', 'MCOO'].includes(ct) ? fSaved : -Math.abs(fSpent));
+  } else {
+      drvEscrowAdj = 0;
+      drvTollsAdj = Math.abs(dTollsRaw) * 0.3;
+      drvCpmAdj = dRevCpm * dMiles;
+      drvFuelAdj = fSaved;
+  }
+
+  drvRevBase *= mileCapFactor;
+
+  let drvZeroMiDrop = 0;
+  if (dMiles === 0) {
+      const prorated = drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd;
+      let effectiveBalChangeForPreDrop = drvBalanceChange;
+      if (effContractType === 'TPOG WITH FRANCHISE') effectiveBalChangeForPreDrop = 0;
+      
+      const preDrop = drvRevBase + effectiveBalChangeForPreDrop + prorated;
+      if (preDrop > 0) drvZeroMiDrop = -preDrop;
+  }
+
+  let effectiveBalChangeForCompanyPay = drvBalanceChange;
+  if (effContractType === 'TPOG WITH FRANCHISE') effectiveBalChangeForCompanyPay = 0;
+
+  let fullSharedLiabAmount = 0;
+  if (ct === 'MCLOO') {
+      let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === r.companyId && targetDateStr >= (e.valid_from || '2000-01-01') && targetDateStr <= (e.valid_to || '2099-12-31'))[0];
+      if (!liabRuleForDisp) liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && targetDateStr >= (e.valid_from || '2000-01-01') && targetDateStr <= (e.valid_to || '2099-12-31'))[0];
+      
+      if (liabRuleForDisp) {
+          let sharedVal = 0;
+          if (liabRuleForDisp.shared_insurance !== undefined && liabRuleForDisp.shared_insurance !== null && String(liabRuleForDisp.shared_insurance).trim() !== '') sharedVal = Number(liabRuleForDisp.shared_insurance);
+          else if (liabRuleForDisp.shared_liability !== undefined && liabRuleForDisp.shared_liability !== null && String(liabRuleForDisp.shared_liability).trim() !== '') sharedVal = Number(liabRuleForDisp.shared_liability);
+          fullSharedLiabAmount = sharedVal * effNT;
+      }
+  }
+
+  const revCol = drvRevBase + effectiveBalChangeForCompanyPay + drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd + drvZeroMiDrop + drvEscrowAdj + drvTollsAdj + drvCashAdv + drvCpmAdj + drvFuelAdj + Math.abs(fullSharedLiabAmount);
+        const po = -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0)));
+        const dispPay = calcDispPay;
+        const recruiting = Math.abs(Number(r.recruitingCost ?? r.recruiting_cost ?? 0));
+        
+        const dispGrossAmt = driver_gross * (dispGrossPerc / 100);
+        const dispMarginAmt = margin_amt * (dispMarginPerc / 100);
+        const pnl = revCol + fuelRebate - dispGrossAmt - dispMarginAmt - wklyExp - Math.abs(po) - recruiting - Math.abs(dTollsFinal);
+
+        return { wklyExp, insExp, fuel, fuelRebate, revCol, tolls: Math.abs(dTollsFinal), po, dispPay, pnl, recruiting };
+};
 
 interface DriverTableProps {
   drivers: DriverPerformance[];
 }
 
-const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any }) => {
+const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any> }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>('TOTAL');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['pnl']);
   const [showSwaps, setShowSwaps] = useState(false);
@@ -79,10 +347,10 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
   const expMaint = filteredRecords.reduce((s: number, r: any) => s + (r.maintenanceCost || 0), 0);
   const expFaults = filteredRecords.reduce((s: number, r: any) => s + (r.driverFaultExpenses || 0), 0);
 
-  const { issues, perfStats } = React.useMemo(() => {
+  const { issues, perfStats, mainDiagnosis, avgPnL, activeConf } = React.useMemo(() => {
     const iss: any[] = [];
-    const fullWeeks = filteredRecords.filter((r: any) => (r.effectiveDrivers || 0) >= 1);
-    const count = fullWeeks.length;
+    // Ensure we use the number of unique weeks or 1 to avoid division by zero
+    const count = Math.max(1, new Set(filteredRecords.map((r: any) => r.payDate)).size);
 
     let targetAvg = fleetAverages['ALL'] || { gross: 0, rev: 0, poCov: 0, pnl: 500 };
     let primaryContract = 'Unassigned';
@@ -104,14 +372,13 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       if (fleetAverages[primaryContract]) targetAvg = fleetAverages[primaryContract];
     }
 
-    if (count === 0) {
-      iss.push({ label: "Driver has less than 7 working days (average calculation unavailable)", diff: 0, severity: "neutral" });
+    if (filteredRecords.length === 0) {
+      iss.push({ label: "No records available for calculation", diff: 0, severity: "neutral" });
       const emptyStats = [
         { name: 'Gross', val: null, fleet: targetAvg.gross || 0, diff: 0, severity: 'neutral' },
         { name: 'Margin', val: null, fleet: targetAvg.margin || 0, diff: 0, severity: 'neutral' },
         { name: 'Net Pay', val: null, fleet: targetAvg.netPay || 0, diff: 0, severity: 'neutral' },
         { name: 'Disp. Pay', val: null, fleet: targetAvg.dispPay || 0, diff: 0, severity: 'neutral' },
-        { name: 'Ins. Exp.', val: null, fleet: targetAvg.insExp || 0, diff: 0, severity: 'neutral' },
         { name: 'Fuel', val: null, fleet: targetAvg.fuel || 0, diff: 0, severity: 'neutral' },
         { name: 'Rev. Col.', val: null, fleet: targetAvg.rev || 0, diff: 0, severity: 'neutral' },
         { name: 'Fuel Reb.', val: null, fleet: targetAvg.fuelRebate || 0, diff: 0, severity: 'neutral' },
@@ -121,41 +388,47 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         { name: 'Recruiting', val: null, fleet: targetAvg.recruiting || 0, diff: 0, severity: 'neutral' },
         { name: 'PnL', val: null, fleet: targetAvg.pnl || 100, diff: 0, severity: 'neutral' }
       ];
-      return { issues: iss, perfStats: emptyStats };
+      return { issues: iss, perfStats: emptyStats, mainDiagnosis: 'neutral', avgPnL: 0, activeConf: {} };
     }
 
-    const avgGross = filteredRecords.reduce((s: number, r: any) => s + (r.grossRevenue || r.driver_gross || 0), 0) / count;
-    const avgMargin = filteredRecords.reduce((s: number, r: any) => s + (r.marginAmount || 0), 0) / count;
-    const avgNetPay = filteredRecords.reduce((s: number, r: any) => s + (r.netPay || 0), 0) / count;
-    const avgDispPay = filteredRecords.reduce((s: number, r: any) => s + (r.dispatcherCommission || 0), 0) / count;
-    const avgInsExp = filteredRecords.reduce((s: number, r: any) => s + ((r.liability || 0) + (r.cargo_insurance || 0) + (r.physical_damage || 0)), 0) / count;
+    const calcVal = (val: number) => val / count;
+
+    const avgGross = calcVal(filteredRecords.reduce((s: number, r: any) => s + (r.grossRevenue || r.driver_gross || 0), 0));
+    const avgMargin = calcVal(filteredRecords.reduce((s: number, r: any) => s + (r.marginAmount || 0), 0));
+    const avgNetPay = calcVal(filteredRecords.reduce((s: number, r: any) => s + (r.netPay || 0), 0));
+    const avgDispPay = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).dispPay, 0));
+    const avgInsExp = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).insExp, 0));
     const sumMiles = filteredRecords.reduce((s: number, r: any) => s + (r.milesDriven || 0), 0);
-    const avgFuel = sumMiles > 0 ? filteredRecords.reduce((s: number, r: any) => s + ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)), 0) / sumMiles : 0;
-    const avgRev = filteredRecords.reduce((s: number, r: any) => s + (r.companyPay || 0), 0) / count;
-    const avgFuelReb = filteredRecords.reduce((s: number, r: any) => s + ((r.fuel_quantity || 0) * 0.20), 0) / count;
-    const avgWklyExp = filteredRecords.reduce((s: number, r: any) => s + (r.calculatedFixedCost || r.fixed_costs || 0), 0) / count;
-    const avgTolls = filteredRecords.reduce((s: number, r: any) => s + Math.abs(r.tollCost || 0), 0) / count;
-    const avgPO = filteredRecords.reduce((s: number, r: any) => s + (r.poCoverage ? -Math.abs(r.poCoverage) : 0), 0) / count;
-    const avgRecruiting = filteredRecords.reduce((s: number, r: any) => s + (r.recruitingCost || 0), 0) / count;
-    const avgPnL = filteredRecords.reduce((s: number, r: any) => s + ((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0)), 0) / count;
+    const avgFuel = sumMiles > 0 ? filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).fuel, 0) / sumMiles : 0;
+    const avgRev = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).revCol, 0));
+    const avgFuelReb = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).fuelRebate, 0));
+    const avgWklyExp = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).wklyExp, 0));
+    const avgTolls = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).tolls, 0));
+    const avgPO = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).po, 0));
+    const avgRecruiting = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).recruiting, 0));
+    const avgPnL = calcVal(filteredRecords.reduce((s: number, r: any) => s + getRawMetrics(r, fixedExpenses, enrichedMap).pnl, 0));
 
     const activeConf = settings?.[selectedEntity] || settings?.[`CTR:${primaryContract}`] || settings?.[`CMP:${driverStats.currentCompany}`] || settings?.['GLOBAL'] || {};
     
     const getSeverity = (metricId: string, val: number) => {
         const rules = activeConf[metricId] || settings?.['GLOBAL']?.[metricId];
-        if (!rules || (rules.redMax === 0 && rules.greenMin === 0 && rules.orangeMax === 0)) return 'neutral';
+        if (!rules || (Number(rules.redMax) === 0 && Number(rules.greenMin) === 0 && Number(rules.orangeMax) === 0)) return 'neutral';
         
-        // Automatski prepoznaje da li je veće bolje (npr. Gross) ili manje bolje (npr. Expenses)
-        if (rules.greenMin >= rules.redMax) {
-            if (val <= rules.redMax) return 'critical';
-            if (val >= rules.greenMin) return 'good';
-            if (val > rules.redMax && val <= rules.orangeMax) return 'warning';
-            if (val > rules.orangeMax && val < rules.greenMin) return 'neutral';
+        const rMax = Number(rules.redMax);
+        const gMin = Number(rules.greenMin);
+        const oMax = Number(rules.orangeMax);
+        const oMin = Number(rules.orangeMin);
+
+        if (gMin >= rMax) {
+            if (val <= rMax) return 'critical';
+            if (val >= gMin) return 'good';
+            if (val > rMax && val <= oMax) return 'warning';
+            if (val > oMax && val < gMin) return 'neutral';
         } else {
-            if (val >= rules.redMax) return 'critical';
-            if (val <= rules.greenMin) return 'good';
-            if (val < rules.redMax && val >= rules.orangeMin) return 'warning';
-            if (val < rules.orangeMin && val > rules.greenMin) return 'neutral';
+            if (val >= rMax) return 'critical';
+            if (val <= gMin) return 'good';
+            if (val < rMax && val >= oMin) return 'warning';
+            if (val < oMin && val > gMin) return 'neutral';
         }
         return 'neutral';
     };
@@ -165,12 +438,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       { id: 'margin', name: 'Margin', val: avgMargin },
       { id: 'netPay', name: 'Net Pay', val: avgNetPay },
       { id: 'dispPay', name: 'Disp. Pay', val: avgDispPay },
-      { id: 'insExp', name: 'Ins. Exp.', val: avgInsExp },
       { id: 'fuel', name: 'Fuel', val: avgFuel },
       { id: 'revCol', name: 'Rev. Col.', val: avgRev },
       { id: 'fuelReb', name: 'Fuel Reb.', val: avgFuelReb },
-      { id: 'wklyExp', name: 'Wkly Exp.', val: avgWklyExp },
-      { id: 'tolls', name: 'Tolls', val: avgTolls },
+      { id: 'wklyExp', name: 'Wkly Exp.', val: -avgWklyExp },
+      { id: 'tolls', name: 'Tolls', val: -avgTolls },
       { id: 'po', name: 'PO', val: avgPO },
       { id: 'recruiting', name: 'Recruiting', val: avgRecruiting },
       { id: 'pnl', name: 'PnL', val: avgPnL }
@@ -183,11 +455,13 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         return { name: m.name, val: m.val, severity };
     });
 
-    return { issues: iss, perfStats };
-  }, [filteredRecords, fleetAverages, selectedEntity]);
+    const mainDiagnosis = getSeverity('pnl', avgPnL);
+
+    return { issues: iss, perfStats, mainDiagnosis, avgPnL, activeConf };
+  }, [filteredRecords, fleetAverages, selectedEntity, settings]);
   const historyChartData = React.useMemo(() => {
     return filteredRecords.map((r: any) => {
-      const pnlVal = (r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0);
+      const rm = getRawMetrics(r, fixedExpenses, enrichedMap);
       const fullWeeksSoFar = driver.records.filter((rec: any) => (rec.effectiveDrivers || 0) >= 1 && new Date(rec.payDate) <= new Date(r.payDate));
       const count = fullWeeksSoFar.length || 1;
 
@@ -195,24 +469,24 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
           const milesSoFar = recordsSoFar.reduce((s: number, x: any) => s + (x.milesDriven || 0), 0);
 
           const metrics: any = {
-            'revenue collected': r.companyPay,
-            'revenue collected avg/w': recordsSoFar.reduce((s:number, x:any) => s + (x.companyPay || 0), 0) / count,
+            'revenue collected': rm.revCol,
+            'revenue collected avg/w': recordsSoFar.reduce((s:number, x:any) => s + getRawMetrics(x, fixedExpenses, enrichedMap).revCol, 0) / count,
             'gross': r.grossRevenue || r.driver_gross || 0,
             'gross avg/w': recordsSoFar.reduce((s:number, x:any) => s + (x.grossRevenue || x.driver_gross || 0), 0) / count,
             'margin': r.marginAmount,
             'margin avg/w': recordsSoFar.reduce((s:number, x:any) => s + (x.marginAmount || 0), 0) / count,
-            'pnl': pnlVal,
-           'pnl avg/w': recordsSoFar.reduce((s:number, x:any) => s + ((x.companyPay || 0) - (x.fixed_costs || 0) - Math.abs(x.poCoverage || 0) - Math.abs(x.recruitingCost || 0) - Math.abs(x.tollCost || 0)), 0) / count,
-            'po': r.poCoverage ? -Math.abs(r.poCoverage) : 0,
-            'po avg/w': recordsSoFar.reduce((s:number, x:any) => s + (x.poCoverage ? -Math.abs(x.poCoverage) : 0), 0) / count,
-            'fuel': (r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0),
-            'fuel avg/mi': milesSoFar > 0 ? recordsSoFar.reduce((s:number, x:any) => s + ((x.fuelCost ? -Math.abs(x.fuelCost) : 0) + (x.fuelSavings || 0)), 0) / milesSoFar : 0
+            'pnl': rm.pnl,
+            'pnl avg/w': recordsSoFar.reduce((s:number, x:any) => s + getRawMetrics(x, fixedExpenses, enrichedMap).pnl, 0) / count,
+            'po': rm.po,
+            'po avg/w': recordsSoFar.reduce((s:number, x:any) => s + getRawMetrics(x, fixedExpenses, enrichedMap).po, 0) / count,
+            'fuel': rm.fuel,
+            'fuel avg/mi': milesSoFar > 0 ? recordsSoFar.reduce((s:number, x:any) => s + getRawMetrics(x, fixedExpenses, enrichedMap).fuel, 0) / milesSoFar : 0
           };
       const point: any = { name: r.payDate };
       selectedMetrics.forEach(m => { point[m] = metrics[m]; });
       return point;
     });
-  }, [filteredRecords, selectedMetrics, driver.records]);
+  }, [filteredRecords, selectedMetrics, driver.records, fixedExpenses]);
 
   const activeSeries = React.useMemo(() => {
     const palette = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#f43f5e', '#06b6d4', '#fb923c', '#d946ef', '#a1a1aa'];
@@ -221,147 +495,140 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
   return (
     <React.Fragment>
-      <tr onClick={() => onToggle(driver.id)} className={`cursor-pointer transition-colors ${isExpanded ? 'bg-zinc-800/50' : 'hover:bg-zinc-800/30'}`}>
-        <td className="px-2 py-1 text-zinc-500">{isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</td>
-        <td className="px-2 py-1 font-sans">
+      <tr onClick={() => onToggle(driver.id)} className={`group cursor-pointer transition-colors ${isExpanded ? 'bg-zinc-800/50' : 'hover:bg-zinc-800/30'}`}>
+        <td className={`px-2 py-1 text-zinc-500 sticky left-0 z-10 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'}`}>{isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</td>
+        <td className={`px-2 py-1 font-sans sticky left-[32px] z-10 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'}`}>
           <div className="flex items-center gap-2">
             <div className={`w-1.5 h-1.5 rounded-full ${driver.status === DriverStatus.ACTIVE ? 'bg-emerald-500' : 'bg-rose-500'}`} />
             <span className="font-semibold text-zinc-200">{driver.name}</span>
-            {issues.some((iss: any) => iss.severity === 'critical') && <AlertTriangle size={10} className="text-rose-500 ml-1" />}
+            {mainDiagnosis === 'critical' && <AlertTriangle size={10} className="text-rose-500 ml-1" />}
+            {mainDiagnosis === 'warning' && <AlertTriangle size={10} className="text-amber-500 ml-1" />}
           </div>
         </td>
         <td className="px-2 py-1 text-right text-yellow-400">{formatCurrency(driver.totalGross)}</td>
         <td className="px-2 py-1 text-right text-yellow-400 font-medium">{formatCurrency(driver.marginAmount)}</td>
         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(driver.netPay)}</td>
-        <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(driver.dispatcherPay)}</td>
+        <td className="px-2 py-1 text-right text-purple-400"><span>{driver.dispatcherPay > 0 ? '+' : ''}{formatCurrency(driver.dispatcherPay)}</span></td>
         <td className="px-2 py-1 text-right text-purple-400">-{formatCurrency(Math.abs(driver.insuranceExp))}</td>
-        <td className="px-2 py-1 text-right text-purple-400">{driver.totalFuel < 0 ? `-$${Math.abs(driver.totalFuel).toFixed(2)}` : `$${driver.totalFuel.toFixed(2)}`}</td>
+        <td className="px-2 py-1 text-right text-purple-400">{driver.totalFuel < 0 ? `-$${Math.abs(driver.totalFuel).toFixed(0)}` : `$${driver.totalFuel.toFixed(0)}`}</td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.companyPay)}</td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.fuelRebate)}</td>
         <td className="px-2 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(driver.wklyExp))}</td>
         <td className="px-2 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(driver.tollCost))}</td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.poCoverage)}</td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.recruitingCost)}</td>
-        <td className={`px-2 py-1 text-right font-bold ${driver.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(driver.totalPnL)}</td>
+        <td className={`px-2 py-1 text-right font-bold sticky right-0 z-10 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(driver.totalPnL)}</td>
       </tr>
       {isExpanded && (
         <tr className="bg-zinc-950/50">
-          <td colSpan={15} className="p-4 border-b border-zinc-800">
-            <div className="flex flex-wrap items-center justify-between bg-zinc-900/40 border border-zinc-800 p-2 rounded mb-3 gap-4">
-              <div className="flex items-center gap-6">
-                 <div>
-                   <div className="text-[9px] text-zinc-500 uppercase font-bold">Longevity</div>
-                   <div className="text-[11px] text-zinc-300">{driverStats.longevities.map(l => `${l.type}: ${l.weeks}w`).join(' | ')}</div>
-                 </div>
-                 <div>
-                   <div className="text-[9px] text-zinc-500 uppercase font-bold">Status</div>
-                   <div className="text-[11px]">
-                     {driver.status === DriverStatus.TERMINATED ? (
-                       <span className="text-rose-500 font-bold uppercase">Terminated</span>
-                     ) : (
-                       <span className="text-emerald-500 font-bold uppercase">Active</span>
+          <td colSpan={15} className="p-0 border-b border-zinc-800">
+            <div className="sticky left-0 p-4 w-[calc(100vw-262px)]">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-[380px] items-stretch">
+              <div className="md:col-span-2 flex flex-col gap-3 h-full">
+                <div className="flex flex-wrap items-center bg-zinc-900/40 border border-zinc-800 p-2 rounded gap-6">
+                   <div>
+                     <div className="text-[9px] text-zinc-500 uppercase font-bold">Longevity</div>
+                     <div className="text-[11px] text-zinc-300">{driverStats.longevities.map(l => `${l.type}: ${l.weeks}w`).join(' | ')}</div>
+                   </div>
+                   <div>
+                     <div className="text-[9px] text-zinc-500 uppercase font-bold">Status</div>
+                     <div className="text-[11px]">
+                       {driver.status === DriverStatus.TERMINATED ? (
+                         <span className="text-rose-500 font-bold uppercase">Terminated</span>
+                       ) : (
+                         <span className="text-emerald-500 font-bold uppercase">Active</span>
+                       )}
+                     </div>
+                   </div>
+                   <div>
+                     <div className="text-[9px] text-zinc-500 uppercase font-bold">Current Info</div>
+                     <div className="text-[11px] text-zinc-300">{driverStats.currentCompany} ({driverStats.franchise})</div>
+                   </div>
+                   <div className="relative">
+                     <div className="text-[9px] text-zinc-500 uppercase font-bold">Swap Status</div>
+                     {driverStats.hasSwapped ? (
+                       <button onClick={(e) => { e.stopPropagation(); setShowSwaps(!showSwaps); }} className="text-[10px] bg-blue-950 text-blue-400 px-2 py-0.5 rounded border border-blue-900 font-bold uppercase hover:bg-blue-900 transition-colors cursor-pointer relative z-10">
+                         View Swaps ({driverStats.swapHistory.length})
+                       </button>
+                     ) : <span className="text-[10px] text-zinc-600 uppercase">Consistent</span>}
+                     {showSwaps && (
+                       <div className="absolute top-full mt-2 left-0 z-50 w-[280px] bg-zinc-800 border border-zinc-600 rounded shadow-2xl p-2 cursor-default" onClick={e => e.stopPropagation()}>
+                         <div className="flex justify-between items-center mb-2 pb-1 border-b border-zinc-700">
+                           <span className="text-[10px] font-bold text-zinc-300 uppercase">Swap History</span>
+                           <button onClick={(e) => { e.stopPropagation(); setShowSwaps(false); }} className="text-zinc-400 hover:text-white cursor-pointer px-1">✕</button>
+                         </div>
+                         <div className="max-h-[120px] overflow-y-auto space-y-1">
+                           {driverStats.swapHistory.map((sh, idx) => <div key={idx} className="text-[10px] text-zinc-300 font-mono">{sh}</div>)}
+                         </div>
+                       </div>
                      )}
                    </div>
-                 </div>
-                 <div>
-                   <div className="text-[9px] text-zinc-500 uppercase font-bold">Current Info</div>
-                   <div className="text-[11px] text-zinc-300">{driverStats.currentCompany} ({driverStats.franchise})</div>
-                 </div>
-                 <div className="relative">
-                   <div className="text-[9px] text-zinc-500 uppercase font-bold">Swap Status</div>
-                   {driverStats.hasSwapped ? (
-                     <button onClick={(e) => { e.stopPropagation(); setShowSwaps(!showSwaps); }} className="text-[10px] bg-blue-950 text-blue-400 px-2 py-0.5 rounded border border-blue-900 font-bold uppercase hover:bg-blue-900 transition-colors cursor-pointer relative z-10">
-                       View Swaps ({driverStats.swapHistory.length})
-                     </button>
-                   ) : <span className="text-[10px] text-zinc-600 uppercase">Consistent</span>}
-                   {showSwaps && (
-                     <div className="absolute top-full mt-2 left-0 z-50 w-[280px] bg-zinc-800 border border-zinc-600 rounded shadow-2xl p-2 cursor-default" onClick={e => e.stopPropagation()}>
-                       <div className="flex justify-between items-center mb-2 pb-1 border-b border-zinc-700">
-                         <span className="text-[10px] font-bold text-zinc-300 uppercase">Swap History</span>
-                         <button onClick={(e) => { e.stopPropagation(); setShowSwaps(false); }} className="text-zinc-400 hover:text-white cursor-pointer px-1">✕</button>
+                   <div className="flex items-center gap-3 border-l border-zinc-700 pl-4 ml-auto">
+                     <select value={selectedEntity} onChange={(e) => setSelectedEntity(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none focus:border-emerald-500 w-[140px] cursor-pointer">
+                       <option value="TOTAL">View: Total History</option>
+                       {Array.from(new Set(driver.records.map((r:any) => r.contractType))).filter((c:any) => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c.toUpperCase())).map(c => <option key={`c-${c}`} value={`CTR:${c as string}`}>Contract: {c as string}</option>)}
+                       {Array.from(new Set(driver.records.map((r:any) => r.companyId))).filter((c:any) => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c.toUpperCase())).map(c => <option key={`cmp-${c}`} value={`CMP:${c as string}`}>Company: {c as string}</option>)}
+                     </select>
+                     <details className="relative group">
+                       <summary className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-400 outline-none hover:border-emerald-500 cursor-pointer list-none flex items-center gap-2">
+                         <Filter size={10} /> Metrics ({selectedMetrics.length}) <ChevronDown size={10} />
+                       </summary>
+                       <div className="absolute top-full right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded shadow-2xl z-[100] w-48 p-1 flex flex-col gap-0.5">
+                         {['pnl', 'pnl avg/w', 'gross', 'gross avg/w', 'revenue collected', 'revenue collected avg/w', 'margin', 'margin avg/w', 'po', 'po avg/w', 'fuel', 'fuel avg/mi'].map(m => (
+                           <label key={m} className="flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-800 rounded cursor-pointer text-[10px] text-zinc-300 capitalize" onClick={e => e.stopPropagation()}>
+                             <input type="checkbox" className="accent-emerald-500" checked={selectedMetrics.includes(m)} onChange={() => toggleMetric(m)} />
+                             {m.replace('revenue collected', 'rev')}
+                           </label>
+                         ))}
                        </div>
-                       <div className="max-h-[120px] overflow-y-auto space-y-1">
-                         {driverStats.swapHistory.map((sh, idx) => <div key={idx} className="text-[10px] text-zinc-300 font-mono">{sh}</div>)}
-                       </div>
-                     </div>
-                   )}
-                 </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <select value={selectedEntity} onChange={(e) => setSelectedEntity(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none focus:border-emerald-500 w-[140px] cursor-pointer">
-                  <option value="TOTAL">View: Total History</option>
-                  {Array.from(new Set(driver.records.map((r:any) => r.contractType))).filter((c:any) => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c.toUpperCase())).map(c => <option key={`c-${c}`} value={`CTR:${c as string}`}>Contract: {c as string}</option>)}
-                  {Array.from(new Set(driver.records.map((r:any) => r.companyId))).filter((c:any) => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c.toUpperCase())).map(c => <option key={`cmp-${c}`} value={`CMP:${c as string}`}>Company: {c as string}</option>)}
-                </select>
-                <details className="relative group">
-                  <summary className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-400 outline-none hover:border-emerald-500 cursor-pointer list-none flex items-center gap-2">
-                    <Filter size={10} /> Metrics ({selectedMetrics.length}) <ChevronDown size={10} />
-                  </summary>
-                  <div className="absolute top-full right-0 mt-1 bg-zinc-900 border border-zinc-700 rounded shadow-2xl z-[100] w-48 p-1 flex flex-col gap-0.5">
-                    {['pnl', 'pnl avg/w', 'gross', 'gross avg/w', 'revenue collected', 'revenue collected avg/w', 'margin', 'margin avg/w', 'po', 'po avg/w', 'fuel', 'fuel avg/mi'].map(m => (
-                      <label key={m} className="flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-800 rounded cursor-pointer text-[10px] text-zinc-300 capitalize" onClick={e => e.stopPropagation()}>
-                        <input 
-                          type="checkbox" 
-                          className="accent-emerald-500" 
-                          checked={selectedMetrics.includes(m)} 
-                          onChange={() => toggleMetric(m)} 
-                        />
-                        {m.replace('revenue collected', 'rev')}
-                      </label>
-                    ))}
-                  </div>
-                </details>
-              </div>
+                     </details>
+                   </div>
+                </div>
+                <div className="flex-1 min-h-0 bg-zinc-900/10 rounded">
+               <HistoricalChart 
+                 data={historyChartData} 
+                 series={activeSeries} 
+                 type="line" 
+               />
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 h-80 items-stretch">
-              <div className="md:col-span-2 h-full">
-                 <HistoricalChart 
-                   data={historyChartData} 
-                   series={activeSeries} 
-                   type="line" 
-                 />
-              </div>
-              <div className="bg-zinc-900 border border-zinc-800 rounded p-3 flex flex-col h-full overflow-y-auto">
-                <div className="flex items-center justify-between mb-2">
-                  <h4 className="text-[10px] font-bold text-zinc-400 uppercase">Diagnosis {selectedContract !== 'ALL' && `(${selectedContract})`}</h4>
-                  <div className="group relative cursor-help text-zinc-500 hover:text-emerald-500 transition-colors">
+          </div>
+          <div className="bg-zinc-900 border border-zinc-800 rounded p-3 flex flex-col h-full overflow-y-auto">
+                <div className="flex items-center justify-between mb-3 bg-zinc-950/80 p-2.5 rounded-md border border-zinc-800/80 shadow-md">
+                  <div className="flex items-center gap-3">
+                    <h4 className="text-xs font-black text-zinc-100 uppercase tracking-wider">
+                      PnL Diagnosis
+                      {selectedContract !== 'ALL' && <span className="text-zinc-500 font-medium ml-1">({selectedContract})</span>}
+                      <span className="text-emerald-400 ml-2 font-mono">Avg: {formatCurrency(avgPnL)}</span>
+                    </h4>
+                    {perfStats.length > 0 && (
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-widest border ${
+                        mainDiagnosis === 'good' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-[0_0_8px_-2px_rgba(16,185,129,0.4)]' :
+                        mainDiagnosis === 'neutral' ? 'bg-yellow-400/20 text-yellow-400 border-yellow-400/50 shadow-[0_0_8px_-2px_rgba(250,204,21,0.4)]' :
+                        mainDiagnosis === 'warning' ? 'bg-amber-500/20 text-amber-500 border-amber-500/50 shadow-[0_0_8px_-2px_rgba(245,158,11,0.4)]' :
+                        'bg-rose-500/20 text-rose-500 border-rose-500/50 shadow-[0_0_8px_-2px_rgba(244,63,94,0.4)]'
+                      }`}>{mainDiagnosis}</span>
+                    )}
+                  </div>
+                  <div className="group relative cursor-help text-zinc-400 hover:text-emerald-400 transition-colors">
                     <Info size={14} />
                     <div className="hidden group-hover:block absolute right-0 top-full mt-2 w-80 bg-zinc-800 text-zinc-200 text-[10px] p-3 rounded shadow-xl normal-case font-normal z-[100] pointer-events-none text-left border border-zinc-600 whitespace-normal break-words leading-tight">
-                      <div className="font-bold text-emerald-400 mb-2">Performance Metrics</div>
-                      
-                      <div className="grid grid-cols-2 gap-3 mb-2">
-                        <div>
-                          <div className="font-bold text-zinc-300 mb-1 border-b border-zinc-700 pb-0.5">Standard (Gross, PnL)</div>
-                          <ul className="space-y-1 ml-1">
-                            <li><span className="text-emerald-500 font-bold">Good:</span> ≥ +5%</li>
-                            <li><span className="text-yellow-400 font-bold">Neutral:</span> ±5%</li>
-                            <li><span className="text-amber-500 font-bold">Warning:</span> -15% to -5%</li>
-                            <li><span className="text-rose-500 font-bold">Critical:</span> &lt; -15%</li>
-                          </ul>
-                        </div>
-                        <div>
-                          <div className="font-bold text-zinc-300 mb-1 border-b border-zinc-700 pb-0.5">Fuel Variance</div>
-                          <ul className="space-y-1 ml-1">
-                            <li><span className="text-emerald-500 font-bold">Good:</span> ≥ +5%</li>
-                            <li><span className="text-yellow-400 font-bold">Neutral:</span> -30% to +5%</li>
-                            <li><span className="text-amber-500 font-bold">Warning:</span> -50% to -30%</li>
-                            <li><span className="text-rose-500 font-bold">Critical:</span> ≤ -50%</li>
-                          </ul>
-                        </div>
-                      </div>
-
-                      <div className="mb-2">
-                        <div className="font-bold text-zinc-300 mb-1 border-b border-zinc-700 pb-0.5">Revenue Collected (Absolute)</div>
-                        <ul className="grid grid-cols-2 gap-x-2 space-y-0.5 ml-1">
-                          <li><span className="text-emerald-500 font-bold">Good:</span> &gt; $200/wk</li>
-                          <li><span className="text-yellow-400 font-bold">Neutral:</span> $50 to $200/wk</li>
-                          <li><span className="text-amber-500 font-bold">Warning:</span> $0 to $50/wk</li>
-                          <li><span className="text-rose-500 font-bold">Critical:</span> &lt; $0/wk</li>
-                        </ul>
-                      </div>
-
-                      <div className="mt-2 text-[9px] text-zinc-400 italic">
-                        *Base Targets: Gross: $4000/wk, PnL: $100/wk, Rev: $400/wk, Fuel: $0.50/mi (Varies by contract).
+                      <div className="font-bold text-emerald-400 mb-2">Active Diagnosis Settings</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {['pnl', 'gross', 'margin', 'netPay', 'dispPay', 'fuel', 'revCol', 'fuelReb', 'wklyExp', 'tolls', 'po', 'recruiting'].map(mId => {
+                           const rule = activeConf?.[mId] || settings?.['GLOBAL']?.[mId];
+                           if (!rule || (Number(rule.redMax) === 0 && Number(rule.greenMin) === 0 && Number(rule.orangeMax) === 0)) return null;
+                           const isRev = Number(rule.greenMin) >= Number(rule.redMax);
+                           return (
+                             <div key={mId} className="mb-1">
+                               <div className="font-bold text-zinc-300 border-b border-zinc-700 pb-0.5 capitalize">{mId.replace(/([A-Z])/g, ' $1').trim()}</div>
+                               <ul className="space-y-0.5 ml-1 mt-0.5 text-[9px]">
+                                 <li><span className="text-emerald-500 font-bold">Good:</span> {isRev ? '≥' : '≤'} {rule.greenMin}</li>
+                                 <li><span className="text-amber-500 font-bold">Warn:</span> {rule.orangeMin} to {rule.orangeMax}</li>
+                                 <li><span className="text-rose-500 font-bold">Crit:</span> {isRev ? '≤' : '≥'} {rule.redMax}</li>
+                               </ul>
+                             </div>
+                           );
+                        })}
                       </div>
                     </div>
                   </div>
@@ -377,14 +644,14 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
                         <li key={idx} className="flex items-center justify-between text-[10px]">
                           <div className="flex items-center gap-1.5">
                             {issue.severity === 'critical' ? (
-                              <X size={10} className="text-rose-500" />
+                              <AlertTriangle size={10} className="text-rose-500" />
                             ) : (
-                              <AlertCircle size={10} className="text-amber-500" />
+                              <AlertTriangle size={10} className="text-amber-500" />
                             )}
                             <span className="text-zinc-300">{issue.label}</span>
                           </div>
                           <span className={issue.severity === 'critical' ? 'text-rose-500 font-bold' : 'text-amber-500 font-bold'}>
-                            Alert
+                            {issue.severity === 'critical' ? 'Alert' : 'Warning'}
                           </span>
                         </li>
                       ))}
@@ -392,7 +659,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
                   )}
                 </div>
                 <div className="mt-auto pt-2 border-t border-zinc-800 space-y-1">
-                   {perfStats.map(stat => {
+                   {perfStats.filter(stat => stat.name !== 'PnL').map(stat => {
                       const getTextColor = (severity: string) => {
                          if (severity === 'good') return 'text-emerald-500';
                          if (severity === 'neutral') return 'text-yellow-400';
@@ -402,15 +669,15 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
                       
                       const getIcon = (severity: string) => {
                         if (severity === 'good') return <CheckCircle size={10} className="text-emerald-500" />;
-                        if (severity === 'neutral') return <Minus size={10} className="text-yellow-400" />;
-                        if (severity === 'warning') return <AlertCircle size={10} className="text-amber-500" />;
-                        return <X size={10} className="text-rose-500" />;
+                        if (severity === 'neutral') return <Info size={10} className="text-yellow-400" />;
+                        if (severity === 'warning') return <AlertTriangle size={10} className="text-amber-500" />;
+                        return <AlertTriangle size={10} className="text-rose-500" />;
                       };
 
                       return (
                          <div key={stat.name} className="flex items-center justify-between text-[10px]">
                             <div className="flex items-center gap-1.5">
-                               {stat.val === null ? <Minus size={10} className="text-zinc-600" /> : getIcon(stat.severity)}
+                               {stat.val === null ? <Circle size={10} className="text-zinc-600" /> : getIcon(stat.severity)}
                                <span className="text-zinc-500">{stat.name} Avg</span>
                             </div>
                             <div className="flex items-center gap-2">
@@ -424,6 +691,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
                 </div>
               </div>
             </div>
+            </div>
           </td>
         </tr>
       )}
@@ -432,15 +700,35 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 });
 
 const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
+  const validDrivers = React.useMemo(() => {
+    const uniqueDates = Array.from(new Set(drivers.map(d => d.payDate).filter(Boolean)));
+    const sortedDates = uniqueDates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
+    const allowedDates = new Set(sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates);
+    return drivers.filter(d => allowedDates.has(d.payDate));
+  }, [drivers]);
+
+  const enrichedMap = React.useMemo(() => {
+    const map = new Map<string, any>();
+    ((window as any).__ENRICHED_DRIVERS__ || []).forEach((ed: any) => {
+      map.set(`${ed.name}_${ed.payDate}_${ed.contractType}_${ed.companyId}`, ed);
+    });
+    return map;
+  }, [drivers]);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'totalGross', direction: 'desc' });
   const [isAvgPerWeek, setIsAvgPerWeek] = useState(false);
   const [search, setSearch] = useState('');
-  const [showFilters, setShowFilters] = useState(false);
-  const [filterComp, setFilterComp] = useState<string[]>([]);
-  const [filterCont, setFilterCont] = useState<string[]>([]);
-  const [filterFran, setFilterFran] = useState<string[]>([]);
+  const [tableFilters, setTableFilters] = useState<FilterRule[]>([{ field: 'Contract', operator: 'status is', value: ['ACTIVE'] }]);
   const [showSettings, setShowSettings] = useState(false);
   const [driverSettings, setDriverSettings] = useState<any>({});
+  const [fixedExpenses, setFixedExpenses] = useState<any[]>([]);
+
+  useEffect(() => {
+    const fetchFixedExps = async () => {
+      const { data } = await supabase.from('fixed_expenses').select('*');
+      if (data) setFixedExpenses(data);
+    };
+    fetchFixedExps();
+  }, []);
 
   useEffect(() => {
     const fetchSettings = async () => {
@@ -477,21 +765,227 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     }
   };
 
+  const filteredTableDrivers = React.useMemo(() => {
+          if (!tableFilters || tableFilters.length === 0) return validDrivers;
+
+          const driverLatestInfo = new Map<string, any>();
+          if (tableFilters.some(f => f.operator === 'status is' || f.operator === 'status is not')) {
+              validDrivers.forEach(r => {
+                  const curr = driverLatestInfo.get(r.name);
+                  if (!curr || (r.payDate && new Date(r.payDate) > new Date(curr.date))) {
+                      driverLatestInfo.set(r.name, { status: r.status, date: r.payDate || '1970-01-01' });
+                  }
+              });
+          }
+
+          const driverAvgs = new Map<string, any>();
+          if (tableFilters.some(f => f.operator === 'diagnosis is' || f.operator === 'diagnosis is not')) {
+              const driverRecordsMap = new Map<string, any[]>();
+              validDrivers.forEach(r => {
+                  if (!driverRecordsMap.has(r.name)) driverRecordsMap.set(r.name, []);
+                  driverRecordsMap.get(r.name)!.push(r);
+              });
+              
+              driverRecordsMap.forEach((records, name) => {
+                  let totalGross = 0, totalMargin = 0, totalNetPay = 0, totalDispPay = 0, totalFuel = 0, totalRevCol = 0, totalPnL = 0, totalPO = 0, totalMiles = 0;
+                  const count = Math.max(1, new Set(records.map(r => r.payDate)).size);
+                  
+                  let primaryContract = 'Unassigned';
+                  let primaryCompany = 'Unassigned';
+                  const cCounts: any = {};
+                  let maxCount = 0;
+                  
+                  records.forEach(r => {
+                      const rm = getRawMetrics(r, fixedExpenses, enrichedMap);
+                      totalGross += (r.grossRevenue || r.driver_gross || 0);
+                      totalMargin += (r.marginAmount || 0);
+                      totalNetPay += (r.netPay ?? 0);
+                      totalDispPay += rm.dispPay;
+                      totalFuel += rm.fuel;
+                      totalMiles += (r.milesDriven || 0);
+                      totalRevCol += rm.revCol;
+                      totalPnL += rm.pnl;
+                      totalPO += rm.po;
+                      
+                      const c = r.contractType || 'Unassigned';
+                      cCounts[c] = (cCounts[c] || 0) + 1;
+                      if (cCounts[c] > maxCount) {
+                          maxCount = cCounts[c];
+                          primaryContract = c;
+                          primaryCompany = r.companyId || 'Unassigned';
+                      }
+                  });
+                  
+                  driverAvgs.set(name, {
+                      gross: totalGross / count,
+                      margin: totalMargin / count,
+                      netPay: totalNetPay / count,
+                      dispPay: totalDispPay / count,
+                      fuel: totalMiles > 0 ? totalFuel / totalMiles : 0,
+                      revCol: totalRevCol / count,
+                      pnl: totalPnL / count,
+                      po: totalPO / count,
+                      primaryContract,
+                      primaryCompany
+                  });
+              });
+          }
+
+          return validDrivers.filter(d => {
+          return tableFilters.every(rule => {
+              if (!rule.field || !rule.operator) return true;
+              const m = getRawMetrics(d, fixedExpenses, enrichedMap);
+              const conf = driverSettings?.[`CTR:${d.contractType}`] || driverSettings?.[`CMP:${d.companyId}`] || driverSettings?.['GLOBAL'] || {};
+              const getSev = (mId: string, val: number, specificConf: any = conf) => {
+                  const rules = specificConf[mId] || driverSettings?.['GLOBAL']?.[mId];
+                  if (!rules || (Number(rules.redMax) === 0 && Number(rules.greenMin) === 0 && Number(rules.orangeMax) === 0)) return 'neutral';
+                  const rMax = Number(rules.redMax); const gMin = Number(rules.greenMin); const oMax = Number(rules.orangeMax); const oMin = Number(rules.orangeMin);
+                  if (gMin >= rMax) {
+                      if (val <= rMax) return 'critical';
+                      if (val >= gMin) return 'good';
+                      if (val > rMax && val <= oMax) return 'warning';
+                      return 'neutral';
+                  } else {
+                      if (val >= rMax) return 'critical';
+                      if (val <= gMin) return 'good';
+                      if (val < rMax && val >= oMin) return 'warning';
+                      return 'neutral';
+                  }
+              };
+
+              if (rule.operator === 'status is' || rule.operator === 'status is not') {
+                  const selectedValues = Array.isArray(rule.value) ? rule.value : [rule.value];
+                  if (selectedValues.length === 0) return true;
+                  
+                  const latest = driverLatestInfo.get(d.name);
+                  const actualStatus = latest ? latest.status : d.status;
+                  const driverStatus = (actualStatus === DriverStatus.ACTIVE || String(actualStatus).toUpperCase() === 'ACTIVE') ? 'ACTIVE' : 'TERMINATED';
+                  
+                  const isMatch = selectedValues.includes(driverStatus);
+                  return rule.operator === 'status is' ? isMatch : !isMatch;
+              }
+
+              if (rule.field === 'Contract') {
+                  const vals = Array.isArray(rule.value) ? rule.value : [];
+                  if (vals.length === 0) return true;
+                  const checkMatch = (v: string) => d.contractType === v;
+                  if (rule.operator === 'is one of') return vals.some(checkMatch);
+                  if (rule.operator === 'is not one of') return !vals.some(checkMatch);
+                  if (rule.operator === 'is') return checkMatch(vals[0]);
+                  if (rule.operator === 'is not') return !checkMatch(vals[0]);
+                  return true;
+              }
+
+              if (rule.operator === 'diagnosis is' || rule.operator === 'diagnosis is not') {
+                  let mId = '';
+                  switch (rule.field) {
+                      case 'Gross': mId = 'gross'; break;
+                      case 'Margin': mId = 'margin'; break;
+                      case 'Net Pay': mId = 'netPay'; break;
+                      case 'Disp. Pay': mId = 'dispPay'; break;
+                      case 'Fuel': mId = 'fuel'; break;
+                      case 'Rev. Col.': mId = 'revCol'; break;
+                      case 'Total PnL': mId = 'pnl'; break;
+                      case 'PO': mId = 'po'; break;
+                  }
+                  if (mId) {
+                      const avgData = driverAvgs.get(d.name);
+                      if (!avgData) return true;
+                      
+                      const activeConf = driverSettings?.[`CTR:${avgData.primaryContract}`] || driverSettings?.[`CMP:${avgData.primaryCompany}`] || driverSettings?.['GLOBAL'] || {};
+                      const val = avgData[mId];
+                      const sev = getSev(mId, val, activeConf);
+                      
+                      const selectedValues = Array.isArray(rule.value) ? rule.value : [rule.value];
+                      const isMatch = selectedValues.includes(sev);
+                      return rule.operator === 'diagnosis is' ? isMatch : !isMatch;
+                  }
+              }
+
+              let fieldValue: any;
+              switch (rule.field) {
+                  case 'Company': fieldValue = d.companyId; break;
+                  case 'Team': fieldValue = d.teamId; break;
+                  case 'Franchise': fieldValue = d.franchiseId; break;
+                  case 'Driver': fieldValue = d.name; break;
+                  case 'Dispatcher': fieldValue = d.dispatcherId; break;
+                  case 'Eff Drivers': fieldValue = d.effectiveDrivers; break;
+                  case 'Eff Non Teams': fieldValue = d.effectiveNonTeams; break;
+                  case 'Eff Trailers': fieldValue = (d as any).effectiveTrailers; break;
+                  case 'Gross': fieldValue = d.grossRevenue || d.driver_gross || 0; break;
+                  case 'Margin': fieldValue = d.marginAmount || 0; break;
+                  case 'Miles': fieldValue = Number(d.milesDriven) || 0; break;
+                  case 'Net Pay': fieldValue = d.netPay ?? 0; break;
+                  case 'Med Net Pay': fieldValue = d.netPay ?? 0; break;
+                  case 'Disp. Pay': fieldValue = m.dispPay; break;
+                  case 'Ins. Exp.': fieldValue = m.insExp; break;
+                  case 'Fuel': fieldValue = m.fuel; break;
+                  case 'Rev. Col.': fieldValue = m.revCol; break;
+                  case 'Rev Base': fieldValue = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0); break;
+                  case 'Bal Change': fieldValue = Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0) + Number((d as any).po_settle ?? (d as any).poSettle ?? 0) - Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0); break;
+                  case 'Rev Prorated': fieldValue = 0; break;
+                  case '0 Mi Cap': fieldValue = 0; break;
+                  case 'Escrow Adj': fieldValue = Number((d as any).escrow_deduction ?? (d as any).escrowDeduct ?? 0); break;
+                  case 'Tolls Adj': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
+                  case 'Cash Adv': fieldValue = Number((d as any).cash_advance_percent ?? (d as any).cashAdvancePercent ?? 0); break;
+                  case 'CPM Adj': fieldValue = Number((d as any).revenue_cpm ?? (d as any).revenueCpm ?? 0) * (Number(d.milesDriven) || 0); break;
+                  case 'Fuel Adj': fieldValue = m.fuel; break;
+                  case 'Fuel Reb.': fieldValue = m.fuelRebate; break;
+                  case 'Wkly Exp.': fieldValue = m.wklyExp; break;
+                  case 'Tolls': fieldValue = m.tolls; break;
+                  case 'PO': fieldValue = m.po; break;
+                  case 'Recruiting': fieldValue = m.recruiting; break;
+                  case 'PnL 4w': fieldValue = 0; break;
+                  case '4w Avg': fieldValue = 0; break;
+                  case 'Total PnL': fieldValue = m.pnl; break;
+                  default: return true;
+              }
+
+              const isCategorical = ['Company', 'Team', 'Franchise', 'Driver', 'Dispatcher'].includes(rule.field);
+              const isEmptyValue = fieldValue === undefined || fieldValue === null || String(fieldValue).trim() === '' || String(fieldValue).trim() === 'Unassigned';
+
+              if (rule.operator === 'is empty') return isEmptyValue;
+              if (rule.operator === 'is not empty') return !isEmptyValue;
+
+              if (isCategorical) {
+                  const safeVal = String(fieldValue || 'Unassigned');
+                  const selectedValues = Array.isArray(rule.value) ? rule.value : [];
+                  if (rule.operator === 'is one of') return selectedValues.includes(safeVal);
+                  if (rule.operator === 'is not one of') return !selectedValues.includes(safeVal);
+                  if (rule.operator === 'is') return selectedValues.length > 0 && selectedValues[0] === safeVal;
+                  if (rule.operator === 'is not') return selectedValues.length > 0 && selectedValues[0] !== safeVal;
+                  return true;
+              } else {
+                  const numVal = Number(fieldValue) || 0;
+                  const filterNum = Number(rule.value) || 0;
+                  if (rule.operator === 'is equal') return numVal === filterNum;
+                  if (rule.operator === 'is not equal') return numVal !== filterNum;
+                  if (rule.operator === 'is less than') return numVal < filterNum;
+                  if (rule.operator === 'is more than') return numVal > filterNum;
+                  if (rule.operator === 'is less or equal') return numVal <= filterNum;
+                  if (rule.operator === 'is more or equal') return numVal >= filterNum;
+                  return true;
+              }
+          });
+      });
+  }, [validDrivers, tableFilters, fixedExpenses, enrichedMap, driverSettings]);
+
+
   const aggregatedDrivers = React.useMemo(() => {
-    const dates = Array.from(new Set(drivers.map(d => d.payDate).filter(Boolean)));
+    const dates = Array.from(new Set(validDrivers.map(d => d.payDate).filter(Boolean)));
     const sortedDates = dates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
-    const allowedDates = new Set(sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates);
+    const allowedDates = new Set(sortedDates);
     const map = new Map<string, any>();
-    drivers.forEach(d => {
+    const filteredDriverNames = new Set(filteredTableDrivers.map(d => d.name));
+
+    validDrivers.forEach(d => {
+      if (!filteredDriverNames.has(d.name)) return;
       if (!allowedDates.has(d.payDate)) return;
       const nameLower = (d.name || '').toLowerCase();
       const compLower = (d.companyId || '').toLowerCase();
       if (nameLower.includes('unassigned') || nameLower.includes('unreconciled') || compLower.includes('unassigned') || compLower.includes('unreconciled')) return;
       
       if (search && !nameLower.startsWith(search.toLowerCase())) return;
-      if (filterComp.length > 0 && !filterComp.includes(d.companyId || '')) return;
-      if (filterCont.length > 0 && !filterCont.includes(d.contractType || '')) return;
-      if (filterFran.length > 0 && !filterFran.includes(d.franchiseId || '')) return;
 
       if (!map.has(d.name)) {
         map.set(d.name, {
@@ -523,25 +1017,26 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
         });
       }
       const agg = map.get(d.name);
-      const pnl = (d.companyPay || 0) - (d.fixed_costs || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tollCost || 0);
+      
+      const m = getRawMetrics(d, fixedExpenses, enrichedMap);
 
       agg.totalGross += (d.grossRevenue || d.driver_gross || 0);
-      agg.companyPay += (d.companyPay || 0);
-      agg.totalPnL += pnl;
+      agg.companyPay += m.revCol;
+      agg.totalPnL += m.pnl;
       agg.marginAmount += (d.marginAmount || 0);
-      agg.poCoverage += (d.poCoverage ? -Math.abs(d.poCoverage) : 0);
+      agg.poCoverage += m.po;
       agg.fuelCost += (d.fuelCost ? -Math.abs(d.fuelCost) : 0);
       agg.fuelSavings += (d.fuelSavings || 0);
-      agg.totalFuel = agg.fuelCost + agg.fuelSavings;
-      agg.tollCost += (d.tollCost ? -Math.abs(d.tollCost) : 0);
+      agg.totalFuel += m.fuel;
+      agg.tollCost += -m.tolls;
       agg.maintenanceCost += (d.maintenanceCost || 0);
       agg.driverFaultExpenses += (d.driverFaultExpenses || 0);
       agg.netPay += (d.netPay || 0);
-      agg.dispatcherPay += (d.dispatcherCommission || 0);
-      agg.insuranceExp += ((d.liability || 0) + (d.cargo_insurance || 0) + (d.physical_damage || 0));
-      agg.fuelRebate += ((d.fuel_quantity || 0) * 0.20);
-      agg.wklyExp += (d.calculatedFixedCost || d.fixed_costs || 0);
-      agg.recruitingCost += (d.recruitingCost || 0);
+      agg.dispatcherPay += m.dispPay;
+      agg.insuranceExp += m.insExp;
+      agg.fuelRebate += m.fuelRebate;
+      agg.wklyExp += m.wklyExp;
+      agg.recruitingCost += m.recruiting;
       
       if (d.tpogPercentage) agg.tpogPercentages.push(d.tpogPercentage);
       if (d.contractType) agg.contracts.add(d.contractType);
@@ -555,12 +1050,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     });
 
     let result = Array.from(map.values()).map(agg => {
-      if (isAvgPerWeek) {
-        const fullWeeks = agg.records.filter((r: any) => (r.effectiveDrivers || 0) >= 1);
-        const count = fullWeeks.length || 1;
-        
-        const fuelAggRecords = agg.records.filter((r: any) => ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)) !== 0);
-        const sumFuelMiles = fuelAggRecords.reduce((s: number, r: any) => s + (r.milesDriven || 0), 0);
+          if (isAvgPerWeek) {
+            const effNonTeamsCount = agg.records.reduce((s: number, r: any) => s + (r.effectiveNonTeams || 0), 0);
+            const effCount = agg.records.reduce((s: number, r: any) => s + (r.effectiveDrivers || 0), 0);
+            const count = effNonTeamsCount > 0 ? effNonTeamsCount : (effCount > 0 ? effCount : 1);
+            const div = count;
 
         return {
           ...agg,
@@ -568,19 +1062,19 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           marginAmount: agg.marginAmount / count,
           poCoverage: agg.poCoverage / count,
           companyPay: agg.companyPay / count,
-          fuelCost: sumFuelMiles > 0 ? agg.fuelCost / sumFuelMiles : 0,
-          fuelSavings: sumFuelMiles > 0 ? agg.fuelSavings / sumFuelMiles : 0,
-          totalFuel: sumFuelMiles > 0 ? agg.totalFuel / sumFuelMiles : 0,
+          fuelCost: agg.fuelCost / count,
+          fuelSavings: agg.fuelSavings / count,
+          totalFuel: agg.totalFuel / count,
           tollCost: agg.tollCost / count,
           maintenanceCost: agg.maintenanceCost / count,
           driverFaultExpenses: agg.driverFaultExpenses / count,
           totalPnL: agg.totalPnL / count,
           tpogPercentage: agg.tpogPercentages.length > 0 ? agg.tpogPercentages.reduce((a: number, b: number) => a + b, 0) / agg.tpogPercentages.length : 0,
           netPay: agg.netPay / count,
-          dispatcherPay: agg.dispatcherPay / count,
+          dispatcherPay: agg.dispatcherPay / div,
           insuranceExp: agg.insuranceExp / count,
           fuelRebate: agg.fuelRebate / count,
-          wklyExp: agg.wklyExp / count,
+          wklyExp: agg.wklyExp / div,
           recruitingCost: agg.recruitingCost / count,
           contracts: Array.from(agg.contracts),
           records: agg.records.sort((a: any, b: any) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime())
@@ -602,7 +1096,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       if (sortConfig.direction === 'asc') return aVal > bVal ? 1 : -1;
       return aVal < bVal ? 1 : -1;
     });
-  }, [drivers, isAvgPerWeek, sortConfig, search, filterComp, filterCont, filterFran]);
+  }, [validDrivers, filteredTableDrivers, isAvgPerWeek, sortConfig, search, fixedExpenses]);
 
   const fleetAverages = React.useMemo(() => {
     const contractAvgs: Record<string, any> = {};
@@ -619,19 +1113,31 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             };
          }
          
+         const m = getRawMetrics(r, fixedExpenses, enrichedMap);
+         const poCov = m.po;
+         const revCol = m.revCol;
+         const fuelVal = m.fuel;
+         const fuelReb = m.fuelRebate;
+         const dispPay = m.dispPay;
+         const insExp = m.insExp;
+         const wklyExp = m.wklyExp;
+         const dTollsRaw = m.tolls;
+         const recruit = m.recruiting;
+         const pnl = m.pnl;
+
          if (r.grossRevenue || r.driver_gross) { contractAvgs[cType].grossSum += (r.grossRevenue || r.driver_gross); contractAvgs[cType].grossCount++; }
-         if (r.companyPay) { contractAvgs[cType].revSum += r.companyPay; contractAvgs[cType].revCount++; }
+         contractAvgs[cType].revSum += revCol; contractAvgs[cType].revCount++;
          if (r.marginAmount) { contractAvgs[cType].marginSum += r.marginAmount; contractAvgs[cType].marginCount++; }
-         if (r.poCoverage) { contractAvgs[cType].poCovSum += -Math.abs(r.poCoverage); contractAvgs[cType].poCovCount++; }
-         if (r.fuelCost || r.fuelSavings) { contractAvgs[cType].fuelSum += ((r.fuelCost ? -Math.abs(r.fuelCost) : 0) + (r.fuelSavings || 0)); contractAvgs[cType].fuelMilesSum += (r.milesDriven || 0); }
+         if (poCov) { contractAvgs[cType].poCovSum += poCov; contractAvgs[cType].poCovCount++; }
+         if (r.fuelCost !== undefined || r.fuelSavings !== undefined) { contractAvgs[cType].fuelSum += fuelVal; contractAvgs[cType].fuelMilesSum += (r.milesDriven || 0); }
          if (r.netPay) { contractAvgs[cType].netPaySum += r.netPay; }
-         if (r.dispatcherCommission) { contractAvgs[cType].dispPaySum += r.dispatcherCommission; }
-         if (r.liability || r.cargo_insurance || r.physical_damage) { contractAvgs[cType].insExpSum += ((r.liability || 0) + (r.cargo_insurance || 0) + (r.physical_damage || 0)); }
-         if (r.fuel_quantity) { contractAvgs[cType].fuelRebateSum += (r.fuel_quantity * 0.20); }
-         if (r.calculatedFixedCost || r.fixed_costs) { contractAvgs[cType].wklyExpSum += (r.calculatedFixedCost || r.fixed_costs); }
-         if (r.tollCost) { contractAvgs[cType].tollsSum += Math.abs(r.tollCost); }
-         if (r.recruitingCost) { contractAvgs[cType].recruitingSum += r.recruitingCost; }
-         contractAvgs[cType].pnlSum += ((r.companyPay || 0) - (r.fixed_costs || 0) - Math.abs(r.poCoverage || 0) - Math.abs(r.recruitingCost || 0) - Math.abs(r.tollCost || 0));
+         if (dispPay) { contractAvgs[cType].dispPaySum += dispPay; }
+         contractAvgs[cType].insExpSum += insExp;
+         if (fuelReb) { contractAvgs[cType].fuelRebateSum += fuelReb; }
+         if (wklyExp) { contractAvgs[cType].wklyExpSum += wklyExp; }
+         if (dTollsRaw) { contractAvgs[cType].tollsSum += Math.abs(dTollsRaw); }
+         if (recruit) { contractAvgs[cType].recruitingSum += recruit; }
+         contractAvgs[cType].pnlSum += pnl;
          contractAvgs[cType].pnlCount++;
       });
     });
@@ -676,9 +1182,15 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     };
 
     return result;
-  }, [aggregatedDrivers]);
+  }, [aggregatedDrivers, fixedExpenses]);
 
   const [expandedDriverId, setExpandedDriverId] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 30;
+
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [search, tableFilters, isAvgPerWeek, sortConfig]);
 
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'desc';
@@ -687,22 +1199,9 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     }
     setSortConfig({ key, direction });
   };
-  const [visibleCount, setVisibleCount] = useState(50);
-
-  React.useEffect(() => {
-    setVisibleCount(50);
-  }, [aggregatedDrivers]);
-
   const handleToggle = React.useCallback((id: string) => {
     setExpandedDriverId(prev => prev === id ? null : id);
   }, []);
-
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    const bottom = e.currentTarget.scrollHeight - e.currentTarget.scrollTop <= e.currentTarget.clientHeight + 400;
-    if (bottom && visibleCount < aggregatedDrivers.length) {
-      setVisibleCount(prev => prev + 50);
-    }
-  };
 
   return (
     <div className="flex flex-col h-full gap-2 relative">
@@ -711,136 +1210,112 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           onClose={() => setShowSettings(false)} 
           settings={driverSettings} 
           onSave={handleSaveSettings}
-          contracts={Array.from(new Set(drivers.map(d => d.contractType))).filter(c => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c?.toUpperCase()))}
-          companies={Array.from(new Set(drivers.map(d => d.companyId))).filter(c => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c?.toUpperCase()))}
+          contracts={Array.from(new Set(validDrivers.map(d => d.contractType))).filter(c => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c?.toUpperCase()))}
+          companies={Array.from(new Set(validDrivers.map(d => d.companyId))).filter(c => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c?.toUpperCase()))}
         />
       )}
       <div className="flex justify-between items-center px-1 mb-2">
-        <input 
-          type="text" 
-          placeholder="Search driver..." 
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="bg-zinc-900 border border-zinc-800 text-[11px] p-1.5 rounded w-64 text-zinc-300 focus:border-emerald-500 focus:outline-none" 
-        />
         <div className="flex items-center gap-2">
-          <div className="relative flex items-center gap-2">
+          <input 
+            type="text" 
+            placeholder="Search driver..." 
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="bg-zinc-900 border border-zinc-800 text-[11px] px-2 py-1 h-[26px] rounded w-64 text-zinc-300 focus:border-emerald-500 focus:outline-none" 
+          />
+        </div>
+        <div className="flex items-center gap-2 relative">
+            <div className="w-[90px] h-[26px] z-50 relative [&_.absolute]:!right-0 [&_.absolute]:!left-auto [&>*:first-child]:!text-[9px] [&>*:first-child]:!whitespace-nowrap [&>*:first-child]:!tracking-tight [&_button]:!text-[9px] [&_button]:!whitespace-nowrap">
+               <TableFilter
+                 filters={tableFilters} 
+                 setFilters={setTableFilters}
+                 optionsMap={{
+                   'Driver': Array.from(new Set(validDrivers.map(d => d.name))).filter(Boolean) as string[],
+                   'Contract': Array.from(new Set(validDrivers.map(d => d.contractType))).filter(Boolean) as string[],
+                   'Company': Array.from(new Set(validDrivers.map(d => d.companyId))).filter(Boolean) as string[],
+                   'Franchise': Array.from(new Set(validDrivers.map(d => d.franchiseId))).filter(Boolean) as string[],
+                   'Gross': ['good', 'neutral', 'warning', 'critical'],
+                   'Margin': ['good', 'neutral', 'warning', 'critical'],
+                   'Net Pay': ['good', 'neutral', 'warning', 'critical'],
+                   'Disp. Pay': ['good', 'neutral', 'warning', 'critical'],
+                   'Fuel': ['good', 'neutral', 'warning', 'critical'],
+                   'Rev. Col.': ['good', 'neutral', 'warning', 'critical'],
+                   'Total PnL': ['good', 'neutral', 'warning', 'critical'],
+                   'PO': ['good', 'neutral', 'warning', 'critical']
+                 }}
+               />
+            </div>
             <button
               onClick={() => setShowSettings(true)}
-              className="px-3 py-1 rounded text-[10px] font-bold border transition-colors cursor-pointer bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white flex items-center gap-1"
+              className="rounded text-[10px] font-bold border transition-colors cursor-pointer bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white flex items-center justify-center gap-1 w-[90px] h-[26px]"
             >
               <Settings size={10} /> SETTINGS
             </button>
             <button 
-              onClick={() => setShowFilters(!showFilters)} 
-              className={`px-3 py-1 rounded text-[10px] font-bold border transition-colors cursor-pointer ${filterComp.length || filterCont.length || filterFran.length ? 'bg-blue-500/20 text-blue-400 border-blue-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
+              onClick={() => setIsAvgPerWeek(!isAvgPerWeek)}
+              className={`rounded text-[10px] font-bold border transition-colors cursor-pointer flex items-center justify-center px-3 h-[26px] ${isAvgPerWeek ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
             >
-              FILTERS {(filterComp.length + filterCont.length + filterFran.length) > 0 ? `(${filterComp.length + filterCont.length + filterFran.length})` : ''}
+              AVERAGE
             </button>
-            {showFilters && (
-              <div className="absolute top-full mt-2 right-0 z-50 w-[280px] bg-zinc-800 border border-zinc-600 rounded shadow-2xl p-3 flex flex-col gap-3">
-                <div>
-                  <div className="text-[10px] text-zinc-400 font-bold uppercase mb-1">Company</div>
-                  <details className="w-full relative group">
-                    <summary className="bg-zinc-950 border border-zinc-700 rounded p-1.5 text-[10px] text-zinc-300 focus:outline-none focus:border-emerald-500 cursor-pointer list-none flex justify-between items-center">
-                      {filterComp.length > 0 ? `${filterComp.length} selected` : 'Select Companies...'} <ChevronDown size={10} />
-                    </summary>
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-950 border border-zinc-700 rounded shadow-xl z-50 max-h-32 overflow-y-auto p-1 flex flex-col gap-1">
-                      {Array.from(new Set(drivers.map(d => d.companyId))).filter(Boolean).map(c => (
-                        <label key={`comp-${c}`} className="flex items-center gap-2 text-[10px] text-zinc-300 cursor-pointer hover:bg-zinc-800 p-1.5 rounded">
-                          <input type="checkbox" className="accent-emerald-500" checked={filterComp.includes(c as string)} onChange={(e) => {
-                            if (e.target.checked) setFilterComp([...filterComp, c as string]);
-                            else setFilterComp(filterComp.filter(x => x !== c));
-                          }} /> {c as string}
-                        </label>
-                      ))}
-                    </div>
-                  </details>
-                </div>
-                <div>
-                  <div className="text-[10px] text-zinc-400 font-bold uppercase mb-1">Contract</div>
-                  <details className="w-full relative group">
-                    <summary className="bg-zinc-950 border border-zinc-700 rounded p-1.5 text-[10px] text-zinc-300 focus:outline-none focus:border-emerald-500 cursor-pointer list-none flex justify-between items-center">
-                      {filterCont.length > 0 ? `${filterCont.length} selected` : 'Select Contracts...'} <ChevronDown size={10} />
-                    </summary>
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-950 border border-zinc-700 rounded shadow-xl z-50 max-h-32 overflow-y-auto p-1 flex flex-col gap-1">
-                      {Array.from(new Set(drivers.map(d => d.contractType))).filter(Boolean).map(c => (
-                        <label key={`cont-${c}`} className="flex items-center gap-2 text-[10px] text-zinc-300 cursor-pointer hover:bg-zinc-800 p-1.5 rounded">
-                          <input type="checkbox" className="accent-emerald-500" checked={filterCont.includes(c as string)} onChange={(e) => {
-                            if (e.target.checked) setFilterCont([...filterCont, c as string]);
-                            else setFilterCont(filterCont.filter(x => x !== c));
-                          }} /> {c as string}
-                        </label>
-                      ))}
-                    </div>
-                  </details>
-                </div>
-                <div>
-                  <div className="text-[10px] text-zinc-400 font-bold uppercase mb-1">Franchise</div>
-                  <details className="w-full relative group">
-                    <summary className="bg-zinc-950 border border-zinc-700 rounded p-1.5 text-[10px] text-zinc-300 focus:outline-none focus:border-emerald-500 cursor-pointer list-none flex justify-between items-center">
-                      {filterFran.length > 0 ? `${filterFran.length} selected` : 'Select Franchises...'} <ChevronDown size={10} />
-                    </summary>
-                    <div className="absolute top-full left-0 right-0 mt-1 bg-zinc-950 border border-zinc-700 rounded shadow-xl z-50 max-h-32 overflow-y-auto p-1 flex flex-col gap-1">
-                      {Array.from(new Set(drivers.map(d => d.franchiseId))).filter(Boolean).map(c => (
-                        <label key={`fran-${c}`} className="flex items-center gap-2 text-[10px] text-zinc-300 cursor-pointer hover:bg-zinc-800 p-1.5 rounded">
-                          <input type="checkbox" className="accent-emerald-500" checked={filterFran.includes(c as string)} onChange={(e) => {
-                            if (e.target.checked) setFilterFran([...filterFran, c as string]);
-                            else setFilterFran(filterFran.filter(x => x !== c));
-                          }} /> {c as string}
-                        </label>
-                      ))}
-                    </div>
-                  </details>
-                </div>
-                <div className="flex gap-2 mt-2 pt-2 border-t border-zinc-700">
-                  <button onClick={() => { setFilterComp([]); setFilterCont([]); setFilterFran([]); }} className="w-full bg-zinc-700 hover:bg-zinc-600 text-white rounded py-1.5 text-[10px] font-bold uppercase transition-colors cursor-pointer">Clear All</button>
-                </div>
-              </div>
-            )}
-          </div>
-         <button 
-          onClick={() => setIsAvgPerWeek(!isAvgPerWeek)}
-          className={`px-3 py-1 rounded text-[10px] font-bold border transition-colors cursor-pointer ${isAvgPerWeek ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
-        >
-          AVERAGE
-        </button>
         </div>
       </div>
-      <div className="overflow-auto border border-zinc-800 rounded-lg bg-zinc-900 h-full" onScroll={handleScroll}>
+      <div className="overflow-auto border border-zinc-800 rounded-t-lg bg-zinc-900 flex-1">
         <table className="w-full text-left text-[11px] whitespace-nowrap relative">
           <thead className="bg-zinc-800/50 text-zinc-400 font-medium uppercase tracking-wider sticky top-0 z-10">
             <tr>
-              <th className="px-2 py-1.5 w-6 bg-zinc-900 border-b border-zinc-800"></th>
-              <th onClick={() => requestSort('name')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left">Driver</th>
+              <th className="px-2 py-1.5 w-[32px] min-w-[32px] max-w-[32px] bg-zinc-900 border-b border-zinc-800 sticky left-0 z-30"></th>
+              <th onClick={() => requestSort('name')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left sticky left-[32px] z-30">Driver</th>
               <th onClick={() => requestSort('totalGross')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none">Drv. Gross{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('marginAmount')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none">Margin{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('netPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Net Pay{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('dispatcherPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Disp. Pay{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('insuranceExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Ins. Exp.{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('totalFuel')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Fuel{isAvgPerWeek ? ' / mi' : ''}</th>
+              <th onClick={() => requestSort('totalFuel')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none">Fuel{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('companyPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Rev. Col.{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('fuelRebate')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Fuel Reb.{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('wklyExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Wkly Exp.{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('tollCost')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Tolls{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('poCoverage')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">PO{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('recruitingCost')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none">Recruiting{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('totalPnL')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-white cursor-pointer hover:text-emerald-400 select-none">Total PnL{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('totalPnL')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-white cursor-pointer hover:text-emerald-400 select-none sticky right-0 z-30">Total PnL{isAvgPerWeek ? ' / wk' : ''}</th>
             </tr>
           </thead>
         <tbody className="divide-y divide-zinc-800 font-mono">
-          {aggregatedDrivers.slice(0, visibleCount).map((driver) => (
+          {aggregatedDrivers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((driver) => (
             <DriverRow 
-              key={driver.id} 
+              key={driver.id}
               driver={driver} 
               isExpanded={expandedDriverId === driver.id} 
               onToggle={handleToggle}
               fleetAverages={fleetAverages}
               settings={driverSettings}
+              fixedExpenses={fixedExpenses}
+              enrichedMap={enrichedMap}
             />
           ))}
         </tbody>
       </table>
+    </div>
+    <div className="flex items-center justify-between px-4 py-2 border border-t-0 border-zinc-800 rounded-b-lg bg-zinc-900/50 flex-shrink-0">
+      <span className="text-[10px] text-zinc-500">
+        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, aggregatedDrivers.length)} to {Math.min(currentPage * itemsPerPage, aggregatedDrivers.length)} of {aggregatedDrivers.length} entries
+      </span>
+      <div className="flex gap-1">
+        <button 
+          onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+          disabled={currentPage === 1} 
+          className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-[10px] disabled:opacity-50 hover:bg-zinc-700 transition-colors cursor-pointer"
+        >
+          Prev
+        </button>
+        <button 
+          onClick={() => setCurrentPage(p => Math.min(Math.ceil(aggregatedDrivers.length / itemsPerPage), p + 1))} 
+          disabled={currentPage === Math.ceil(aggregatedDrivers.length / itemsPerPage) || aggregatedDrivers.length === 0} 
+          className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-[10px] disabled:opacity-50 hover:bg-zinc-700 transition-colors cursor-pointer"
+        >
+          Next
+        </button>
+      </div>
     </div>
     </div>
   );

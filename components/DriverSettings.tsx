@@ -6,7 +6,6 @@ const METRICS = [
   { id: 'margin', label: 'Margin' },
   { id: 'netPay', label: 'Net Pay' },
   { id: 'dispPay', label: 'Dispatcher Pay' },
-  { id: 'insExp', label: 'Insurance Expense' },
   { id: 'fuel', label: 'Fuel Efficiency' },
   { id: 'revCol', label: 'Revenue Collected' },
   { id: 'fuelReb', label: 'Fuel Rebate' },
@@ -21,7 +20,7 @@ export default function DriverSettings({ onClose, settings, onSave, contracts = 
   const [localSettings, setLocalSettings] = useState(settings || {});
   const [selectedEntity, setSelectedEntity] = useState('GLOBAL');
 
-  const updateMetric = (metricId: string, field: string, val: number) => {
+  const updateMetric = (metricId: string, field: string, val: number | string) => {
     const currentEntityMetric = localSettings[selectedEntity]?.[metricId] || localSettings['GLOBAL']?.[metricId] || { redMax: 0, orangeMin: 0, orangeMax: 0, yellowMin: 0, yellowMax: 0, greenMin: 0 };
     
     setLocalSettings((prev: any) => ({
@@ -77,7 +76,7 @@ export default function DriverSettings({ onClose, settings, onSave, contracts = 
                     <span className="text-[11px] font-bold text-rose-500 uppercase w-16">Critical</span>
                     <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded flex-1">
                       <span className="text-[10px] text-zinc-500 px-3 py-1.5 border-r border-zinc-800 bg-zinc-900 min-w-[45px] text-center">To</span>
-                      <input type="number" value={rule.redMax} onChange={(e) => updateMetric(metric.id, 'redMax', Number(e.target.value))} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
+                      <input type="number" value={rule.redMax} onChange={(e) => updateMetric(metric.id, 'redMax', e.target.value)} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
                     </div>
                   </div>
 
@@ -86,11 +85,11 @@ export default function DriverSettings({ onClose, settings, onSave, contracts = 
                     <div className="flex items-center gap-3 flex-1">
                       <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded flex-1">
                         <span className="text-[10px] text-zinc-500 px-3 py-1.5 border-r border-zinc-800 bg-zinc-900 min-w-[45px] text-center">From</span>
-                        <input type="number" value={rule.orangeMin} onChange={(e) => updateMetric(metric.id, 'orangeMin', Number(e.target.value))} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
+                        <input type="number" value={rule.orangeMin} onChange={(e) => updateMetric(metric.id, 'orangeMin', e.target.value)} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
                       </div>
                       <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded flex-1">
                         <span className="text-[10px] text-zinc-500 px-3 py-1.5 border-r border-zinc-800 bg-zinc-900 min-w-[45px] text-center">To</span>
-                        <input type="number" value={rule.orangeMax} onChange={(e) => updateMetric(metric.id, 'orangeMax', Number(e.target.value))} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
+                        <input type="number" value={rule.orangeMax} onChange={(e) => updateMetric(metric.id, 'orangeMax', e.target.value)} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
                       </div>
                     </div>
                   </div>
@@ -100,11 +99,11 @@ export default function DriverSettings({ onClose, settings, onSave, contracts = 
                     <div className="flex items-center gap-3 flex-1">
                       <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded flex-1">
                         <span className="text-[10px] text-zinc-500 px-3 py-1.5 border-r border-zinc-800 bg-zinc-900 min-w-[45px] text-center">From</span>
-                        <input type="number" value={rule.yellowMin} onChange={(e) => updateMetric(metric.id, 'yellowMin', Number(e.target.value))} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
+                        <input type="number" value={rule.yellowMin} onChange={(e) => updateMetric(metric.id, 'yellowMin', e.target.value)} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
                       </div>
                       <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded flex-1">
                         <span className="text-[10px] text-zinc-500 px-3 py-1.5 border-r border-zinc-800 bg-zinc-900 min-w-[45px] text-center">To</span>
-                        <input type="number" value={rule.yellowMax} onChange={(e) => updateMetric(metric.id, 'yellowMax', Number(e.target.value))} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
+                        <input type="number" value={rule.yellowMax} onChange={(e) => updateMetric(metric.id, 'yellowMax', e.target.value)} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
                       </div>
                     </div>
                   </div>
@@ -113,7 +112,7 @@ export default function DriverSettings({ onClose, settings, onSave, contracts = 
                     <span className="text-[11px] font-bold text-emerald-500 uppercase w-16">Good</span>
                     <div className="flex items-center bg-zinc-950 border border-zinc-800 rounded flex-1">
                       <span className="text-[10px] text-zinc-500 px-3 py-1.5 border-r border-zinc-800 bg-zinc-900 min-w-[45px] text-center">From</span>
-                      <input type="number" value={rule.greenMin} onChange={(e) => updateMetric(metric.id, 'greenMin', Number(e.target.value))} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
+                      <input type="number" value={rule.greenMin} onChange={(e) => updateMetric(metric.id, 'greenMin', e.target.value)} className="w-full bg-transparent px-3 py-1.5 text-sm text-zinc-300 outline-none" />
                     </div>
                   </div>
 
