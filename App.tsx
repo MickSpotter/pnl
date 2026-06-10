@@ -601,22 +601,7 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0">
         
-        {activeTab !== 'financials' && (
-          <header className="h-12 border-b border-zinc-800 flex items-center justify-between px-4 bg-zinc-950/50 backdrop-blur-sm z-10 sticky top-0">
-            <div className="flex items-center gap-3">
-               <h1 className="text-sm font-semibold text-white capitalize">
-                 {activeTab}
-               </h1>
-               {simulationConfig.fuelSurchargePercent > 0 && (
-                  <span className="px-1.5 py-0.5 rounded bg-blue-950 border border-blue-900 text-[10px] text-blue-400 font-mono">
-                     Sim Active
-                  </span>
-               )}
-            </div>
-            <div className="flex items-center gap-3">
-            </div>
-          </header>
-        )}
+        
 
         {/* Content Body - Minimal Padding */}
         <div className="flex-1 overflow-auto p-2 lg:p-3 relative">

@@ -49,17 +49,17 @@ export const ColumnsEditor = ({ columns, setColumns, activeIds }: any) => {
                     <tr key={col.id} className="hover:bg-zinc-800/50">
                       <td className="px-2 py-1.5 text-zinc-300 truncate max-w-[130px] font-medium">{col.label}</td>
                       <td className="px-1 py-1.5 text-center">
-                        <button onClick={() => togglePin(col.id, 'left')} className={`p-1 rounded transition-colors ${col.pinned === 'left' ? 'text-white bg-zinc-700' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                        <button onClick={() => togglePin(col.id, 'left')} className={`!w-auto !h-auto !p-1 !border-0 !inline-flex !justify-center !rounded transition-colors ${col.pinned === 'left' ? '!text-sky-400 !bg-sky-400/10' : '!text-zinc-500 hover:!text-zinc-300 !bg-transparent'}`}>
                           <AlignLeft size={12} />
                         </button>
                       </td>
                       <td className="px-1 py-1.5 text-center">
-                        <button onClick={() => togglePin(col.id, 'right')} className={`p-1 rounded transition-colors ${col.pinned === 'right' ? 'text-white bg-zinc-700' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                        <button onClick={() => togglePin(col.id, 'right')} className={`!w-auto !h-auto !p-1 !border-0 !inline-flex !justify-center !rounded transition-colors ${col.pinned === 'right' ? '!text-sky-400 !bg-sky-400/10' : '!text-zinc-500 hover:!text-zinc-300 !bg-transparent'}`}>
                           <AlignRight size={12} />
                         </button>
                       </td>
                       <td className="px-2 py-1.5 text-center">
-                        <button onClick={() => toggleHide(col.id)} className={`p-1 rounded transition-colors ${col.hidden ? 'text-rose-400 bg-rose-400/10' : 'text-zinc-500 hover:text-zinc-300'}`}>
+                        <button onClick={() => toggleHide(col.id)} className={`!w-auto !h-auto !p-1 !border-0 !inline-flex !justify-center !rounded transition-colors ${col.hidden ? '!text-rose-400 !bg-rose-400/10' : '!text-zinc-500 hover:!text-zinc-300 !bg-transparent'}`}>
                           {col.hidden ? <EyeOff size={12} /> : <Eye size={12} />}
                         </button>
                       </td>

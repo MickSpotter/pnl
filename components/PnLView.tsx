@@ -4,7 +4,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { DriverPerformance, DriverStatus, SimulationConfig, ExpenseItem, FinImportRecord } from '../types';
 import { supabase } from '../lib/supabase';
 import { formatCurrency } from '../utils';
-import { Sliders, LayoutList, PieChart, DollarSign, TrendingUp, BarChart3, LineChart, Maximize2, X, History, Filter, Info, ChevronDown, ChevronRight, Check, LayoutDashboard, Activity, Truck, Container, AlertTriangle, Eye, EyeOff, AlignLeft, AlignRight, Columns as ColumnsIcon } from 'lucide-react';
+import { Sliders, LayoutList, PieChart, DollarSign, TrendingUp, BarChart3, LineChart, Maximize2, X, History, Filter, Info, ChevronDown, ChevronRight, Check, LayoutDashboard, Activity, Truck, Container, AlertTriangle, Eye, EyeOff, AlignLeft, AlignRight, Columns as ColumnsIcon, ArrowRightLeft } from 'lucide-react';
 import { PieChart as RechartsPieChart, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
 import SimulationModal from './SimulationModal';
 import HistoricalChart, { ChartSeries } from './HistoricalChart';
@@ -1034,7 +1034,7 @@ const MasterTable: React.FC<{
   };
   
   const driverSwapMap = useMemo(() => {
-      const map = new Map<string, boolean>();
+      const map = new Map<string, any>();
       if (groupBy !== 'Driver') return map;
       const groupedByDateAndName = new Map<string, any[]>();
       drivers.forEach((r: any) => {
@@ -1054,7 +1054,7 @@ const MasterTable: React.FC<{
               }));
               const uniqueComps = new Set(recs.map((r: any) => r.companyId));
               if (!(uniqueContracts.size === 1 && uniqueComps.size === 1)) {
-                  map.set(key, true);
+                  map.set(key, { oldRec: recs[0], newRec: recs[recs.length - 1] });
               }
           }
       });
@@ -1641,8 +1641,20 @@ const MasterTable: React.FC<{
           const w4 = dataItem.w4;
           
           let isSwap = false;
+          let swapData: any = null;
+          let isOldSwap = false;
           if (!isMergedUnassigned && selectedDate !== 'ALL') {
-              isSwap = drvRecords.some((r: any) => driverSwapMap.get(`${d.name}|${r.payDate}`));
+              for (const r of drvRecords) {
+                  const data = driverSwapMap.get(`${d.name}|${r.payDate}`);
+                  if (data) {
+                      isSwap = true;
+                      swapData = data;
+                      if (d.companyId === data.oldRec.companyId && d.contractType === data.oldRec.contractType) {
+                          isOldSwap = true;
+                      }
+                      break;
+                  }
+              }
           }
 
           const isStub = metrics.effCount === 0 && (Math.abs(metrics.totalPOCov) > 0 || Math.abs(metrics.totalPO) > 0 || Math.abs(metrics.tolls) > 0);
@@ -1673,15 +1685,18 @@ const MasterTable: React.FC<{
                       </div>
                     ) : isSwap && !isMergedUnassigned ? (
                       <div className="group/swap relative flex items-center cursor-help">
-                        <Info size={12} className="text-blue-400" />
+                        <ArrowRightLeft size={10} className="text-blue-400 cursor-help" />
                         <div className="absolute hidden group-hover/swap:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-2 rounded-lg shadow-2xl text-[10px] whitespace-nowrap pointer-events-none top-0 left-full ml-2">
-                          <span className="font-bold text-blue-400">SWAP:</span> {d.companyId || 'Unknown'} ({d.contractType || 'Unknown'})
+                          <span className="font-bold text-zinc-300">SWAP: </span>
+                          <span className={isOldSwap ? 'text-blue-400 font-bold' : 'text-zinc-400'}>{swapData?.oldRec?.companyId || 'Unknown'} ({swapData?.oldRec?.contractType || 'Unknown'})</span>
+                          <span className="text-zinc-500 mx-1">---&gt;</span>
+                          <span className={!isOldSwap ? 'text-blue-400 font-bold' : 'text-zinc-400'}>{swapData?.newRec?.companyId || 'Unknown'} ({swapData?.newRec?.contractType || 'Unknown'})</span>
                         </div>
                       </div>
                     ) : null}
                   </div>
                 </td>
-                <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[100px]">{isMergedUnassigned ? '-' : (d.companyId === 'UNRECONCILED' || isStub ? '-' : (d.companyId || '-'))}</td>
+                <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[100px]">{isMergedUnassigned ? '-' : (d.companyId === 'UNRECONCILED' ? '-' : (d.companyId || '-'))}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.teamId || '-')}</td>
                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.franchiseId || '-')}</td>
                <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.dispatcherId || '-')}</td>
@@ -4752,6 +4767,23 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                    >
                      AVG / DRV
                    </button>
+                   <div className="relative flex items-center">
+                     <select 
+                       value={selectedDate} 
+                       onChange={(e) => { setSelectedDate(e.target.value); e.target.blur(); }}
+                       className="peer appearance-none bg-zinc-950 border border-zinc-800 rounded pl-2 pr-6 text-zinc-400 focus:text-white font-sans text-[10px] font-normal focus:outline-none focus:border-zinc-600 h-[28px] cursor-pointer"
+                     >
+                        <option value="ALL">All Dates (Combined)</option>
+                        {uniqueDates.length > 0 ? (
+                          uniqueDates.map(date => (
+                            <option key={String(date)} value={String(date)}>{String(date)}</option>
+                          ))
+                        ) : (
+                          <option value="LATEST">No Dates</option>
+                        )}
+                     </select>
+                     <ChevronDown size={10} className="absolute right-2 text-zinc-500 pointer-events-none transition-transform peer-focus:rotate-180" />
+                   </div>
                    <button 
                     onClick={() => setIsTableExpanded(false)}
                     className="p-1 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors ml-2 flex items-center justify-center h-[28px] w-[28px]"

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Save } from 'lucide-react';
 
-const METRICS = [
+const AVAILABLE_METRICS = [
   { id: 'gross', label: 'Gross' },
   { id: 'margin', label: 'Margin' },
   { id: 'netPay', label: 'Net Pay' },
@@ -19,6 +19,34 @@ const METRICS = [
 export default function DriverSettings({ onClose, settings, onSave, contracts = [], companies = [] }: any) {
   const [localSettings, setLocalSettings] = useState(settings || {});
   const [selectedEntity, setSelectedEntity] = useState('GLOBAL');
+  const [selectedMetricToAdd, setSelectedMetricToAdd] = useState('');
+
+  const removeMetric = (metricId: string) => {
+    setLocalSettings((prev: any) => {
+      const next = { ...prev };
+      if (next[selectedEntity]) {
+        const entityRules = { ...next[selectedEntity] };
+        delete entityRules[metricId];
+        next[selectedEntity] = entityRules;
+      }
+      return next;
+    });
+  };
+
+  const addMetric = () => {
+    if (!selectedMetricToAdd) return;
+    setLocalSettings((prev: any) => ({
+      ...prev,
+      [selectedEntity]: {
+        ...(prev[selectedEntity] || {}),
+        [selectedMetricToAdd]: { redMax: 0, orangeMin: 0, orangeMax: 0, yellowMin: 0, yellowMax: 0, greenMin: 0 }
+      }
+    }));
+    setSelectedMetricToAdd('');
+  };
+
+  const activeMetrics = AVAILABLE_METRICS.filter(m => localSettings[selectedEntity]?.[m.id]);
+  const availableToAdd = AVAILABLE_METRICS.filter(m => !localSettings[selectedEntity]?.[m.id]);
 
   const updateMetric = (metricId: string, field: string, val: number | string) => {
     const currentEntityMetric = localSettings[selectedEntity]?.[metricId] || localSettings['GLOBAL']?.[metricId] || { redMax: 0, orangeMin: 0, orangeMax: 0, yellowMin: 0, yellowMax: 0, greenMin: 0 };
@@ -63,13 +91,21 @@ export default function DriverSettings({ onClose, settings, onSave, contracts = 
           </div>
         </div>
         
+        <div className="px-4 py-3 bg-zinc-900 border-b border-zinc-800 flex items-center gap-3">
+            <select value={selectedMetricToAdd} onChange={(e) => setSelectedMetricToAdd(e.target.value)} className="bg-zinc-950 border border-zinc-700 rounded px-2 py-1 text-xs text-zinc-300 outline-none cursor-pointer">
+              <option value="">Select Metric to Add...</option>
+              {availableToAdd.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+            <button onClick={addMetric} disabled={!selectedMetricToAdd} className="px-3 py-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-white text-xs font-bold rounded border border-zinc-700 cursor-pointer">+</button>
+        </div>
         <div className="p-4 overflow-y-auto flex-1 grid grid-cols-1 lg:grid-cols-2 gap-5 bg-zinc-950">
-          {METRICS.map(metric => {
-            const rule = localSettings[selectedEntity]?.[metric.id] || localSettings['GLOBAL']?.[metric.id] || { redMax: 0, orangeMin: 0, orangeMax: 0, yellowMin: 0, yellowMax: 0, greenMin: 0 };
+          {activeMetrics.map(metric => {
+            const rule = localSettings[selectedEntity][metric.id];
             
             return (
-              <div key={metric.id} className="p-4 border border-zinc-800 rounded bg-zinc-900/40 flex flex-col gap-3">
-                <h3 className="text-xs font-bold text-zinc-300 border-b border-zinc-800 pb-2 uppercase tracking-wider">{metric.label}</h3>
+              <div key={metric.id} className="p-4 border border-zinc-800 rounded bg-zinc-900/40 flex flex-col gap-3 relative">
+                <button onClick={() => removeMetric(metric.id)} className="absolute top-2 right-2 text-zinc-500 hover:text-rose-500 cursor-pointer"><X size={16} /></button>
+                <h3 className="text-xs font-bold text-zinc-300 border-b border-zinc-800 pb-2 uppercase tracking-wider pr-6">{metric.label}</h3>
                 <div className="flex flex-col gap-3">
                   
                   <div className="flex items-center justify-between gap-4">
