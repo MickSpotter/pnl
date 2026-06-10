@@ -5834,7 +5834,6 @@ const finalTrailerInterchangePerUnit = filteredNT > 0 ? finalTrailerInterchangeT
                                              return currTimeTruck >= fromTime && currTimeTruck <= toTime;
                                          });
 
-                                         // 1. Grupisanje NT i milja isključivo po ugovoru (OO se preskače u potpunosti)
                                          const contractStats: Record<string, { nt: number, miles: number }> = {};
                                          
                                          filteredWeekDrivers.forEach(d => {
@@ -5852,7 +5851,6 @@ const finalTrailerInterchangePerUnit = filteredNT > 0 ? finalTrailerInterchangeT
                                              contractStats[effContractType].miles += (Number(d.milesDriven) || 0);
                                          });
 
-                                         // 2. Kalkulacija totala (Broj NT za taj ugovor pomnožen sa cenom tog ugovora)
                                          let totalTruckCpmNT = 0;
                                          const truckCpmBreakdown: { company: string, perUnit: number, weekly: number, nt: number }[] = [];
 
