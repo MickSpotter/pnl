@@ -223,14 +223,14 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   
 
   const finImportKeys = [
-{ name: 'Liability Insurance (Auto)', key: 'liability_insurance', puKey: 'liability' },
-{ name: 'Liability Insurance (General)', key: 'liability_insurance_general', puKey: 'liability_general' },
-{ name: 'Cargo Insurance', key: 'cargo_insurance', puKey: 'cargo_w_per_unit' },
-{ name: 'Lease Gap Coverage', key: 'lease_gap_coverage', puKey: 'lease_gap_coverage_w_per_unit' },
-{ name: 'Trailer Interchange', key: 'trailer_interchange', puKey: 'trailer_interchange_w_per_unit' },
-{ name: 'LAGO', key: 'lago', puKey: 'lago_w_per_unit' },
-{ name: 'PD Premium', key: 'physical_damage_premium', puKey: 'phd_premium_w_per_unit' },
-{ name: 'Physical Damage', key: 'physical_damage', puKey: 'phd_w_per_unit' },
+{ name: 'Liability Insurance (Auto)', key: 'liability_insurance', puKey: 'liability_insurance_auto_custom' },
+{ name: 'Liability Insurance (General)', key: 'liability_insurance_general', puKey: 'liability_insurance_general_custom' },
+{ name: 'Cargo Insurance', key: 'cargo_insurance', puKey: 'cargo_insurance_custom' },
+{ name: 'Lease Gap Coverage', key: 'lease_gap_coverage', puKey: 'lease_gap_coverage_custom' },
+{ name: 'Trailer Interchange', key: 'trailer_interchange', puKey: 'trailer_interchange_custom' },
+{ name: 'LAGO', key: 'lago', puKey: 'lago_custom' },
+{ name: 'PD Premium', key: 'physical_damage_premium', puKey: 'pd_premium_custom' },
+{ name: 'Physical Damage', key: 'physical_damage', puKey: 'physical_damage_custom' },
 { name: 'Truck Price', key: 'avg_truck_price', puKey: 'truck_price' },
 { name: 'Trailer Price', key: 'avg_trailer_price', puKey: 'trailer_price' },
 { name: 'Phone & Internet', key: 'phone_and_internet', puKey: 'phone_and_internet' },
@@ -281,7 +281,7 @@ const fixedExpenseNames = Array.from(new Set([
 
           const fetchFinData = async () => {
              const { data: importData } = await supabase.from('finImport').select('*').order('week_ending', { ascending: false });
-             const { data: perUnitData } = await supabase.from('fin_import_per_unit_view').select('*').order('week_ending', { ascending: false });
+             const { data: perUnitData } = await supabase.from('fixed_costs').select('*').order('week_ending', { ascending: false });
              
              if (importData) {
                 setFinImportData(importData);

@@ -309,7 +309,7 @@ interface DriverTableProps {
   drivers: DriverPerformance[];
 }
 
-const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[] }) => {
+const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>('TOTAL');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['pnl']);
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
@@ -324,11 +324,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     if (selectedEntity === 'TOTAL') return driver.records;
     const [type, val] = selectedEntity.split(':');
     return driver.records.filter((r: any) => {
-      if (type === 'CTR') return r.contractType === val;
-      if (type === 'CMP') return r.companyId === val;
-      if (type === 'TEAM') return r.teamId === val;
-      if (type === 'FRA') return r.franchiseId === val;
-      if (type === 'DISP') return r.dispatcherId === val;
+      if (type === 'CTR') return (r.contractType && r.contractType !== '-' ? r.contractType : 'Unassigned') === val;
+      if (type === 'CMP') return (r.companyId && r.companyId !== '-' ? r.companyId : 'Unassigned') === val;
+      if (type === 'TEAM') return (r.teamId && r.teamId !== '-' ? r.teamId : 'Unassigned') === val;
+      if (type === 'FRA') return (r.franchiseId && r.franchiseId !== '-' ? r.franchiseId : 'Unassigned') === val;
+      if (type === 'DISP') return (r.dispatcherId && r.dispatcherId !== '-' ? r.dispatcherId : 'Unassigned') === val;
       return true;
     });
   }, [driver.records, selectedEntity]);
@@ -350,8 +350,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     let firstPayDate = '-';
     let lastPayDate = '-';
 
-    if (driver.records.length > 0) {
-      const recordsByDate = driver.records.reduce((acc: any, r: any) => {
+    if (filteredRecords.length > 0) {
+        const recordsByDate = filteredRecords.reduce((acc: any, r: any) => {
         if (!acc[r.payDate]) acc[r.payDate] = [];
         acc[r.payDate].push(r);
         return acc;
@@ -401,7 +401,53 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       firstPayDate,
       lastPayDate
     };
-  }, [driver.records]);
+  }, [filteredRecords]);
+
+  const rowMetrics = React.useMemo(() => {
+    if (selectedEntity === 'TOTAL') {
+      return {
+        totalGross: driver.totalGross, marginAmount: driver.marginAmount, netPay: driver.netPay,
+        insuranceExp: driver.insuranceExp, totalFuel: driver.totalFuel, companyPay: driver.companyPay,
+        fuelRebate: driver.fuelRebate, wklyExp: driver.wklyExp, tollCost: driver.tollCost,
+        poCoverage: driver.poCoverage, dispatcherPay: driver.dispatcherPay,
+        recruitingCost: driver.recruitingCost, totalPnL: driver.totalPnL
+      };
+    }
+
+    let totalGross = 0, marginAmount = 0, netPay = 0, insuranceExp = 0, totalFuel = 0;
+    let companyPay = 0, fuelRebate = 0, wklyExp = 0, tollCost = 0, poCoverage = 0;
+    let dispatcherPay = 0, recruitingCost = 0, totalPnL = 0;
+
+    filteredRecords.forEach((r: any) => {
+      const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+      totalGross += (r.grossRevenue || r.driver_gross || 0);
+      marginAmount += (r.marginAmount || 0);
+      netPay += (r.netPay || 0);
+      insuranceExp += m.insExp;
+      totalFuel += m.fuel;
+      companyPay += m.revCol;
+      fuelRebate += m.fuelRebate;
+      wklyExp += m.wklyExp;
+      tollCost += -m.tolls;
+      poCoverage += m.po;
+      dispatcherPay += m.dispPay;
+      recruitingCost += m.recruiting;
+      totalPnL += m.pnl;
+    });
+
+    const effNonTeamsCount = filteredRecords.reduce((s: number, r: any) => s + (r.effectiveNonTeams || 0), 0);
+    const effCount = filteredRecords.reduce((s: number, r: any) => s + (r.effectiveDrivers || 0), 0);
+    const count = effNonTeamsCount > 0 ? effNonTeamsCount : (effCount > 0 ? effCount : 1);
+    const div = isAvgPerWeek ? count : 1;
+
+    return {
+      totalGross: totalGross / div, marginAmount: marginAmount / div, netPay: netPay / div,
+      insuranceExp: insuranceExp / div, totalFuel: totalFuel / div, companyPay: companyPay / div,
+      fuelRebate: fuelRebate / div, wklyExp: wklyExp / div, tollCost: tollCost / div,
+      poCoverage: poCoverage / div, dispatcherPay: dispatcherPay / div,
+      recruitingCost: recruitingCost / div, totalPnL: totalPnL / div
+    };
+  }, [filteredRecords, driver, fixedExpenses, enrichedMap, pnlConfigs, selectedEntity, isAvgPerWeek]);
 
   const calcGross = filteredRecords.reduce((s: number, r: any) => s + (r.grossRevenue || r.driver_gross || 0), 0);
   const expFuel = filteredRecords.reduce((s: number, r: any) => s + (r.fuelCost || 0), 0);
@@ -549,70 +595,106 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     let runningMiles = 0;
     let runningCount = 0;
 
+    const groupedAllRecords = new Map<string, any[]>();
     sortedAllRecords.forEach((r: any) => {
-      const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
-      if ((r.effectiveDrivers || 0) >= 1) runningCount += 1;
-      const count = runningCount || 1;
-      
-      runningSums.pnl += rm.pnl;
-      runningSums.gross += (r.grossRevenue || r.driver_gross || 0);
-      runningSums.margin += (r.marginAmount || 0);
-      runningSums.netPay += (r.netPay || 0);
-      runningSums.insExp += rm.insExp;
-      runningSums.fuel += rm.fuel;
-      runningSums.revCol += rm.revCol;
-      runningSums.fuelRebate += rm.fuelRebate;
-      runningSums.wklyExp += rm.wklyExp;
-      runningSums.tolls += rm.tolls;
-      runningSums.po += rm.po;
-      runningSums.dispPay += rm.dispPay;
-      runningSums.recruiting += rm.recruiting;
-      runningMiles += (r.milesDriven || 0);
+      const d = r.payDate ? r.payDate.split('T')[0] : 'Unknown';
+      if (!groupedAllRecords.has(d)) groupedAllRecords.set(d, []);
+      groupedAllRecords.get(d)!.push(r);
+    });
 
-      precalculatedData.set(r.payDate, {
-        rm,
-        count,
+    Array.from(groupedAllRecords.entries()).forEach(([date, records]) => {
+      let dateCount = 0;
+      records.forEach((r: any) => {
+        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+        if ((r.effectiveDrivers || 0) >= 1) dateCount += 1;
+        runningSums.pnl += rm.pnl;
+        runningSums.gross += (r.grossRevenue || r.driver_gross || 0);
+        runningSums.margin += (r.marginAmount || 0);
+        runningSums.netPay += (r.netPay || 0);
+        runningSums.insExp += rm.insExp;
+        runningSums.fuel += rm.fuel;
+        runningSums.revCol += rm.revCol;
+        runningSums.fuelRebate += rm.fuelRebate;
+        runningSums.wklyExp += rm.wklyExp;
+        runningSums.tolls += rm.tolls;
+        runningSums.po += rm.po;
+        runningSums.dispPay += rm.dispPay;
+        runningSums.recruiting += rm.recruiting;
+        runningMiles += (r.milesDriven || 0);
+      });
+      runningCount += dateCount;
+
+      precalculatedData.set(date, {
+        count: runningCount || 1,
         runningSums: { ...runningSums },
         runningMiles
       });
     });
 
-    return filteredRecords.map((r: any) => {
-      const data = precalculatedData.get(r.payDate);
-      if (!data) return { name: r.payDate };
+    const groupedFilteredRecords = new Map<string, any[]>();
+    filteredRecords.forEach((r: any) => {
+      const d = r.payDate ? r.payDate.split('T')[0] : 'Unknown';
+      if (!groupedFilteredRecords.has(d)) groupedFilteredRecords.set(d, []);
+      groupedFilteredRecords.get(d)!.push(r);
+    });
 
-      const { rm, count, runningSums: sums, runningMiles: miles } = data;
+    return Array.from(groupedFilteredRecords.keys()).sort((a, b) => new Date(a).getTime() - new Date(b).getTime()).map(date => {
+      const records = groupedFilteredRecords.get(date)!;
+      const data = precalculatedData.get(date);
+      if (!data) return { name: date };
+
+      let fPnl = 0, fGross = 0, fMargin = 0, fNetPay = 0, fInsExp = 0, fFuel = 0, fRevCol = 0, fFuelReb = 0, fWklyExp = 0, fTolls = 0, fPo = 0, fDispPay = 0, fRecruiting = 0, fMiles = 0;
+
+      records.forEach((r: any) => {
+        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+        fPnl += rm.pnl;
+        fGross += (r.grossRevenue || r.driver_gross || 0);
+        fMargin += (r.marginAmount || 0);
+        fNetPay += (r.netPay || 0);
+        fInsExp += rm.insExp;
+        fFuel += rm.fuel;
+        fRevCol += rm.revCol;
+        fFuelReb += rm.fuelRebate;
+        fWklyExp += rm.wklyExp;
+        fTolls += rm.tolls;
+        fPo += rm.po;
+        fDispPay += rm.dispPay;
+        fRecruiting += rm.recruiting;
+        fMiles += (r.milesDriven || 0);
+      });
+
+      const { count, runningSums: sums, runningMiles: miles } = data;
 
       const metrics: any = {
-        'pnl': rm.pnl,
+        'pnl': fPnl,
         'pnl avg/w': sums.pnl / count,
-        'gross': r.grossRevenue || r.driver_gross || 0,
+        'gross': fGross,
         'gross avg/w': sums.gross / count,
-        'margin': r.marginAmount || 0,
+        'margin': fMargin,
         'margin avg/w': sums.margin / count,
-        'net pay': r.netPay || 0,
+        'net pay': fNetPay,
         'net pay avg/w': sums.netPay / count,
-        'ins. exp.': rm.insExp,
+        'ins. exp.': fInsExp,
         'ins. exp. avg/w': sums.insExp / count,
-        'fuel': rm.fuel,
+        'fuel': fFuel,
         'fuel avg/mi': miles > 0 ? sums.fuel / miles : 0,
-        'revenue collected': rm.revCol,
+        'revenue collected': fRevCol,
         'revenue collected avg/w': sums.revCol / count,
-        'fuel rebate': rm.fuelRebate,
+        'fuel rebate': fFuelReb,
         'fuel rebate avg/w': sums.fuelRebate / count,
-        'wkly exp': rm.wklyExp,
+        'wkly exp': fWklyExp,
         'wkly exp avg/w': sums.wklyExp / count,
-        'tolls': rm.tolls,
+        'tolls': fTolls,
         'tolls avg/w': sums.tolls / count,
-        'po': rm.po,
+        'po': fPo,
         'po avg/w': sums.po / count,
-        'disp. pay': rm.dispPay,
+        'disp. pay': fDispPay,
         'disp. pay avg/w': sums.dispPay / count,
-        'recruiting': rm.recruiting,
+        'recruiting': fRecruiting,
         'recruiting avg/w': sums.recruiting / count
       };
 
-      const point: any = { name: r.payDate };
+      const point: any = { name: date };
       selectedMetrics.forEach((m: string) => { point[m] = metrics[m]; });
       return point;
     });
@@ -625,7 +707,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
   return (
     <React.Fragment>
-      <tr onClick={() => onToggle(driver.id)} className={`group cursor-pointer transition-colors ${isExpanded ? 'bg-zinc-800/50' : 'hover:bg-zinc-800/30'}`}>
+      <tr onClick={() => onToggle(driver.id)} className={`group cursor-pointer transition-colors ${isExpanded ? 'bg-zinc-800 z-20 relative [&>td]:border-t-2 [&>td]:border-emerald-500/50 [&>td:first-child]:border-l-2 [&>td:first-child]:border-emerald-500/50 [&>td:last-child]:border-r-2 [&>td:last-child]:border-emerald-500/50' : 'hover:bg-zinc-800/30'}`}>
         <td className={`px-2 py-1 text-zinc-500 sticky left-0 z-10 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'}`}>{isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</td>
         <td className={`px-2 py-1 font-sans sticky left-[32px] z-10 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'}`}>
           <div className="flex items-center gap-2">
@@ -635,25 +717,25 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
             {mainDiagnosis === 'warning' && <AlertTriangle size={10} className="text-amber-500 ml-1" />}
           </div>
         </td>
-        <td className="px-2 py-1 text-right text-yellow-400">{formatCurrency(driver.totalGross)}</td>
-        <td className="px-2 py-1 text-right text-yellow-400 font-medium">{formatCurrency(driver.marginAmount)}</td>
-        <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(driver.netPay)}</td>
-        <td className="px-2 py-1 text-right text-purple-400">-{formatCurrency(Math.abs(driver.insuranceExp))}</td>
-        <td className="px-2 py-1 text-right text-purple-400">{driver.totalFuel < 0 ? `-$${Math.abs(driver.totalFuel).toFixed(0)}` : `$${driver.totalFuel.toFixed(0)}`}</td>
-        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.companyPay)}</td>
-        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.fuelRebate)}</td>
-        <td className="px-2 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(driver.wklyExp))}</td>
-        <td className="px-2 py-1 text-right text-blue-400">{driver.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(driver.tollCost))}`}</td>
-        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.poCoverage)}</td>
-        <td className="px-2 py-1 text-right text-blue-400"><span>{driver.dispatcherPay > 0 ? '+' : ''}{formatCurrency(driver.dispatcherPay)}</span></td>
-        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(driver.recruitingCost)}</td>
-        <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(driver.totalPnL)}</td>
+        <td className="px-2 py-1 text-right text-yellow-400">{formatCurrency(rowMetrics.totalGross)}</td>
+        <td className="px-2 py-1 text-right text-yellow-400 font-medium">{formatCurrency(rowMetrics.marginAmount)}</td>
+        <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(rowMetrics.netPay)}</td>
+        <td className="px-2 py-1 text-right text-purple-400">-{formatCurrency(Math.abs(rowMetrics.insuranceExp))}</td>
+        <td className="px-2 py-1 text-right text-purple-400">{rowMetrics.totalFuel < 0 ? `-$${Math.abs(rowMetrics.totalFuel).toFixed(0)}` : `$${rowMetrics.totalFuel.toFixed(0)}`}</td>
+        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.companyPay)}</td>
+        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.fuelRebate)}</td>
+        <td className="px-2 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(rowMetrics.wklyExp))}</td>
+        <td className="px-2 py-1 text-right text-blue-400">{rowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(rowMetrics.tollCost))}`}</td>
+        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.poCoverage)}</td>
+        <td className="px-2 py-1 text-right text-blue-400"><span>{rowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(rowMetrics.dispatcherPay)}</span></td>
+        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.recruitingCost)}</td>
+        <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${rowMetrics.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(rowMetrics.totalPnL)}</td>
         <td className={`px-2 py-1 text-right font-bold sticky right-0 w-[56px] min-w-[56px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.ranking >= 80 ? 'text-emerald-400' : driver.ranking >= 50 ? 'text-yellow-400' : driver.ranking >= 20 ? 'text-amber-500' : 'text-rose-400'}`}>{driver.ranking.toFixed(2)}%</td>
       </tr>
       {isExpanded && (
-        <tr className="bg-zinc-950/50 relative z-50">
+        <tr className="bg-zinc-950/50 relative z-50 [&>td]:border-b-2 [&>td]:border-l-2 [&>td]:border-r-2 [&>td]:border-emerald-500/50">
           <td colSpan={16} className="p-0 border-b border-zinc-800 relative z-50 overflow-visible">
-           <div className="sticky left-0 p-4 w-[calc(100vw-262px)] z-50 overflow-visible">
+           <div className="sticky left-0 p-4 z-50 overflow-visible" style={{ width: 'var(--visible-width, calc(100vw - 262px))' }}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-h-[260px] items-stretch">
                 <div className="md:col-span-2 flex gap-4 h-full">
                   <div className="w-[220px] flex-shrink-0 bg-zinc-900/40 border border-zinc-800 p-3 rounded flex flex-col gap-4">
@@ -724,11 +806,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
                     <div className="flex justify-end items-center gap-3 mb-2">
                       <select value={selectedEntity} onChange={(e) => setSelectedEntity(e.target.value)} className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-300 outline-none focus:border-emerald-500 w-[140px] cursor-pointer">
                         <option value="TOTAL">View: Total History</option>
-                        {Array.from(new Set(driver.records.map((r:any) => r.contractType))).filter((c:any) => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED', '-'].includes(c.toUpperCase())).map(c => <option key={`c-${c}`} value={`CTR:${c as string}`}>Contract: {c as string}</option>)}
-                        {Array.from(new Set(driver.records.map((r:any) => r.companyId))).filter((c:any) => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED', '-'].includes(c.toUpperCase())).map(c => <option key={`cmp-${c}`} value={`CMP:${c as string}`}>Company: {c as string}</option>)}
-                        {Array.from(new Set(driver.records.map((r:any) => r.teamId))).filter((t:any) => t && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED', '-'].includes(t.toUpperCase())).map(t => <option key={`team-${t}`} value={`TEAM:${t as string}`}>Team: {t as string}</option>)}
-                        {Array.from(new Set(driver.records.map((r:any) => r.franchiseId))).filter((f:any) => f && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED', '-'].includes(f.toUpperCase())).map(f => <option key={`fra-${f}`} value={`FRA:${f as string}`}>Franchise: {f as string}</option>)}
-                        {Array.from(new Set(driver.records.map((r:any) => r.dispatcherId))).filter((d:any) => d && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED', '-'].includes(d.toUpperCase())).map(d => <option key={`disp-${d}`} value={`DISP:${d as string}`}>Dispatcher: {d as string}</option>)}
+                        {Array.from(new Set(driver.records.map((r:any) => r.contractType && r.contractType !== '-' ? r.contractType : 'Unassigned'))).filter((c:any) => c && !['GLOBAL', 'UNRECONCILED'].includes(String(c).toUpperCase())).map(c => <option key={`c-${c}`} value={`CTR:${c as string}`}>Contract: {c as string}</option>)}
+                        {Array.from(new Set(driver.records.map((r:any) => r.companyId && r.companyId !== '-' ? r.companyId : 'Unassigned'))).filter((c:any) => c && !['GLOBAL', 'UNRECONCILED'].includes(String(c).toUpperCase())).map(c => <option key={`cmp-${c}`} value={`CMP:${c as string}`}>Company: {c as string}</option>)}
+                        {Array.from(new Set(driver.records.map((r:any) => r.teamId && r.teamId !== '-' ? r.teamId : 'Unassigned'))).filter((t:any) => t && !['GLOBAL', 'UNRECONCILED'].includes(String(t).toUpperCase())).map(t => <option key={`team-${t}`} value={`TEAM:${t as string}`}>Team: {t as string}</option>)}
+                        {Array.from(new Set(driver.records.map((r:any) => r.franchiseId && r.franchiseId !== '-' ? r.franchiseId : 'Unassigned'))).filter((f:any) => f && !['GLOBAL', 'UNRECONCILED'].includes(String(f).toUpperCase())).map(f => <option key={`fra-${f}`} value={`FRA:${f as string}`}>Franchise: {f as string}</option>)}
+                        {Array.from(new Set(driver.records.map((r:any) => r.dispatcherId && r.dispatcherId !== '-' ? r.dispatcherId : 'Unassigned'))).filter((d:any) => d && !['GLOBAL', 'UNRECONCILED'].includes(String(d).toUpperCase())).map(d => <option key={`disp-${d}`} value={`DISP:${d as string}`}>Dispatcher: {d as string}</option>)}
                       </select>
                       <details className="relative group">
                         <summary className="bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[10px] text-zinc-400 outline-none hover:border-emerald-500 cursor-pointer list-none flex items-center gap-2">
@@ -870,6 +952,20 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 });
 
 const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
+  const tableContainerRef = React.useRef<HTMLDivElement>(null);
+
+  React.useEffect(() => {
+    const el = tableContainerRef.current;
+    if (!el) return;
+    const observer = new ResizeObserver(entries => {
+      for (let entry of entries) {
+        el.style.setProperty('--visible-width', `${entry.contentRect.width}px`);
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   const validDrivers = React.useMemo(() => {
     const uniqueDates = Array.from(new Set(drivers.map(d => d.payDate).filter(Boolean)));
     const sortedDates = uniqueDates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
@@ -1164,11 +1260,16 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     const map = new Map<string, any>();
     const filteredDriverNames = new Set(filteredTableDrivers.map(d => d.name));
 
-    const companyFilters = tableFilters.filter(f => f.field === 'Company');
-    const isCompanyMatch = (d: any) => {
-      if (companyFilters.length === 0) return true;
-      return companyFilters.every(rule => {
-        const safeVal = String(d.companyId || 'Unassigned');
+    const catFilters = tableFilters.filter(f => ['Company', 'Dispatcher', 'Contract', 'Team', 'Franchise'].includes(f.field));
+    const isRecordMatch = (d: any) => {
+      if (catFilters.length === 0) return true;
+      return catFilters.every(rule => {
+        let safeVal = 'Unassigned';
+        if (rule.field === 'Company') safeVal = String(d.companyId && d.companyId !== '-' ? d.companyId : 'Unassigned');
+        if (rule.field === 'Dispatcher') safeVal = String(d.dispatcherId && d.dispatcherId !== '-' ? d.dispatcherId : 'Unassigned');
+        if (rule.field === 'Contract') safeVal = String(d.contractType && d.contractType !== '-' ? d.contractType : 'Unassigned');
+        if (rule.field === 'Team') safeVal = String(d.teamId && d.teamId !== '-' ? d.teamId : 'Unassigned');
+        if (rule.field === 'Franchise') safeVal = String(d.franchiseId && d.franchiseId !== '-' ? d.franchiseId : 'Unassigned');
         const selectedValues = Array.isArray(rule.value) ? rule.value : [];
         if (rule.operator === 'is one of') return selectedValues.includes(safeVal);
         if (rule.operator === 'is not one of') return !selectedValues.includes(safeVal);
@@ -1184,7 +1285,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       const nameLower = (d.name || '').toLowerCase();
       const compLower = (d.companyId || '').toLowerCase();
       if (nameLower.includes('unassigned') || nameLower.includes('unreconciled') || compLower.includes('unassigned') || compLower.includes('unreconciled')) return;
-      if (!isCompanyMatch(d)) return;
+      if (!isRecordMatch(d)) return;
 
       if (!rankMap.has(d.name)) rankMap.set(d.name, { totalPnL: 0, records: [] });
       const rData = rankMap.get(d.name)!;
@@ -1212,6 +1313,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       const nameLower = (d.name || '').toLowerCase();
       const compLower = (d.companyId || '').toLowerCase();
       if (nameLower.includes('unassigned') || nameLower.includes('unreconciled') || compLower.includes('unassigned') || compLower.includes('unreconciled')) return;
+      if (!isRecordMatch(d)) return;
       
       if (search && !nameLower.startsWith(search.toLowerCase())) return;
 
@@ -1448,7 +1550,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           companies={Array.from(new Set(validDrivers.map(d => d.companyId))).filter(c => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c?.toUpperCase()))}
         />
       )}
-      <div className="flex justify-between items-center px-1 mb-2">
+      <div className="flex justify-between items-center px-1 mb-2 relative z-[100]">
         <div className="flex items-center gap-2">
           <input 
             type="text" 
@@ -1459,15 +1561,16 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           />
         </div>
         <div className="flex items-center gap-2 relative">
-            <div className="w-[90px] h-[26px] z-50 relative [&_.absolute]:!right-0 [&_.absolute]:!left-auto [&>*:first-child]:!text-[9px] [&>*:first-child]:!whitespace-nowrap [&>*:first-child]:!tracking-tight [&_button]:!text-[9px] [&_button]:!whitespace-nowrap">
+            <div className="w-[90px] h-[26px] z-[100] relative [&_.absolute]:!right-0 [&_.absolute]:!left-auto [&>*:first-child]:!text-[9px] [&>*:first-child]:!whitespace-nowrap [&>*:first-child]:!tracking-tight [&_button]:!text-[9px] [&_button]:!whitespace-nowrap">
                <TableFilter
                  filters={tableFilters} 
                  setFilters={setTableFilters}
                  optionsMap={{
                    'Driver': Array.from(new Set(validDrivers.map(d => d.name))).filter(Boolean) as string[],
-                   'Contract': Array.from(new Set(validDrivers.map(d => d.contractType))).filter(Boolean) as string[],
-                   'Company': Array.from(new Set(validDrivers.map(d => d.companyId))).filter(Boolean) as string[],
-                   'Franchise': Array.from(new Set(validDrivers.map(d => d.franchiseId))).filter(Boolean) as string[],
+                   'Contract': Array.from(new Set(validDrivers.map(d => d.contractType && d.contractType !== '-' ? d.contractType : 'Unassigned'))).filter(Boolean) as string[],
+                   'Company': Array.from(new Set(validDrivers.map(d => d.companyId && d.companyId !== '-' ? d.companyId : 'Unassigned'))).filter(Boolean) as string[],
+                   'Franchise': Array.from(new Set(validDrivers.map(d => d.franchiseId && d.franchiseId !== '-' ? d.franchiseId : 'Unassigned'))).filter(Boolean) as string[],
+                   'Dispatcher': Array.from(new Set(validDrivers.map(d => d.dispatcherId && d.dispatcherId !== '-' ? d.dispatcherId : 'Unassigned'))).filter(Boolean) as string[],
                    'Gross': ['good', 'neutral', 'warning', 'critical'],
                    'Margin': ['good', 'neutral', 'warning', 'critical'],
                    'Net Pay': ['good', 'neutral', 'warning', 'critical'],
@@ -1493,7 +1596,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             </button>
         </div>
       </div>
-      <div className="overflow-auto border border-zinc-800 rounded-t-lg bg-zinc-900 flex-1">
+      <div ref={tableContainerRef} className="overflow-auto border border-zinc-800 rounded-t-lg bg-zinc-900 flex-1">
         <table className="w-full text-left text-[11px] whitespace-nowrap relative">
           <thead className="bg-zinc-800/50 text-zinc-400 font-medium uppercase tracking-wider sticky top-0 z-10">
             <tr>
@@ -1527,6 +1630,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
               fixedExpenses={fixedExpenses}
               enrichedMap={enrichedMap}
               pnlConfigs={pnlConfigs}
+              isAvgPerWeek={isAvgPerWeek}
             />
           ))}
         </tbody>

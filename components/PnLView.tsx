@@ -5271,16 +5271,16 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                             const y = e.clientY;
                             const vh = window.innerHeight;
                             const vw = window.innerWidth;
+                            const percentY = (y / vh) * 100;
                             tooltip.style.top = `${y}px`;
                             tooltip.style.bottom = 'auto';
                             tooltip.style.left = 'auto';
                             tooltip.style.right = `${vw - x + 15}px`;
-                            tooltip.style.transform = 'translateY(-50%)';
+                            tooltip.style.transform = `translateY(-${percentY}%)`;
                             tooltip.style.maxHeight = '90vh';
                             tooltip.style.overflowY = 'auto';
                         }
                     };
-
                     const renderRow = (label: string, globalKey: string, customKey?: string, isPercent: boolean = false, multiplier: number = filteredNT, valTooltip?: any, totalTooltip?: any, customVal?: number, customTotal?: number) => {
     const val = customVal !== undefined ? customVal : getSidebarVal(globalKey, customKey);
     if (val === 0) return null;
@@ -5307,7 +5307,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                             <span className={`text-[10px] font-mono font-bold transition-colors duration-200 ${valTooltip ? 'cursor-help text-sky-400/80 hover:text-sky-300' : 'text-sky-400/80'}`}>
                               {isPercent 
                                   ? `${isProfit ? '+' : '-'}${Math.abs(val)}%` 
-                                  : `${isProfit ? '+' : '-'}${label.includes('General') ? `$${Math.abs(val).toFixed(2)}` : (label.includes('Trailer Interchange') && Math.abs(val) < 1 ? `$${Math.abs(val).toFixed(2)}` : formatCurrency(Math.abs(val)))}`}
+                                  : `${isProfit ? '+' : '-'}${label.includes('General') ? `$${Math.abs(val).toFixed(2)}` : ((label.includes('Trailer Interchange') || label === 'LAGO') && Math.abs(val) < 1 ? `$${Math.abs(val).toFixed(2)}` : formatCurrency(Math.abs(val)))}`}
                             </span>
                             {valTooltip && (
                                <div className="hidden group-hover/tooltip:block fixed z-[9999] bg-zinc-800 text-zinc-200 text-[10px] p-2 rounded shadow-xl normal-case font-normal border border-zinc-700 pointer-events-none dynamic-tooltip w-max">
@@ -5513,7 +5513,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                             {hasGross && <span className="text-[10px] text-zinc-400 font-mono tabular-nums text-right">{formatCurrency(b.gross)}</span>}
                             {hasUnit && <span className="text-[10px] text-zinc-400 font-mono tabular-nums text-right">{unitVal !== undefined ? unitVal.toFixed(1) : ''}</span>}
                             <span className="text-[10px] text-zinc-200 font-bold font-mono tabular-nums text-right">
-                                {unitVal < 0.14 ? '' : (b.perUnit < 0 ? '+' : '-')}{showDecimals ? `$${Math.abs(unitVal < 0.14 ? 0 : b.perUnit).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : (title.includes('Trailer Interchange') && Math.abs(unitVal < 0.14 ? 0 : b.perUnit) < 1 ? `$${Math.abs(unitVal < 0.14 ? 0 : b.perUnit).toFixed(2)}` : formatCurrency(Math.abs(unitVal < 0.14 ? 0 : b.perUnit)))}
+                                {unitVal < 0.14 ? '' : (b.perUnit < 0 ? '+' : '-')}{showDecimals ? `$${Math.abs(unitVal < 0.14 ? 0 : b.perUnit).toFixed(2).replace(/\B(?=(\d{3})+(?!\d))/g, ",")}` : ((title.includes('Trailer Interchange') || title === 'LAGO') && Math.abs(unitVal < 0.14 ? 0 : b.perUnit) < 1 ? `$${Math.abs(unitVal < 0.14 ? 0 : b.perUnit).toFixed(2)}` : formatCurrency(Math.abs(unitVal < 0.14 ? 0 : b.perUnit)))}
                             </span>
                         </div>
                     );

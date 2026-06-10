@@ -250,14 +250,14 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
           let from = 0;
 
           const { count } = await supabase
-            .from('pnl_table')
+            .from('pnl_secure_view')
             .select('*', { count: 'exact', head: true });
           const totalRecords = count || 1;
           setLoadingProgress(10);
 
           while (true) {
             const { data, error } = await supabase
-              .from('pnl_table')
+              .from('pnl_secure_view')
               .select('*')
               .order('pay_date', { ascending: false })
               .order('driver_name', { ascending: true })
@@ -417,7 +417,7 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
 
     const realtimeChannel = supabase
       .channel('app-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pnl_table' }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pnl_secure_view' }, () => {
         fetchData(true);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finImport' }, () => {
