@@ -4533,7 +4533,6 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
 
       useEffect(() => {
         if (chartData && chartData.length > 0 && !hasPlayedInitialAnimations) {
-          // Allow the very first animation to finish, then disable it for future tab switches
           const timer = setTimeout(() => {
             hasPlayedInitialAnimations = true;
           }, 1500);
