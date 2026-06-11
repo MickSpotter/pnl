@@ -90,7 +90,6 @@ const TdWithTooltip = ({ value, tooltipContent, className, onMouseMove }: any) =
     </td>
   );
 };
-// Sub-component for the Master Table to handle reuse in Modal
 const MasterTable: React.FC<{
    companyMetrics: any,
    drivers: DriverPerformance[],
