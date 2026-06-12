@@ -193,9 +193,9 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
 
         const wklyExp = enriched ? Number(enriched.calculatedFixedCost ?? enriched.fixed_costs ?? 0) : Number(r.calculatedFixedCost ?? r.fixed_costs ?? ((tFloat + tWkly + oIns + dEld + dIfta + mSup + liab + tPhd) * effNT + (dTrl + dTrlPhd) * effTr));
         const insExp = enriched ? Number(enriched.insuranceCost ?? 0) : ((oIns + liab + tPhd) * effNT + (dTrlPhd) * effTr);
-        const dTollsFinal = enriched ? Number(enriched.calculatedTolls ?? enriched.tolls ?? enriched.tollCost ?? 0) : Number(r.calculatedTolls ?? r.tolls ?? r.tollCost ?? r.tolls_amount ?? r.tollsAmount ?? 0);
+        const dTollsFinal = r.pnlTolls !== undefined ? Number(r.pnlTolls) : (enriched ? Number(enriched.calculatedTolls ?? enriched.tolls ?? enriched.tollCost ?? 0) : Number(r.calculatedTolls ?? r.tolls ?? r.tollCost ?? r.tolls_amount ?? r.tollsAmount ?? 0));
 
-  const isGarland = r.name === 'Garland Jermaine Norris';
+        const isGarland = r.name === 'Garland Jermaine Norris';
   let fuel = 0;
   if (!isGarland) {
       fuel = ['MCLOO', 'OO', 'LOO', 'LPOO', 'MCOO'].includes(ct) ? fSaved : -Math.abs(fSpent);
@@ -275,7 +275,7 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
   }
 
   const revCol = drvRevBase + effectiveBalChangeForCompanyPay + drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd + drvZeroMiDrop + drvEscrowAdj + drvTollsAdj + drvCashAdv + drvCpmAdj + drvFuelAdj + Math.abs(fullSharedLiabAmount);
-        const po = enriched && enriched.poCoverage !== undefined ? Number(enriched.poCoverage) : -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0)));
+        const po = r.pnlTotalPOCov !== undefined ? Number(r.pnlTotalPOCov) : (enriched && enriched.poCoverage !== undefined ? Number(enriched.poCoverage) : -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0))));
         const dispPay = enriched && enriched.dispatcherCommission !== undefined ? Number(enriched.dispatcherCommission) : calcDispPay;
         const recruiting = enriched && enriched.recruitingCost !== undefined ? Math.abs(Number(enriched.recruitingCost)) : Math.abs(Number(r.recruitingCost ?? r.recruiting_cost ?? 0));
         
@@ -298,9 +298,20 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
         let pnlRecruiting = activeItems.includes('recruiting') ? recruiting : 0;
         let pnlTolls = activeItems.includes('tolls') ? Math.abs(dTollsFinal) : 0;
 
+        let franchisePnl = 0;
+        if (effContractType === 'TPOG WITH FRANCHISE' || (ct === 'TPOG' && r.franchiseId)) {
+            let fRevCol = enriched && enriched.franchise_revenue_collected !== undefined ? Number(enriched.franchise_revenue_collected) : Number(r.franchise_revenue_collected || 0);
+            let fWklyExp = enriched && enriched.franchise_fixed_costs_full !== undefined ? Number(enriched.franchise_fixed_costs_full) : Number(r.franchise_fixed_costs_full || 0);
+            let fPo = enriched && enriched.franchise_po !== undefined ? Math.abs(Number(enriched.franchise_po)) : Math.abs(Number(r.franchise_po || 0));
+            if (!activeItems.includes('revenue_collected')) fRevCol = 0;
+            if (!activeItems.includes('weekly_expenses')) fWklyExp = 0;
+            if (!activeItems.includes('po')) fPo = 0;
+            franchisePnl = fRevCol + pnlFuelReb - pnlDisp - fWklyExp - fPo - pnlRecruiting - pnlTolls;
+        }
+
         const pnl = pnlRevCol + pnlFuelReb - pnlDisp - pnlWkly - pnlPo - pnlRecruiting - pnlTolls;
 
-        const result = { wklyExp, insExp, fuel, fuelRebate, revCol, tolls: Math.abs(dTollsFinal), po, dispPay, pnl, recruiting };
+        const result = { wklyExp, insExp, fuel, fuelRebate, revCol, tolls: Math.abs(dTollsFinal), po, dispPay, pnl, recruiting, franchisePnl };
         metricsCache.set(cacheKey, result);
         return result;
 };
@@ -309,7 +320,7 @@ interface DriverTableProps {
   drivers: DriverPerformance[];
 }
 
-const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean }) => {
+const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek, tpogMode }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean; tpogMode: 'ALL' | 'CALCULATED' }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>('TOTAL');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['pnl']);
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
@@ -432,7 +443,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       poCoverage += m.po;
       dispatcherPay += m.dispPay;
       recruitingCost += m.recruiting;
-      totalPnL += m.pnl;
+      let finalPnl = m.pnl;
+      if (tpogMode === 'CALCULATED' && m.franchisePnl) {
+          finalPnl -= (m.franchisePnl / 2);
+      }
+      totalPnL += finalPnl;
     });
 
     const effNonTeamsCount = filteredRecords.reduce((s: number, r: any) => s + (r.effectiveNonTeams || 0), 0);
@@ -447,7 +462,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       poCoverage: poCoverage / div, dispatcherPay: dispatcherPay / div,
       recruitingCost: recruitingCost / div, totalPnL: totalPnL / div
     };
-  }, [filteredRecords, driver, fixedExpenses, enrichedMap, pnlConfigs, selectedEntity, isAvgPerWeek]);
+  }, [filteredRecords, driver, fixedExpenses, enrichedMap, pnlConfigs, selectedEntity, isAvgPerWeek, tpogMode]);
 
   const calcGross = filteredRecords.reduce((s: number, r: any) => s + (r.grossRevenue || r.driver_gross || 0), 0);
   const expFuel = filteredRecords.reduce((s: number, r: any) => s + (r.fuelCost || 0), 0);
@@ -515,7 +530,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         sums.sTolls += rm.tolls;
         sums.sPO += rm.po;
         sums.sRecruiting += rm.recruiting;
-        sums.sPnL += rm.pnl;
+        let finalPnl = rm.pnl;
+        if (tpogMode === 'CALCULATED' && rm.franchisePnl) {
+            finalPnl -= (rm.franchisePnl / 2);
+        }
+        sums.sPnL += finalPnl;
         return sums;
     }, { sGross: 0, sMargin: 0, sNetPay: 0, sDispPay: 0, sInsExp: 0, sMiles: 0, sFuel: 0, sRevCol: 0, sFuelReb: 0, sWklyExp: 0, sTolls: 0, sPO: 0, sRecruiting: 0, sPnL: 0 });
 
@@ -586,7 +605,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     if (mainDiagnosis === 'ignored') mainDiagnosis = 'neutral';
 
     return { issues: iss, perfStats, mainDiagnosis, avgPnL, activeConf };
-  }, [filteredRecords, fleetAverages, selectedEntity, settings]);
+  }, [filteredRecords, fleetAverages, selectedEntity, settings, tpogMode]);
   const historyChartData = React.useMemo(() => {
     const sortedAllRecords = [...driver.records].sort((a: any, b: any) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime());
     
@@ -607,7 +626,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       records.forEach((r: any) => {
         const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
         if ((r.effectiveDrivers || 0) >= 1) dateCount += 1;
-        runningSums.pnl += rm.pnl;
+        let finalPnl = rm.pnl;
+        if (tpogMode === 'CALCULATED' && rm.franchisePnl) {
+            finalPnl -= (rm.franchisePnl / 2);
+        }
+        runningSums.pnl += finalPnl;
         runningSums.gross += (r.grossRevenue || r.driver_gross || 0);
         runningSums.margin += (r.marginAmount || 0);
         runningSums.netPay += (r.netPay || 0);
@@ -647,7 +670,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
       records.forEach((r: any) => {
         const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
-        fPnl += rm.pnl;
+        let finalPnl = rm.pnl;
+        if (tpogMode === 'CALCULATED' && rm.franchisePnl) {
+            finalPnl -= (rm.franchisePnl / 2);
+        }
+        fPnl += finalPnl;
         fGross += (r.grossRevenue || r.driver_gross || 0);
         fMargin += (r.marginAmount || 0);
         fNetPay += (r.netPay || 0);
@@ -698,7 +725,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       selectedMetrics.forEach((m: string) => { point[m] = metrics[m]; });
       return point;
     });
-  }, [filteredRecords, driver.records, selectedMetrics, fixedExpenses, enrichedMap, pnlConfigs]);
+  }, [filteredRecords, driver.records, selectedMetrics, fixedExpenses, enrichedMap, pnlConfigs, tpogMode]);
 
   const activeSeries = React.useMemo(() => {
     const palette = ['#10b981', '#3b82f6', '#f59e0b', '#ec4899', '#8b5cf6', '#f43f5e', '#06b6d4', '#fb923c', '#d946ef', '#a1a1aa'];
@@ -982,6 +1009,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
   }, [drivers]);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'totalGross', direction: 'desc' });
   const [isAvgPerWeek, setIsAvgPerWeek] = useState(false);
+  const [tpogMode, setTpogMode] = useState<'ALL' | 'CALCULATED'>('ALL');
   const [search, setSearch] = useState('');
   const [tableFilters, setTableFilters] = useState<FilterRule[]>([{ field: 'Contract', operator: 'status is', value: ['ACTIVE'] }]);
   const [showSettings, setShowSettings] = useState(false);
@@ -1086,7 +1114,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
                       totalFuel += rm.fuel;
                       totalMiles += (r.milesDriven || 0);
                       totalRevCol += rm.revCol;
-                      totalPnL += rm.pnl;
+                      let finalPnl = rm.pnl;
+                      if (tpogMode === 'CALCULATED' && rm.franchisePnl) {
+                          finalPnl -= (rm.franchisePnl / 2);
+                      }
+                      totalPnL += finalPnl;
                       totalPO += rm.po;
                       
                       const c = r.contractType || 'Unassigned';
@@ -1250,7 +1282,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
               }
           });
       });
-  }, [validDrivers, tableFilters, fixedExpenses, enrichedMap, driverSettings]);
+  }, [validDrivers, tableFilters, fixedExpenses, enrichedMap, driverSettings, tpogMode]);
 
 
   const aggregatedDrivers = React.useMemo(() => {
@@ -1290,7 +1322,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       if (!rankMap.has(d.name)) rankMap.set(d.name, { totalPnL: 0, records: [] });
       const rData = rankMap.get(d.name)!;
       const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
-      rData.totalPnL += m.pnl;
+      let finalPnl = m.pnl;
+      if (tpogMode === 'CALCULATED' && m.franchisePnl) {
+          finalPnl -= (m.franchisePnl / 2);
+      }
+      rData.totalPnL += finalPnl;
       rData.records.push(d);
     });
 
@@ -1352,7 +1388,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
 
       agg.totalGross += (d.grossRevenue || d.driver_gross || 0);
       agg.companyPay += m.revCol;
-      agg.totalPnL += m.pnl;
+      let finalPnl = m.pnl;
+      if (tpogMode === 'CALCULATED' && m.franchisePnl) {
+          finalPnl -= (m.franchisePnl / 2);
+      }
+      agg.totalPnL += finalPnl;
       agg.marginAmount += (d.marginAmount || 0);
       agg.poCoverage += m.po;
       agg.fuelCost += (d.fuelCost ? -Math.abs(d.fuelCost) : 0);
@@ -1432,7 +1472,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       if (sortConfig.direction === 'asc') return aVal > bVal ? 1 : -1;
       return aVal < bVal ? 1 : -1;
     });
-  }, [validDrivers, filteredTableDrivers, isAvgPerWeek, sortConfig, search, fixedExpenses, tableFilters, enrichedMap]);
+  }, [validDrivers, filteredTableDrivers, isAvgPerWeek, sortConfig, search, fixedExpenses, tableFilters, enrichedMap, tpogMode]);
 
   const fleetAverages = React.useMemo(() => {
     const contractAvgs: Record<string, any> = {};
@@ -1473,7 +1513,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
          if (wklyExp) { contractAvgs[cType].wklyExpSum += wklyExp; }
          if (dTollsRaw) { contractAvgs[cType].tollsSum += Math.abs(dTollsRaw); }
          if (recruit) { contractAvgs[cType].recruitingSum += recruit; }
-         contractAvgs[cType].pnlSum += pnl;
+         let finalPnl = pnl;
+         if (tpogMode === 'CALCULATED' && m.franchisePnl) {
+             finalPnl -= (m.franchisePnl / 2);
+         }
+         contractAvgs[cType].pnlSum += finalPnl;
          contractAvgs[cType].pnlCount++;
       });
     });
@@ -1518,7 +1562,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     };
 
     return result;
-  }, [aggregatedDrivers, fixedExpenses]);
+  }, [aggregatedDrivers, fixedExpenses, tpogMode]);
 
   const [expandedDriverId, setExpandedDriverId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -1594,6 +1638,20 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             >
               AVERAGE
             </button>
+            <div className="flex bg-zinc-950 border border-zinc-800 rounded overflow-hidden h-[26px]">
+              <button
+                onClick={() => setTpogMode('ALL')}
+                className={`px-3 py-1 text-[10px] font-bold transition-colors cursor-pointer ${tpogMode === 'ALL' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
+              >
+                TPOG ALL
+              </button>
+              <button
+                onClick={() => setTpogMode('CALCULATED')}
+                className={`px-3 py-1 border-l border-zinc-800 text-[10px] font-bold transition-colors cursor-pointer ${tpogMode === 'CALCULATED' ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
+              >
+                TPOG CALC
+              </button>
+            </div>
         </div>
       </div>
       <div ref={tableContainerRef} className="overflow-auto border border-zinc-800 rounded-t-lg bg-zinc-900 flex-1">
@@ -1631,6 +1689,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
               enrichedMap={enrichedMap}
               pnlConfigs={pnlConfigs}
               isAvgPerWeek={isAvgPerWeek}
+              tpogMode={tpogMode}
             />
           ))}
         </tbody>

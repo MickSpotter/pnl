@@ -1785,7 +1785,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                   if (reductionAmount <= 0) return '-';
                                                                                   return (
                                                                                       <>
-                                                                                          <span>-${reductionAmount}</span>
+                                                                                          <span>-${Math.round(reductionAmount)}</span>
                                                                                          {note && (
                                                                                                                              <div className="relative group/note flex items-center">
                                                                                                                                  <FileText size={12} className="text-emerald-500/70 hover:text-emerald-500 cursor-help" />
@@ -1915,7 +1915,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                                 </td>
                                                                                                                 <td className="py-1.5 px-3">
                                                                                                                     <div className="text-xs text-zinc-400 font-mono font-bold flex items-center gap-1.5">
-                                                                                                                        <span>-${rAmount}</span>
+                                                                                                                        <span>-${Math.round(rAmount)}</span>
                                                                                                                         {(rRule as any)[`${reductionKey}_note`] && (
                                                                                                                             <div className="relative group/note flex items-center">
                                                                                                                                 <FileText size={12} className="text-emerald-500/70 hover:text-emerald-500 cursor-help" />
@@ -1927,7 +1927,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                                 <td className="py-1.5 px-3">
                                                                                                                     <div className="flex items-center h-7">
                                                                                                                         <span className="pl-2 text-zinc-500 text-xs pointer-events-none flex-shrink-0">$</span>
-                                                                                                                        <span className="text-xs text-zinc-200 font-mono font-bold pl-1">{finalVal}</span>
+                                                                                                                        <span className="text-xs text-zinc-200 font-mono font-bold pl-1">{finalVal !== '' ? Math.round(Number(finalVal)) : ''}</span>
                                                                                                                     </div>
                                                                                                                 </td>
                                                                                                                 <td className="py-1.5 px-3 text-right"></td>
@@ -2071,7 +2071,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                           if (reductionAmount <= 0) return '-';
                                                                                           return (
                                                                                               <>
-                                                                                                  <span>-${reductionAmount}</span>
+                                                                                                  <span>-${Math.round(reductionAmount)}</span>
                                                                                                  {note && (
                                                                                                                              <div className="relative group/note flex items-center">
                                                                                                                                  <FileText size={12} className="text-emerald-500/70 hover:text-emerald-500 cursor-help" />
@@ -2139,7 +2139,7 @@ const fixedExpenseNames = Array.from(new Set([
                                                                                                                   }} disabled={!isCustom} style={reductionAmount > 0 ? { width: `${Math.max(String(baseVal).length, 2) + 3.5}ch` } : {}} className={`${reductionAmount > 0 ? 'flex-none pr-1 line-through text-zinc-500' : 'w-14 pr-1 text-zinc-200'} bg-transparent border-none outline-none py-1 pl-1 text-xs font-mono h-full transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} />
                                                                                                               {reductionAmount > 0 && (
                                                                                                                   <div className="flex items-center gap-0.5 whitespace-nowrap pointer-events-none">
-                                                                                                                      <span className="text-xs text-zinc-200 font-mono pl-1">{finalVal}</span>
+                                                                                                                      <span className="text-xs text-zinc-200 font-mono pl-1">{finalVal !== '' ? Math.round(Number(finalVal)) : ''}</span>
                                                                                                                   </div>
                                                                                                               )}
                                                                                                           </div>
@@ -2327,7 +2327,7 @@ if (isTotalField) return null;
                                                                              </td>
                                                                              <td className="py-1.5 px-3">
                                                                                  <div className="text-xs text-zinc-400 font-mono font-bold flex items-center gap-1.5">
-                                                                                     <span>-${rAmount}</span>
+                                                                                     <span>-${Math.round(rAmount)}</span>
                                                                                      {(rRule as any)[`${reductionKey}_note`] && (
                                                                                          <div className="relative group/note flex items-center">
                                                                                              <FileText size={12} className="text-emerald-500/70 hover:text-emerald-500 cursor-help" />
@@ -2339,7 +2339,7 @@ if (isTotalField) return null;
                                                                              <td className="py-1.5 px-3">
                                                                                  <div className="flex items-center h-7">
                                                                                      <span className="pl-2 text-zinc-500 text-xs pointer-events-none flex-shrink-0">$</span>
-                                                                                     <span className="text-xs text-zinc-200 font-mono font-bold pl-1">{finalVal}</span>
+                                                                                     <span className="text-xs text-zinc-200 font-mono font-bold pl-1">{finalVal !== '' ? Math.round(Number(finalVal)) : ''}</span>
                                                                                  </div>
                                                                              </td>
                                                                              <td className="py-1.5 px-3 text-right"></td>
@@ -2420,7 +2420,7 @@ if (isTotalField) return null;
                                                                                          if (reductionAmount <= 0 || isCombinedRule) return '-';
                                                                                          return (
                                                                                              <>
-                                                                                                 <span>-${reductionAmount}</span>
+                                                                                                 <span>-${Math.round(reductionAmount)}</span>
                                                                                                 {note && (
                                                                                                                              <div className="relative group/note flex items-center">
                                                                                                                                  <FileText size={12} className="text-emerald-500/70 hover:text-emerald-500 cursor-help" />
@@ -2454,7 +2454,7 @@ if (isTotalField) return null;
                                                                                                             }} style={reductionAmount > 0 ? { width: `${Math.max(String(rawVal).length, 2) + 3.5}ch` } : {}} className={`${reductionAmount > 0 ? 'flex-none pr-1 line-through text-amber-500/50' : 'w-14 pr-1 text-zinc-200'} bg-transparent border-none outline-none py-1 pl-1 text-xs font-mono h-full transition-colors [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none`} />
                                                                                                             {reductionAmount > 0 && (
                                                                                                                 <div className="flex items-center gap-0.5 whitespace-nowrap pointer-events-none">
-                                                                                                                    <span className="text-xs text-zinc-200 font-mono pl-1">{finalVal}</span>
+                                                                                                                    <span className="text-xs text-zinc-200 font-mono pl-1">{finalVal !== '' ? Math.round(Number(finalVal)) : ''}</span>
                                                                                                                 </div>
                                                                                                             )}
                                                                                                         </div>
@@ -2582,7 +2582,7 @@ if (isTotalField) return null;
                                                                                                             </td>
                                                                                                             <td className="py-1.5 px-3">
                                                                                                                 <div className="text-xs text-zinc-400 font-mono font-bold flex items-center gap-1.5">
-                                                                                                                    <span>-${rAmount}</span>
+                                                                                                                    <span>-${Math.round(rAmount)}</span>
                                                                                                                     {(rRule as any)[`${reductionKey}_note`] && (
                                                                                                                         <div className="relative group/note flex items-center">
                                                                                                                             <FileText size={12} className="text-emerald-500/70 hover:text-emerald-500 cursor-help" />
@@ -2594,7 +2594,7 @@ if (isTotalField) return null;
                                                                                                             <td className="py-1.5 px-3">
                                                                                                                 <div className="flex items-center h-7">
                                                                                                                     <span className="pl-2 text-zinc-500 text-xs pointer-events-none flex-shrink-0">$</span>
-                                                                                                                    <span className="text-xs text-zinc-200 font-mono font-bold pl-1">{finalVal}</span>
+                                                                                                                    <span className="text-xs text-zinc-200 font-mono font-bold pl-1">{finalVal !== '' ? Math.round(Number(finalVal)) : ''}</span>
                                                                                                                 </div>
                                                                                                             </td>
                                                                                                             <td className="py-1.5 px-3 text-right"></td>
@@ -2661,7 +2661,7 @@ if (isTotalField) return null;
                                                                                                             {(exp.key === 'avg_truck_price' || exp.key === 'avg_trailer_price') && (
                                                                                                                 <td className="py-1.5 px-3">
                                                                                                                     <div className="text-xs text-zinc-400 font-mono font-bold flex items-center gap-1.5">
-                                                                                                                        <span>-${rAmount}</span>
+                                                                                                                        <span>-${Math.round(rAmount)}</span>
                                                                                                                         {rRule[`${exp.key === 'avg_truck_price' ? 'truck_reduction' : 'trailer_reduction'}_note`] && (
                                                                                                                             <div className="relative group/note flex items-center">
                                                                                                                                 <FileText size={12} className="text-emerald-500/70 hover:text-emerald-500 cursor-help" />
@@ -2674,7 +2674,7 @@ if (isTotalField) return null;
                                                                                                             <td className="py-1.5 px-3">
                                                                                                                 <div className="flex items-center h-7">
                                                                                                                     <span className="pl-2 text-zinc-500 text-xs pointer-events-none flex-shrink-0">$</span>
-                                                                                                                    <span className="text-xs text-zinc-200 font-mono font-bold pl-1">{finalVal}</span>
+                                                                                                                    <span className="text-xs text-zinc-200 font-mono font-bold pl-1">{finalVal !== '' ? Math.round(Number(finalVal)) : ''}</span>
                                                                                                                 </div>
                                                                                                             </td>
                                                                                                             <td className="py-1.5 px-3 text-right">
@@ -3030,7 +3030,7 @@ if (isTotalField) return null;
                                             <span className="text-[9px] text-zinc-500">{r.date}</span>
                                         </div>
                                         <div className="flex items-center gap-2">
-                                            <span className="text-xs font-bold font-mono text-zinc-400 mr-2">-${r.amount}</span>
+                                            <span className="text-xs font-bold font-mono text-zinc-400 mr-2">-${Math.round(r.amount)}</span>
                                             <button onClick={() => {
                                                 setReductionForm({ type: r.raw.type, target: r.raw.target, validFrom: r.raw.validFrom, validTo: r.raw.validTo, amount: String(r.amount), note: r.raw.note || '' });
                                                 setEditingReduction({ source: r.source as 'fixed' | 'fin', groupIds: r.groupIds! });

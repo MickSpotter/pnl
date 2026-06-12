@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DriverPerformance, DispatcherTier } from '../types';
 import { formatCurrency, formatPercent } from '../utils';
-import { Users, ChevronDown, ChevronUp, AlertCircle, DollarSign, Filter, Search, Eye, EyeOff, Activity, List, CheckCircle, AlertTriangle, Info, Circle, BarChart2, LineChart as LineChartIcon } from 'lucide-react';
+import { Users, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, AlertCircle, DollarSign, Filter, Search, Eye, EyeOff, Activity, List, CheckCircle, AlertTriangle, Info, Circle, BarChart2, LineChart as LineChartIcon } from 'lucide-react';
 import { getRawMetrics } from './DriverTable';
 import HistoricalChart from './HistoricalChart';
 import { supabase } from '../lib/supabase';
@@ -41,6 +41,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
   const [pnlConfigs, setPnlConfigs] = useState<any[]>([]);
   const [driverSettings, setDriverSettings] = useState<any>({});
   const [footerAggType, setFooterAggType] = useState<'total' | 'median' | 'average'>('total');
+  const [isDispPayExpanded, setIsDispPayExpanded] = useState(false);
 
   useEffect(() => {
     const loadPnlConfigs = async () => {
@@ -99,8 +100,41 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
     const uniqueDates = Array.from(new Set(drivers.map(d => d.payDate).filter(Boolean)));
     const sortedDates = uniqueDates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
     const allowedDates = new Set(sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates);
-    return drivers.filter(d => allowedDates.has(d.payDate));
-  }, [drivers]);
+    const baseDrivers = drivers.filter(d => allowedDates.has(d.payDate));
+    const term = searchTerm ? searchTerm.toLowerCase() : '';
+    const driverFilters = tableFilters.filter(f => f.field === 'Driver');
+    
+    if (!term && driverFilters.length === 0) return baseDrivers;
+    
+    return baseDrivers.filter(driver => {
+      const d = driver as any;
+      const dId = String(d.stub_dispatcher || d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || '').toLowerCase();
+      const tId = String(d.stub_team || d.teamId || d.teamName || d.team_name || d.team || '').toLowerCase();
+      const dName = String(d.name || '').toLowerCase();
+      
+      if (term) {
+        if (!dId.includes(term) && !tId.includes(term) && !dName.includes(term)) {
+          return false;
+        }
+      }
+      
+      if (driverFilters.length > 0) {
+        const passesDriverFilter = driverFilters.every(rule => {
+          const vals = Array.isArray(rule.value) ? rule.value : [];
+          if (vals.length === 0) return true;
+          const hasDriver = vals.includes(driver.name);
+          if (rule.operator === 'is one of') return hasDriver;
+          if (rule.operator === 'is not one of') return !hasDriver;
+          if (rule.operator === 'is') return hasDriver;
+          if (rule.operator === 'is not') return !hasDriver;
+          return true;
+        });
+        if (!passesDriverFilter) return false;
+      }
+      
+      return true;
+    });
+  }, [drivers, searchTerm, tableFilters]);
 
   const enrichedMap = React.useMemo(() => {
     const map = new Map<string, any>();
@@ -261,6 +295,30 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       driverRanks.set(d.name, rankedDrivers.length > 1 ? (i / (rankedDrivers.length - 1)) * 100 : 100);
     });
 
+    const dispatcherContractCounts = new Map<string, number>();
+    const dispatcherTotalCounts = new Map<string, number>();
+    
+    validDrivers.forEach(d => {
+        const nameLower = (d.name || '').toLowerCase();
+        const compLower = (d.companyId || '').toLowerCase();
+        if (nameLower.includes('unassigned') || nameLower.includes('unreconciled') || compLower.includes('unassigned') || compLower.includes('unreconciled')) return;
+        
+        const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
+        const isStub = (d as any).isStub || ((d.effectiveDrivers || 0) === 0 && (Math.abs(m.totalPOCov || 0) > 0 || Math.abs(m.totalPO || 0) > 0 || Math.abs(d.tolls || d.tollCost || 0) > 0));
+        let dispatcherId = isStub ? (d.stub_dispatcher || 'Unassigned Dispatcher') : (d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || 'Unassigned Dispatcher');
+        if (!dispatcherId || String(dispatcherId).trim().toLowerCase() === 'unassigned' || String(dispatcherId).trim().toLowerCase() === 'null') dispatcherId = 'Unassigned Dispatcher';
+        
+        const ct = d.contractType || 'ALL';
+        const payDate = d.payDate || 'Unknown';
+        const driverWeight = d.effectiveNonTeams > 0 ? d.effectiveNonTeams : (d.effectiveDrivers > 0 ? d.effectiveDrivers : 1);
+        
+        const ctKey = `${dispatcherId}_${payDate}_${ct}`;
+        dispatcherContractCounts.set(ctKey, (dispatcherContractCounts.get(ctKey) || 0) + driverWeight);
+        
+        const totalKey = `${dispatcherId}_${payDate}`;
+        dispatcherTotalCounts.set(totalKey, (dispatcherTotalCounts.get(totalKey) || 0) + driverWeight);
+    });
+
     const teamMap = new Map();
 
     validDrivers.forEach(driver => {
@@ -310,6 +368,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                   po: 0,
                   tolls: 0,
                   dispPay: 0,
+                  dispGrossPay: 0,
+                  dispMarginPay: 0,
+                  dispFixedPay: 0,
+                  dispSharedIns: 0,
                   recruiting: 0,
                   uniqueDrivers: new Set(),
                   grossRecordCount: 0,
@@ -327,10 +389,56 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       const revColl = m.revCol || m.revenueCollected || m.totalRev || driver.revenueCollected || driver.revenue_collected || 0;
       const fuelRebate = m.fuelRebate || driver.fuelRebate || 0;
       const wklyExp = m.wklyExp || m.weeklyExpenses || m.totalFixed || driver.weeklyExpenses || driver.weekly_expenses || 0;
-      const po = m.po || m.totalPO || driver.po || 0;
-      const tolls = m.tolls || driver.tolls || driver.tollCost || 0;
+      const po = driver.pnlTotalPOCov !== undefined ? Number(driver.pnlTotalPOCov) : (m.po || m.totalPO || driver.po || 0);
+      const tolls = driver.pnlTolls !== undefined ? Number(driver.pnlTolls) : (m.tolls || driver.tolls || driver.tollCost || 0);
       const dispPay = m.dispPay || m.dispatcherPay || driver.dispatcherPay || 0;
       const recruiting = m.recruiting || m.recruitingCost || driver.recruiting || 0;
+
+      let dispGrossPay = 0;
+      let dispMarginPay = 0;
+      let dispFixedPay = 0;
+      let dispSharedIns = 0;
+      const ct = driver.contractType || 'ALL';
+
+      let r = fixedExpenses.find(e => String(e.name).trim().toLowerCase().includes('dispatcher pay') && (e.dispatcher_name === dispatcherId || e.dispatcherName === dispatcherId || e.dispatcher_id === dispatcherId) && (e.contract_type === ct || e.contractType === ct));
+      if (!r) r = fixedExpenses.find(e => String(e.name).trim().toLowerCase().includes('dispatcher pay') && (e.dispatcher_name === dispatcherId || e.dispatcherName === dispatcherId || e.dispatcher_id === dispatcherId) && (!e.contract_type || e.contract_type === 'ALL' || e.contractType === 'ALL'));
+      if (!r) r = fixedExpenses.find(e => String(e.name).trim().toLowerCase().includes('dispatcher pay') && (!e.dispatcher_name || e.dispatcher_name === 'ALL') && (e.contract_type === ct || e.contractType === ct));
+      if (!r) r = fixedExpenses.find(e => String(e.name).trim().toLowerCase().includes('dispatcher pay') && (!e.dispatcher_name || e.dispatcher_name === 'ALL') && (!e.contract_type || e.contract_type === 'ALL' || e.contractType === 'ALL'));
+      
+      if (r) {
+          dispGrossPay = gross * ((Number(r.disp_gross_perc) || Number(r.dispatcher_gross_percent) || Number(r.dispGrossPerc) || 0) / 100);
+          dispMarginPay = margin * ((Number(r.disp_margin_perc) || Number(r.dispatcher_margin_percent) || Number(r.dispMarginPerc) || 0) / 100);
+          
+          let ruleAmount = Number(r.amount) || 0;
+          const driverWeight = driver.effectiveNonTeams > 0 ? driver.effectiveNonTeams : (driver.effectiveDrivers > 0 ? driver.effectiveDrivers : 1);
+          if (r.unit === '$ total') {
+              let divisor = 1;
+              const isGlobalRule = !r.contract_type || r.contract_type === 'ALL' || r.contractType === 'ALL';
+              if (isGlobalRule) {
+                  divisor = dispatcherTotalCounts.get(`${dispatcherId}_${driver.payDate || 'Unknown'}`) || 1;
+              } else {
+                  divisor = dispatcherContractCounts.get(`${dispatcherId}_${driver.payDate || 'Unknown'}_${ct}`) || 1;
+              }
+              dispFixedPay = (ruleAmount / divisor) * driverWeight;
+          } else {
+              dispFixedPay = ruleAmount * driverWeight;
+          }
+      }
+
+      const edKey = `${driver.name}_${driver.payDate}_${driver.contractType}_${driver.companyId}`;
+      const ed = enrichedMap.get(edKey);
+      if (ed && ed.dispSharedLiability !== undefined) {
+          dispSharedIns = ed.dispSharedLiability;
+      } else if (driver.contractType === 'MCLOO') {
+          const curTime = (driver.payDate ? new Date(driver.payDate.split('T')[0]).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
+          let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === driver.companyId && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+          if (!liabRuleForDisp) {
+              liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+          }
+          if (liabRuleForDisp && (liabRuleForDisp as any).disp_mcloo_pay !== undefined && (liabRuleForDisp as any).disp_mcloo_pay !== null && String((liabRuleForDisp as any).disp_mcloo_pay).trim() !== '') {
+              dispSharedIns = Math.abs(Number((liabRuleForDisp as any).disp_mcloo_pay) * (driver.effectiveNonTeams || 0));
+          }
+      }
 
       team.totalMargin += margin;
       team.totalPnL += pnl;
@@ -344,11 +452,15 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       disp.po += po;
       disp.tolls += tolls;
       disp.dispPay += dispPay;
+      disp.dispGrossPay += dispGrossPay;
+      disp.dispMarginPay += dispMarginPay;
+      disp.dispFixedPay += dispFixedPay;
+      disp.dispSharedIns += dispSharedIns;
       disp.recruiting += recruiting;
       disp.uniqueDrivers.add(driver.name);
 
       if (!disp.driverStats.has(driver.name)) {
-        disp.driverStats.set(driver.name, { gross: 0, margin: 0, pnl: 0, revColl: 0, fuelRebate: 0, wklyExp: 0, po: 0, tolls: 0, dispPay: 0, recruiting: 0, count: 0, effNonTeams: 0, effDrivers: 0, latestDate: driver.payDate || '1970-01-01', status: driver.status, companyId: driver.companyId, contractType: driver.contractType, franchiseId: driver.franchiseId, subStats: new Map() });
+        disp.driverStats.set(driver.name, { gross: 0, margin: 0, pnl: 0, revColl: 0, fuelRebate: 0, wklyExp: 0, po: 0, tolls: 0, dispPay: 0, dispGrossPay: 0, dispMarginPay: 0, dispFixedPay: 0, dispSharedIns: 0, recruiting: 0, count: 0, effNonTeams: 0, effDrivers: 0, latestDate: driver.payDate || '1970-01-01', status: driver.status, companyId: driver.companyId, contractType: driver.contractType, franchiseId: driver.franchiseId, subStats: new Map() });
       }
       const stats = disp.driverStats.get(driver.name);
       stats.gross += gross;
@@ -360,6 +472,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       stats.po += po;
       stats.tolls += tolls;
       stats.dispPay += dispPay;
+      stats.dispGrossPay += dispGrossPay;
+      stats.dispMarginPay += dispMarginPay;
+      stats.dispFixedPay += dispFixedPay;
+      stats.dispSharedIns += dispSharedIns;
       stats.recruiting += recruiting;
       stats.count += 1;
       stats.effNonTeams += (driver.effectiveNonTeams || 0);
@@ -380,7 +496,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
               contractType: driver.contractType || 'Unassigned',
               companyId: driver.companyId || 'Unassigned',
               franchiseId: driver.franchiseId || 'Unassigned',
-              gross: 0, margin: 0, pnl: 0, revColl: 0, fuelRebate: 0, wklyExp: 0, po: 0, tolls: 0, dispPay: 0, recruiting: 0, count: 0, effNonTeams: 0, effDrivers: 0
+              gross: 0, margin: 0, pnl: 0, revColl: 0, fuelRebate: 0, wklyExp: 0, po: 0, tolls: 0, dispPay: 0, dispGrossPay: 0, dispMarginPay: 0, dispFixedPay: 0, dispSharedIns: 0, recruiting: 0, count: 0, effNonTeams: 0, effDrivers: 0
           });
       }
       const sub = stats.subStats.get(subKey);
@@ -393,6 +509,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       sub.po += po;
       sub.tolls += tolls;
       sub.dispPay += dispPay;
+      sub.dispGrossPay += dispGrossPay;
+      sub.dispMarginPay += dispMarginPay;
+      sub.dispFixedPay += dispFixedPay;
+      sub.dispSharedIns += dispSharedIns;
       sub.recruiting += recruiting;
       sub.count += 1;
       sub.effNonTeams += (driver.effectiveNonTeams || 0);
@@ -421,6 +541,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
         let dispTotalPO = 0;
         let dispTotalTolls = 0;
         let dispTotalDispPay = 0;
+        let dispTotalDispGrossPay = 0;
+        let dispTotalDispMarginPay = 0;
+        let dispTotalDispFixedPay = 0;
+        let dispTotalDispSharedIns = 0;
         let dispTotalRecruiting = 0;
 
         let avgRevCollPerDriver = 0;
@@ -429,6 +553,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
         let avgPOPerDriver = 0;
         let avgTollsPerDriver = 0;
         let avgDispPayPerDriver = 0;
+        let avgDispGrossPayPerDriver = 0;
+        let avgDispMarginPayPerDriver = 0;
+        let avgDispFixedPayPerDriver = 0;
+        let avgDispSharedInsPerDriver = 0;
         let avgRecruitingPerDriver = 0;
 
         if (disp.driverStats) {
@@ -441,6 +569,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
           let totalDriverPOAvgs = 0;
           let totalDriverTollsAvgs = 0;
           let totalDriverDispPayAvgs = 0;
+          let totalDriverDispGrossPayAvgs = 0;
+          let totalDriverDispMarginPayAvgs = 0;
+          let totalDriverDispFixedPayAvgs = 0;
+          let totalDriverDispSharedInsAvgs = 0;
           let totalDriverRecruitingAvgs = 0;
 
           Array.from(disp.driverStats.values()).forEach((s: any) => {
@@ -458,6 +590,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                 dispTotalPO += s.po;
                 dispTotalTolls += s.tolls;
                 dispTotalDispPay += s.dispPay;
+                dispTotalDispGrossPay += s.dispGrossPay;
+                dispTotalDispMarginPay += s.dispMarginPay;
+                dispTotalDispFixedPay += s.dispFixedPay;
+                dispTotalDispSharedIns += s.dispSharedIns;
                 dispTotalRecruiting += s.recruiting;
 
                 const effNonTeamsCount = s.effNonTeams;
@@ -473,6 +609,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                 totalDriverPOAvgs += s.po / divisor;
                 totalDriverTollsAvgs += s.tolls / divisor;
                 totalDriverDispPayAvgs += s.dispPay / divisor;
+                totalDriverDispGrossPayAvgs += s.dispGrossPay / divisor;
+                totalDriverDispMarginPayAvgs += s.dispMarginPay / divisor;
+                totalDriverDispFixedPayAvgs += s.dispFixedPay / divisor;
+                totalDriverDispSharedInsAvgs += s.dispSharedIns / divisor;
                 totalDriverRecruitingAvgs += s.recruiting / divisor;
             }
           });
@@ -487,6 +627,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
               avgPOPerDriver = totalDriverPOAvgs / activeCount;
               avgTollsPerDriver = totalDriverTollsAvgs / activeCount;
               avgDispPayPerDriver = totalDriverDispPayAvgs / activeCount;
+              avgDispGrossPayPerDriver = totalDriverDispGrossPayAvgs / activeCount;
+              avgDispMarginPayPerDriver = totalDriverDispMarginPayAvgs / activeCount;
+              avgDispFixedPayPerDriver = totalDriverDispFixedPayAvgs / activeCount;
+              avgDispSharedInsPerDriver = totalDriverDispSharedInsAvgs / activeCount;
               avgRecruitingPerDriver = totalDriverRecruitingAvgs / activeCount;
           }
         }
@@ -503,6 +647,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
           po: dispTotalPO,
           tolls: dispTotalTolls,
           dispPay: dispTotalDispPay,
+          dispGrossPay: dispTotalDispGrossPay,
+          dispMarginPay: dispTotalDispMarginPay,
+          dispFixedPay: dispTotalDispFixedPay,
+          dispSharedIns: dispTotalDispSharedIns,
           recruiting: dispTotalRecruiting,
           avgGrossPerDriver,
           avgMarginPerDriver,
@@ -513,6 +661,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
           avgPOPerDriver,
           avgTollsPerDriver,
           avgDispPayPerDriver,
+          avgDispGrossPayPerDriver,
+          avgDispMarginPayPerDriver,
+          avgDispFixedPayPerDriver,
+          avgDispSharedInsPerDriver,
           avgRecruitingPerDriver,
           teamName: team.name
         };
@@ -641,6 +793,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
   const footerPO = getFooterValue('po', 'avgPOPerDriver');
   const footerTolls = getFooterValue('tolls', 'avgTollsPerDriver');
   const footerDispPay = getFooterValue('dispPay', 'avgDispPayPerDriver');
+  const footerDispGrossPay = getFooterValue('dispGrossPay', 'avgDispGrossPayPerDriver');
+  const footerDispMarginPay = getFooterValue('dispMarginPay', 'avgDispMarginPayPerDriver');
+  const footerDispFixedPay = getFooterValue('dispFixedPay', 'avgDispFixedPayPerDriver');
+  const footerDispSharedIns = getFooterValue('dispSharedIns', 'avgDispSharedInsPerDriver');
   const footerRecruiting = getFooterValue('recruiting', 'avgRecruitingPerDriver');
   const footerMargin = getFooterValue('totalMargin', 'avgMarginPerDriver');
   const footerPnL = getFooterValue('totalPnL', 'avgPnLPerDriver');
@@ -706,7 +862,11 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                   <th onClick={() => requestSort('avgWklyExpPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Avg Wkly Exp</th>
                   <th onClick={() => requestSort('avgPOPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Avg PO</th>
                   <th onClick={() => requestSort('avgTollsPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Avg Tolls</th>
-                  <th onClick={() => requestSort('avgDispPayPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Avg Disp Pay</th>
+                  <th onClick={() => setIsDispPayExpanded(!isDispPayExpanded)} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 flex items-center justify-end gap-1">Avg Disp Pay {isDispPayExpanded ? <ChevronLeft size={10}/> : <ChevronRight size={10}/>}</th>
+                  {isDispPayExpanded && <th onClick={() => requestSort('avgDispGrossPayPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 bg-zinc-700/50 text-zinc-300">Gross Pay</th>}
+                  {isDispPayExpanded && <th onClick={() => requestSort('avgDispMarginPayPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 bg-zinc-700/50 text-zinc-300">Margin Pay</th>}
+                  {isDispPayExpanded && <th onClick={() => requestSort('avgDispFixedPayPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 bg-zinc-700/50 text-zinc-300">Fixed Pay</th>}
+                  {isDispPayExpanded && <th onClick={() => requestSort('avgDispSharedInsPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 bg-zinc-700/50 text-zinc-300">Shared Ins.</th>}
                   <th onClick={() => requestSort('avgRecruitingPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Avg Recruiting</th>
                   <th onClick={() => requestSort('avgPnLPerDriver')} className="px-2 py-1.5 text-right cursor-pointer hover:text-emerald-400 select-none border-b border-zinc-800 font-bold sticky right-[160px] bg-zinc-800 z-30 w-[90px] min-w-[90px]">Avg PnL</th>
                 </>
@@ -719,7 +879,11 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                   <th onClick={() => requestSort('wklyExp')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Wkly Exp</th>
                   <th onClick={() => requestSort('po')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">PO</th>
                   <th onClick={() => requestSort('tolls')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Tolls</th>
-                  <th onClick={() => requestSort('dispPay')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Disp Pay</th>
+                  <th onClick={() => setIsDispPayExpanded(!isDispPayExpanded)} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 flex items-center justify-end gap-1">Disp Pay {isDispPayExpanded ? <ChevronLeft size={10}/> : <ChevronRight size={10}/>}</th>
+                  {isDispPayExpanded && <th onClick={() => requestSort('dispGrossPay')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 bg-zinc-700/50 text-zinc-300">Gross Pay</th>}
+                  {isDispPayExpanded && <th onClick={() => requestSort('dispMarginPay')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 bg-zinc-700/50 text-zinc-300">Margin Pay</th>}
+                  {isDispPayExpanded && <th onClick={() => requestSort('dispFixedPay')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 bg-zinc-700/50 text-zinc-300">Fixed Pay</th>}
+                  {isDispPayExpanded && <th onClick={() => requestSort('dispSharedIns')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800 bg-zinc-700/50 text-zinc-300">Shared Ins.</th>}
                   <th onClick={() => requestSort('recruiting')} className="px-2 py-1.5 text-right cursor-pointer hover:text-white select-none border-b border-zinc-800">Recruiting</th>
                   <th onClick={() => requestSort('totalPnL')} className="px-2 py-1.5 text-right cursor-pointer hover:text-emerald-400 select-none border-b border-zinc-800 font-bold sticky right-[160px] bg-zinc-800 z-30 w-[90px] min-w-[90px]">Total PnL</th>
                 </>
@@ -740,6 +904,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
               let displayPO = disp.po;
               let displayTolls = disp.tolls;
               let displayDispPay = disp.dispPay;
+              let displayDispGrossPay = disp.dispGrossPay;
+              let displayDispMarginPay = disp.dispMarginPay;
+              let displayDispFixedPay = disp.dispFixedPay;
+              let displayDispSharedIns = disp.dispSharedIns;
               let displayRecruiting = disp.recruiting;
               let displayPnL = disp.totalPnL;
 
@@ -751,6 +919,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
               let displayAvgPO = disp.avgPOPerDriver || 0;
               let displayAvgTolls = disp.avgTollsPerDriver || 0;
               let displayAvgDispPay = disp.avgDispPayPerDriver || 0;
+              let displayAvgDispGrossPay = disp.avgDispGrossPayPerDriver || 0;
+              let displayAvgDispMarginPay = disp.avgDispMarginPayPerDriver || 0;
+              let displayAvgDispFixedPay = disp.avgDispFixedPayPerDriver || 0;
+              let displayAvgDispSharedIns = disp.avgDispSharedInsPerDriver || 0;
               let displayAvgRecruiting = disp.avgRecruitingPerDriver || 0;
               let displayAvgPnL = disp.avgPnLPerDriver || 0;
 
@@ -784,16 +956,16 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                       }
 
                       if (chartFilter.includes(':') && includedSubStats.length > 0) {
-                          let fgross = 0, fmargin = 0, fpnl = 0, frevColl = 0, ffuelRebate = 0, fwklyExp = 0, fpo = 0, ftolls = 0, fdispPay = 0, frecruiting = 0;
+                          let fgross = 0, fmargin = 0, fpnl = 0, frevColl = 0, ffuelRebate = 0, fwklyExp = 0, fpo = 0, ftolls = 0, fdispPay = 0, fdispGrossPay = 0, fdispMarginPay = 0, fdispFixedPay = 0, fdispSharedIns = 0, frecruiting = 0;
                           let fcount = 0, feffNonTeams = 0, feffDrivers = 0;
                           includedSubStats.forEach((sub: any) => {
-                              fgross += sub.gross; fmargin += sub.margin; fpnl += sub.pnl; frevColl += sub.revColl; ffuelRebate += sub.fuelRebate; fwklyExp += sub.wklyExp; fpo += sub.po; ftolls += sub.tolls; fdispPay += sub.dispPay; frecruiting += sub.recruiting;
+                              fgross += sub.gross; fmargin += sub.margin; fpnl += sub.pnl; frevColl += sub.revColl; ffuelRebate += sub.fuelRebate; fwklyExp += sub.wklyExp; fpo += sub.po; ftolls += sub.tolls; fdispPay += sub.dispPay; fdispGrossPay += sub.dispGrossPay; fdispMarginPay += sub.dispMarginPay; fdispFixedPay += sub.dispFixedPay; fdispSharedIns += sub.dispSharedIns; frecruiting += sub.recruiting;
                               fcount += sub.count; feffNonTeams += sub.effNonTeams; feffDrivers += sub.effDrivers;
                           });
                           
                           filteredDriversForStats.push([dName, {
                               ...s,
-                              gross: fgross, margin: fmargin, pnl: fpnl, revColl: frevColl, fuelRebate: ffuelRebate, wklyExp: fwklyExp, po: fpo, tolls: ftolls, dispPay: fdispPay, recruiting: frecruiting,
+                              gross: fgross, margin: fmargin, pnl: fpnl, revColl: frevColl, fuelRebate: ffuelRebate, wklyExp: fwklyExp, po: fpo, tolls: ftolls, dispPay: fdispPay, dispGrossPay: fdispGrossPay, dispMarginPay: fdispMarginPay, dispFixedPay: fdispFixedPay, dispSharedIns: fdispSharedIns, recruiting: frecruiting,
                               count: fcount, effNonTeams: feffNonTeams, effDrivers: feffDrivers,
                               subStats: new Map(includedSubStats.map((sub: any, i) => [i, sub]))
                           }]);
@@ -803,8 +975,8 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                   });
 
                   let validDivisors = 0;
-                  let fTotGross = 0, fTotMargin = 0, fTotPnL = 0, fTotRevColl = 0, fTotFuelRebate = 0, fTotWklyExp = 0, fTotPO = 0, fTotTolls = 0, fTotDispPay = 0, fTotRecruiting = 0;
-                  let fAvgGross = 0, fAvgMargin = 0, fAvgPnL = 0, fAvgRevColl = 0, fAvgFuelRebate = 0, fAvgWklyExp = 0, fAvgPO = 0, fAvgTolls = 0, fAvgDispPay = 0, fAvgRecruiting = 0;
+                  let fTotGross = 0, fTotMargin = 0, fTotPnL = 0, fTotRevColl = 0, fTotFuelRebate = 0, fTotWklyExp = 0, fTotPO = 0, fTotTolls = 0, fTotDispPay = 0, fTotDispGrossPay = 0, fTotDispMarginPay = 0, fTotDispFixedPay = 0, fTotDispSharedIns = 0, fTotRecruiting = 0;
+                  let fAvgGross = 0, fAvgMargin = 0, fAvgPnL = 0, fAvgRevColl = 0, fAvgFuelRebate = 0, fAvgWklyExp = 0, fAvgPO = 0, fAvgTolls = 0, fAvgDispPay = 0, fAvgDispGrossPay = 0, fAvgDispMarginPay = 0, fAvgDispFixedPay = 0, fAvgDispSharedIns = 0, fAvgRecruiting = 0;
 
                   filteredDriversForStats.forEach(([dName, s]: [string, any]) => {
                       if (String(s.status).toUpperCase() !== 'TERMINATED') activeTotal++;
@@ -836,6 +1008,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                       fTotPO += s.po;
                       fTotTolls += s.tolls;
                       fTotDispPay += s.dispPay;
+                      fTotDispGrossPay += s.dispGrossPay;
+                      fTotDispMarginPay += s.dispMarginPay;
+                      fTotDispFixedPay += s.dispFixedPay;
+                      fTotDispSharedIns += s.dispSharedIns;
                       fTotRecruiting += s.recruiting;
 
                       fAvgGross += (s.gross / divisor);
@@ -847,6 +1023,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                       fAvgPO += (s.po / divisor);
                       fAvgTolls += (s.tolls / divisor);
                       fAvgDispPay += (s.dispPay / divisor);
+                      fAvgDispGrossPay += (s.dispGrossPay / divisor);
+                      fAvgDispMarginPay += (s.dispMarginPay / divisor);
+                      fAvgDispFixedPay += (s.dispFixedPay / divisor);
+                      fAvgDispSharedIns += (s.dispSharedIns / divisor);
                       fAvgRecruiting += (s.recruiting / divisor);
                   });
 
@@ -859,6 +1039,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                   displayPO = fTotPO;
                   displayTolls = fTotTolls;
                   displayDispPay = fTotDispPay;
+                  displayDispGrossPay = fTotDispGrossPay;
+                  displayDispMarginPay = fTotDispMarginPay;
+                  displayDispFixedPay = fTotDispFixedPay;
+                  displayDispSharedIns = fTotDispSharedIns;
                   displayRecruiting = fTotRecruiting;
 
                   if (validDivisors > 0) {
@@ -871,9 +1055,13 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                       displayAvgPO = fAvgPO / validDivisors;
                       displayAvgTolls = fAvgTolls / validDivisors;
                       displayAvgDispPay = fAvgDispPay / validDivisors;
+                      displayAvgDispGrossPay = fAvgDispGrossPay / validDivisors;
+                      displayAvgDispMarginPay = fAvgDispMarginPay / validDivisors;
+                      displayAvgDispFixedPay = fAvgDispFixedPay / validDivisors;
+                      displayAvgDispSharedIns = fAvgDispSharedIns / validDivisors;
                       displayAvgRecruiting = fAvgRecruiting / validDivisors;
                   } else {
-                      displayAvgGross = 0; displayAvgMargin = 0; displayAvgPnL = 0; displayAvgRevColl = 0; displayAvgFuelRebate = 0; displayAvgWklyExp = 0; displayAvgPO = 0; displayAvgTolls = 0; displayAvgDispPay = 0; displayAvgRecruiting = 0;
+                      displayAvgGross = 0; displayAvgMargin = 0; displayAvgPnL = 0; displayAvgRevColl = 0; displayAvgFuelRebate = 0; displayAvgWklyExp = 0; displayAvgPO = 0; displayAvgTolls = 0; displayAvgDispPay = 0; displayAvgDispGrossPay = 0; displayAvgDispMarginPay = 0; displayAvgDispFixedPay = 0; displayAvgDispSharedIns = 0; displayAvgRecruiting = 0;
                   }
 
                   displayActiveCount = filteredDriversForStats.length;
@@ -922,7 +1110,11 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayAvgWklyExp)}</td>
                         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayAvgPO)}</td>
                         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayAvgTolls)}</td>
-                        <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayAvgDispPay)}</td>
+                        <td onClick={(e) => { e.stopPropagation(); setIsDispPayExpanded(!isDispPayExpanded); }} className="px-2 py-1 text-right text-purple-400 cursor-pointer hover:bg-zinc-800 transition-colors">{formatCurrency(displayAvgDispPay)}</td>
+                        {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400 bg-zinc-700/30">{formatCurrency(displayAvgDispGrossPay)}</td>}
+                        {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400 bg-zinc-700/30">{formatCurrency(displayAvgDispMarginPay)}</td>}
+                        {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400 bg-zinc-700/30">{formatCurrency(displayAvgDispFixedPay)}</td>}
+                        {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400 bg-zinc-700/30">{formatCurrency(displayAvgDispSharedIns)}</td>}
                         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayAvgRecruiting)}</td>
                         <td className={`px-2 py-1 text-right font-bold sticky right-[160px] z-10 w-[90px] min-w-[90px] ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900'} ${displayAvgPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(displayAvgPnL)}</td>
                       </>
@@ -935,7 +1127,11 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayWklyExp)}</td>
                         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayPO)}</td>
                         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayTolls)}</td>
-                        <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayDispPay)}</td>
+                        <td onClick={(e) => { e.stopPropagation(); setIsDispPayExpanded(!isDispPayExpanded); }} className="px-2 py-1 text-right text-purple-400 cursor-pointer hover:bg-zinc-800 transition-colors">{formatCurrency(displayDispPay)}</td>
+                        {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400 bg-zinc-700/30">{formatCurrency(displayDispGrossPay)}</td>}
+                        {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400 bg-zinc-700/30">{formatCurrency(displayDispMarginPay)}</td>}
+                        {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400 bg-zinc-700/30">{formatCurrency(displayDispFixedPay)}</td>}
+                        {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400 bg-zinc-700/30">{formatCurrency(displayDispSharedIns)}</td>}
                         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(displayRecruiting)}</td>
                         <td className={`px-2 py-1 text-right font-bold sticky right-[160px] z-10 w-[90px] min-w-[90px] ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900'} ${displayPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(displayPnL)}</td>
                       </>
@@ -1032,7 +1228,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
 
                     return (
                       <tr className="bg-zinc-950/50 relative z-50 [&>td]:border-b-2 [&>td]:border-l-2 [&>td]:border-r-2 [&>td]:border-emerald-500/50">
-                        <td colSpan={15} className="p-0 border-b border-zinc-800 relative z-50 overflow-visible">
+                        <td colSpan={isDispPayExpanded ? 19 : 15} className="p-0 border-b border-zinc-800 relative z-50 overflow-visible">
                           <div className="sticky left-0 p-4 z-50 overflow-visible" style={{ width: 'var(--visible-width, calc(100vw - 40px))' }}>
                             <div className={`grid grid-cols-1 ${expandedTab === 'list' ? 'md:grid-cols-1' : 'md:grid-cols-3'} gap-4 h-[260px] items-stretch`}>
                               
@@ -1155,7 +1351,11 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                                             <th className="px-2 py-1.5 text-right border-b border-zinc-700">Wkly Exp</th>
                                             <th className="px-2 py-1.5 text-right border-b border-zinc-700">PO</th>
                                             <th className="px-2 py-1.5 text-right border-b border-zinc-700">Tolls</th>
-                                            <th className="px-2 py-1.5 text-right border-b border-zinc-700">Disp Pay</th>
+                                            <th onClick={() => setIsDispPayExpanded(!isDispPayExpanded)} className="px-2 py-1.5 text-right border-b border-zinc-700 cursor-pointer hover:text-white flex items-center justify-end gap-1">Disp Pay {isDispPayExpanded ? <ChevronLeft size={10}/> : <ChevronRight size={10}/>}</th>
+                                            {isDispPayExpanded && <th className="px-2 py-1.5 text-right border-b border-zinc-700 bg-zinc-700/50 text-zinc-300">Gross Pay</th>}
+                                            {isDispPayExpanded && <th className="px-2 py-1.5 text-right border-b border-zinc-700 bg-zinc-700/50 text-zinc-300">Margin Pay</th>}
+                                            {isDispPayExpanded && <th className="px-2 py-1.5 text-right border-b border-zinc-700 bg-zinc-700/50 text-zinc-300">Fixed Pay</th>}
+                                            {isDispPayExpanded && <th className="px-2 py-1.5 text-right border-b border-zinc-700 bg-zinc-700/50 text-zinc-300">Shared Ins.</th>}
                                             <th className="px-2 py-1.5 text-right border-b border-zinc-700">Recruiting</th>
                                             <th className="px-2 py-1.5 text-right border-b border-zinc-700 font-bold text-emerald-400 sticky right-[80px] bg-zinc-800 z-30">PnL</th>
                                             <th className="px-2 py-1.5 text-center border-b border-zinc-700 sticky right-0 bg-zinc-800 z-30 w-[80px] min-w-[80px]">Diagnosis</th>
@@ -1203,7 +1403,11 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                                                   <td className="px-2 py-1 text-right text-purple-400/70">{formatCurrency(showAverages ? s.wklyExp/divisor : s.wklyExp)}</td>
                                                   <td className="px-2 py-1 text-right text-purple-400/70">{formatCurrency(showAverages ? s.po/divisor : s.po)}</td>
                                                   <td className="px-2 py-1 text-right text-purple-400/70">{formatCurrency(showAverages ? s.tolls/divisor : s.tolls)}</td>
-                                                  <td className="px-2 py-1 text-right text-purple-400/70">{formatCurrency(showAverages ? s.dispPay/divisor : s.dispPay)}</td>
+                                                  <td onClick={(e) => { e.stopPropagation(); setIsDispPayExpanded(!isDispPayExpanded); }} className="px-2 py-1 text-right text-purple-400/70 cursor-pointer hover:bg-zinc-800 transition-colors">{formatCurrency(showAverages ? s.dispPay/divisor : s.dispPay)}</td>
+                                                  {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400/80 bg-zinc-700/30">{formatCurrency(showAverages ? s.dispGrossPay/divisor : s.dispGrossPay)}</td>}
+                                                  {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400/80 bg-zinc-700/30">{formatCurrency(showAverages ? s.dispMarginPay/divisor : s.dispMarginPay)}</td>}
+                                                  {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400/80 bg-zinc-700/30">{formatCurrency(showAverages ? s.dispFixedPay/divisor : s.dispFixedPay)}</td>}
+                                                  {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-400/80 bg-zinc-700/30">{formatCurrency(showAverages ? s.dispSharedIns/divisor : s.dispSharedIns)}</td>}
                                                   <td className="px-2 py-1 text-right text-purple-400/70">{formatCurrency(showAverages ? s.recruiting/divisor : s.recruiting)}</td>
                                                   <td className={`px-2 py-1 text-right font-bold sticky right-[80px] bg-zinc-900 z-10 ${drvAvgPnL >= 0 ? 'text-emerald-500/70' : 'text-rose-500/70'}`}>{formatCurrency(showAverages ? drvAvgPnL : s.pnl)}</td>
                                                   <td className="px-2 py-1 text-center sticky right-0 bg-zinc-900 z-10 w-[80px] min-w-[80px]"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${drvDiagColor}`}>{drvDiagnosis}</span></td>
@@ -1228,6 +1432,10 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                                                       <td className="px-2 py-1 text-right text-purple-400/40">{formatCurrency(showAverages ? sub.po/subDivisor : sub.po)}</td>
                                                       <td className="px-2 py-1 text-right text-purple-400/40">{formatCurrency(showAverages ? sub.tolls/subDivisor : sub.tolls)}</td>
                                                       <td className="px-2 py-1 text-right text-purple-400/40">{formatCurrency(showAverages ? sub.dispPay/subDivisor : sub.dispPay)}</td>
+                                                      {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">{formatCurrency(showAverages ? sub.dispGrossPay/subDivisor : sub.dispGrossPay)}</td>}
+                                                      {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">{formatCurrency(showAverages ? sub.dispMarginPay/subDivisor : sub.dispMarginPay)}</td>}
+                                                      {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">{formatCurrency(showAverages ? sub.dispFixedPay/subDivisor : sub.dispFixedPay)}</td>}
+                                                      {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">{formatCurrency(showAverages ? sub.dispSharedIns/subDivisor : sub.dispSharedIns)}</td>}
                                                       <td className="px-2 py-1 text-right text-purple-400/40">{formatCurrency(showAverages ? sub.recruiting/subDivisor : sub.recruiting)}</td>
                                                       <td className={`px-2 py-1 text-right font-bold sticky right-[80px] bg-zinc-950/60 z-10 ${subAvgPnL >= 0 ? 'text-emerald-500/40' : 'text-rose-500/40'}`}>{formatCurrency(showAverages ? subAvgPnL : sub.pnl)}</td>
                                                       <td className="px-2 py-1 sticky right-0 bg-zinc-950/60 z-10 w-[80px] min-w-[80px]"></td>
@@ -1353,35 +1561,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
               );
             })}
           </tbody>
-          <tfoot className="sticky bottom-[-1px] bg-zinc-800 text-zinc-200 border-t border-zinc-700 font-sans z-30">
-            <tr>
-              <td className="px-2 py-1.5 font-bold uppercase sticky left-0 bg-zinc-800 z-30 border-t border-zinc-700">
-                <select
-                  value={footerAggType}
-                  onChange={(e) => setFooterAggType(e.target.value as any)}
-                  className="bg-transparent border-none text-zinc-200 font-bold uppercase cursor-pointer focus:outline-none text-[11px]"
-                >
-                  <option value="total" className="bg-zinc-800 text-zinc-200">Total</option>
-                  <option value="average" className="bg-zinc-800 text-zinc-200">Average</option>
-                  <option value="median" className="bg-zinc-800 text-zinc-200">Median</option>
-                </select>
-              </td>
-              <td className="px-2 py-1.5 border-t border-zinc-700"></td>
-              <td className="px-2 py-1.5 text-center font-bold border-t border-zinc-700">{Number(footerDrivers).toFixed(0)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-yellow-400 border-t border-zinc-700">{formatCurrency(footerGross)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-yellow-400 border-t border-zinc-700">{formatCurrency(footerMargin)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-purple-400 border-t border-zinc-700">{formatCurrency(footerRevColl)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-purple-400 border-t border-zinc-700">{formatCurrency(footerFuelRebate)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-purple-400 border-t border-zinc-700">{formatCurrency(footerWklyExp)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-purple-400 border-t border-zinc-700">{formatCurrency(footerPO)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-purple-400 border-t border-zinc-700">{formatCurrency(footerTolls)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-purple-400 border-t border-zinc-700">{formatCurrency(footerDispPay)}</td>
-              <td className="px-2 py-1.5 text-right font-bold text-purple-400 border-t border-zinc-700">{formatCurrency(footerRecruiting)}</td>
-              <td className={`px-2 py-1.5 text-right font-bold sticky right-[160px] bg-zinc-800 z-30 w-[90px] min-w-[90px] border-t border-zinc-700 ${footerPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(footerPnL)}</td>
-              <td className="px-2 py-1.5 sticky right-[80px] bg-zinc-800 z-30 w-[80px] min-w-[80px] border-t border-zinc-700"></td>
-              <td className="px-2 py-1.5 sticky right-0 bg-zinc-800 z-30 w-[80px] min-w-[80px] border-t border-zinc-700"></td>
-            </tr>
-          </tfoot>
+          
                   </table>
       </div>
     </div>

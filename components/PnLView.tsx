@@ -106,6 +106,7 @@ const MasterTable: React.FC<{
 }> = ({ companyMetrics, drivers, calculateMetrics, totalActiveCount, selectedDate, groupBy, chartData = [], isAverageView = false, searchQuery = '', configContracts = [], tableColumns = [] }) => {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' } | null>({ key: 'name', direction: 'asc' });
       const [isRevColExpanded, setIsRevColExpanded] = useState(false);
+      const [isFuelExpanded, setIsFuelExpanded] = useState(false);
       const [isPoModalOpen, setIsPoModalOpen] = useState(false);
       const [isExpModalOpen, setIsExpModalOpen] = useState(false);
       const tableRef = useRef<HTMLTableElement>(null);
@@ -287,12 +288,12 @@ const MasterTable: React.FC<{
                             cell.style.zIndex = orig.zIndex;
                             cell.style.backgroundColor = orig.backgroundColor;
                                     }
-                                    row.appendChild(cell);
-                                });
-                            }
-                        });
-                    };
-                  }, [tableColumns, isAverageView, isRevColExpanded, selectedDate, drivers, sortConfig, groupBy]);
+                                   row.appendChild(cell);
+                            });
+                        }
+                    });
+                };
+              }, [tableColumns, isAverageView, isRevColExpanded, isFuelExpanded, selectedDate, drivers, sortConfig, groupBy]);
 
                   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'desc';
@@ -372,8 +373,8 @@ const MasterTable: React.FC<{
             rawEffCount: 0, effCount: 0, effNonTeamsCount: 0, effTrailersCount: 0, gross: 0, companyPay: 0,
             margin: 0, fuelSavings: 0, cogs: 0, dispatcherPay: 0, dispGrossAmount: 0, dispMarginAmount: 0, dispSharedLiability: 0, dispFixedAmount: 0, allocatedFixed: 0, baseFixed: 0, adjFixed: 0, totalPO: 0, totalPOCov: 0,
             totalEscrow: 0, totalBalance: 0, totalRecruiting: 0, netIncome: 0, effNonTeams: 0, pnlPerDriver: 0,
-            driverPay: 0, fuel: 0, maint: 0, tolls: 0, faults: 0, insuranceExp: 0, fuelRebate: 0,
-            insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0,
+            driverPay: 0, fuel: 0, wosFuel: 0, maint: 0, tolls: 0, faults: 0, insuranceExp: 0, fuelRebate: 0,
+        insLiabAuto: 0, insLiabGen: 0, insCargo: 0, insLeaseGapCoverage: 0, insTrailerInterchange: 0, insLago: 0, insPhdPremium: 0, insPhdTruck: 0, insPhdTrailer: 0,
             fcTruck: 0, fcCpm: 0, fcTrailer: 0, fcPlates: 0, fcTelematics: 0, fcPhone: 0, fcOffice: 0, fcRent: 0, fcBackupMc: 0, fcBoReg: 0, fcBoTech: 0, fcFactoring: 0,
             pnlCompanyPay: 0, pnlFuelRebate: 0, pnlAllocatedFixed: 0, pnlTotalPOCov: 0, pnlTotalRecruiting: 0, pnlTolls: 0, pnlDispGrossAmount: 0, pnlDispMarginAmount: 0,
             pnlRevBase: 0, pnlFranchiseBase: 0, pnlPoDeductions: 0, pnlPoSettle: 0, pnlNegNetPay: 0, pnlStrictNegNetPay: 0, pnlBalanceSettle: 0, pnlBalanceChange: 0, pnlExcludedBalanceChange: 0, pnlIncludedBalanceChange: 0, pnlTruckFloat: 0, pnlTruckWkly: 0, pnlOccIns: 0, pnlEld: 0, pnlIfta: 0, pnlMaintSupport: 0, pnlLiability: 0, pnlTruckPhd: 0, pnlTrailer: 0, pnlTrailerPhd: 0, pnlEscrowAdj: 0, pnlTollsAdj: 0, pnlCashAdv: 0, pnlCpmAdj: 0, pnlFuelAdj: 0, pnlProrated: 0, pnlZeroMiDrop: 0,
@@ -408,10 +409,11 @@ const MasterTable: React.FC<{
             t.totalBalance += m.totalBalance;
             t.totalRecruiting += m.totalRecruiting;
             t.netIncome += m.netIncome;
-            t.effNonTeams += m.effNonTeams;
-            t.driverPay += m.driverPay || 0;
-            t.fuel += m.fuel || 0;
-            t.fuelRebate += m.fuelRebate || 0;
+        t.effNonTeams += m.effNonTeams;
+        t.driverPay += m.driverPay || 0;
+        t.fuel += m.fuel || 0;
+        t.wosFuel += m.wosFuel || 0;
+        t.fuelRebate += m.fuelRebate || 0;
             t.maint += m.maint || 0;
             t.tolls += m.tolls || 0;
             t.faults += m.faults || 0;
@@ -671,12 +673,13 @@ const MasterTable: React.FC<{
             <div className="flex justify-between gap-4"><span>Trailer Interchange:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insTrailerInterchange, div)))}</span></div>
             <div className="flex justify-between gap-4"><span>PhD Premium:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdPremium, div)))}</span></div>
             <div className="flex justify-between gap-4"><span>PhD Truck:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTruck, div)))}</span></div>
-            <div className="flex justify-between gap-4"><span>PhD Trailer:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTrailer, div)))}</span></div>
-          </div>
-        )}
-      />
-       <td className="px-1 py-0.5 text-right text-purple-400">{val(metrics.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.fuel, div)))}` : formatCurrency(val(metrics.fuel, div))}</td>
-      <td className="px-1 py-0.5 text-right text-blue-400">
+           <div className="flex justify-between gap-4"><span>PhD Trailer:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.insPhdTrailer, div)))}</span></div>
+      </div>
+    )}
+  />
+   <td className="px-1 py-0.5 text-right text-purple-400">{val(metrics.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.fuel, div)))}` : formatCurrency(val(metrics.fuel, div))}</td>
+   {isFuelExpanded && <td className="px-1 py-0.5 text-right text-purple-400 opacity-70">{val(metrics.wosFuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.wosFuel, div)))}` : formatCurrency(val(metrics.wosFuel, div))}</td>}
+  <td className="px-1 py-0.5 text-right text-blue-400">
         {formatCurrency(val(metrics.companyPay, div))}
       </td>
 {isRevColExpanded && (
@@ -1357,17 +1360,33 @@ const MasterTable: React.FC<{
               </div>
            </th>
                  <th onClick={() => requestSort('fuel')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300">
-                   Fuel {sortConfig?.key === 'fuel' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[320px] pointer-events-none transform -translate-x-[80%] flex flex-col gap-1.5 whitespace-normal break-words">
-                     <div className="font-bold text-white mb-0.5">Fuel Calculation:</div>
-                     <ul className="list-disc pl-4 flex flex-col gap-1">
-                       <li><span className="font-semibold text-emerald-400">Positive Values (Fuel Saved):</span> For MCLOO, OO, LOO, LPOO, MCOO contracts. <br/>Calculation: <span className="font-mono text-[9px]">(Retail Price - Discounted Price) * Quantity</span></li>
-                       <li><span className="font-semibold text-rose-400">Negative Values (Fuel Spent):</span> For TPOG, POG, CPM &amp; Others. <br/>Calculation: <span className="font-mono text-[9px]">Discounted Price * Quantity</span></li>
-                     </ul>
-                    
-                   </div>
-                 </th>
-                 <th onClick={() => requestSort('companyPay')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
+               <div className="flex items-center justify-end gap-1">
+                 Fuel {sortConfig?.key === 'fuel' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
+                 <button onClick={(e) => { e.stopPropagation(); setIsFuelExpanded(!isFuelExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1">
+                   <ChevronRight size={10} className={`transition-transform ${isFuelExpanded ? 'rotate-180' : ''}`} />
+                 </button>
+               </div>
+               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[320px] pointer-events-none transform -translate-x-[80%] flex flex-col gap-1.5 whitespace-normal break-words">
+                 <div className="font-bold text-white mb-0.5">Fuel Calculation:</div>
+                 <ul className="list-disc pl-4 flex flex-col gap-1">
+                   <li><span className="font-semibold text-emerald-400">Positive Values (Fuel Saved):</span> For MCLOO, OO, LOO, LPOO, MCOO contracts. <br/>Calculation: <span className="font-mono text-[9px]">(Retail Price - Discounted Price) * Quantity</span></li>
+                   <li><span className="font-semibold text-rose-400">Negative Values (Fuel Spent):</span> For TPOG, POG, CPM &amp; Others. <br/>Calculation: <span className="font-mono text-[9px]">Discounted Price * Quantity</span></li>
+                 </ul>
+                 <div className="text-[9px] text-zinc-400 mt-1 italic border-t border-zinc-700 pt-1 leading-tight">
+                   * Note: If spotter fuel is recorded and greater than 0, it takes precedence and is used instead of the standard fuel value.
+                 </div>
+               </div>
+             </th>
+             {isFuelExpanded && (
+               <th onClick={() => requestSort('wosFuel')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
+                 <span className="opacity-70 group-hover:opacity-100 transition-opacity">W/O SPOTTER {sortConfig?.key === 'wosFuel' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</span>
+                 <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                   <div className="font-bold text-white mb-0.5">Without Spotter Fuel:</div>
+                   <div>Reflects the estimated fuel costs or savings assuming no spotter fuel adjustments were applied.</div>
+                 </div>
+               </th>
+             )}
+             <th onClick={() => requestSort('companyPay')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
               <div className="flex items-center justify-end gap-1">
                 Rev. Col. {sortConfig?.key === 'companyPay' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                 <button onClick={(e) => { e.stopPropagation(); setIsRevColExpanded(!isRevColExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1">
@@ -1713,12 +1732,12 @@ const MasterTable: React.FC<{
               <td key={`empty-driver-cols-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
             ))}
             {!isAverageView && Array.from({ length: 3 }).map((_, i) => (
-              <td key={`empty-counts-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
-            ))}
-            {Array.from({ length: isRevColExpanded ? (groupBy === 'Driver' ? 22 : 23) : (groupBy === 'Driver' ? 12 : 13) }).map((_, i) => (
-               <td key={`empty-metrics-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
-             ))}
-            {show4w && <td className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>}
+          <td key={`empty-counts-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
+        ))}
+        {Array.from({ length: (isRevColExpanded ? (groupBy === 'Driver' ? 22 : 23) : (groupBy === 'Driver' ? 12 : 13)) + (isFuelExpanded ? 1 : 0) }).map((_, i) => (
+           <td key={`empty-metrics-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
+         ))}
+        {show4w && <td className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>}
             {show4w && <td className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>}
             <td className="p-0 border-0 pointer-events-none sticky right-0 z-10 bg-zinc-950 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px]" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
           </tr>
@@ -1801,11 +1820,12 @@ const MasterTable: React.FC<{
                         <div className="flex justify-between gap-4"><span>PhD Premium:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdPremium, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>PhD Truck:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdTruck, div)))}</span></div>
                         <div className="flex justify-between gap-4"><span>PhD Trailer:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.insPhdTrailer, div)))}</span></div>
-                      </div>
-                    </td>
-                     <td className="px-1 py-1 text-right text-purple-400">{val(dynamicTotals.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.fuel, div)))}` : formatCurrency(val(dynamicTotals.fuel, div))}</td>
-                    <td className="px-1 py-1 text-right text-blue-400">
-                      {formatCurrency(val(dynamicTotals.pnlCompanyPay !== undefined ? dynamicTotals.pnlCompanyPay : dynamicTotals.companyPay, div))}
+                     </div>
+                </td>
+                 <td className="px-1 py-1 text-right text-purple-400">{val(dynamicTotals.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.fuel, div)))}` : formatCurrency(val(dynamicTotals.fuel, div))}</td>
+                 {isFuelExpanded && <td className="px-1 py-1 text-right text-purple-400 opacity-70">{val(dynamicTotals.wosFuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.wosFuel, div)))}` : formatCurrency(val(dynamicTotals.wosFuel, div))}</td>}
+                <td className="px-1 py-1 text-right text-blue-400">
+                  {formatCurrency(val(dynamicTotals.pnlCompanyPay !== undefined ? dynamicTotals.pnlCompanyPay : dynamicTotals.companyPay, div))}
                     </td>
                     {isRevColExpanded && (
                       <>
@@ -2221,8 +2241,9 @@ const PnLView: React.FC<PnLViewProps> = ({
     { id: 'Net Pay', label: 'Net Pay', pinned: null, hidden: false },
     { id: 'Med. Net Pay', label: 'Med. Net Pay', pinned: null, hidden: false },
     { id: 'Ins. Exp.', label: 'Ins. Exp.', pinned: null, hidden: false },
-    { id: 'Fuel', label: 'Fuel', pinned: null, hidden: false },
-    { id: 'Rev. Col.', label: 'Rev. Col.', pinned: null, hidden: false },
+{ id: 'Fuel', label: 'Fuel', pinned: null, hidden: false },
+{ id: 'W/O SPOTTER', label: 'W/O SPOTTER', pinned: null, hidden: false },
+{ id: 'Rev. Col.', label: 'Rev. Col.', pinned: null, hidden: false },
     { id: 'Rev Base', label: 'Rev Base', pinned: null, hidden: false },
     { id: 'Bal Change', label: 'Bal Change', pinned: null, hidden: false },
     { id: 'Rev Prorated', label: 'Rev Prorated', pinned: null, hidden: false },
@@ -3268,6 +3289,8 @@ const PnLView: React.FC<PnLViewProps> = ({
           originalDbTolls: (d as any).tolls,
           fuelCost: Number(d.fuelCost || 0) * companyTakeMulti,
           fuelSavings: Number(d.fuelSavings || 0) * companyTakeMulti,
+          spotter_fuel_saved: Number((d as any).spotter_fuel_saved || 0) * companyTakeMulti,
+          fuel_saved: Number((d as any).fuel_saved || 0) * companyTakeMulti,
           fuelRebate: Number(d.fuelUsed || (d as any).fuel_quantity || 0) * (getActiveAmount('Fuel Rebate', date, d.companyId, uniqueCompsInWeek.length).amount || 0),
           recruitingCost: Number(d.recruitingCost || 0) * companyTakeMulti,
           calculatedFixedCost: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
@@ -3459,7 +3482,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                       case 'Med Net Pay': fieldValue = d.netPay ?? 0; break;
                       case 'Disp. Pay': fieldValue = d.dispatcherCommission || 0; break;
                       case 'Ins. Exp.': fieldValue = (d as any).insuranceCost || 0; break;
-                      case 'Fuel': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : Math.abs(d.fuelSavings || 0); break;
+                      case 'Fuel': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : (Number((d as any).spotter_fuel_saved ?? 0) !== 0 ? Number((d as any).spotter_fuel_saved ?? 0) : Number((d as any).fuel_saved ?? d.fuelSavings ?? 0)); break;
                       case 'Rev. Col.': fieldValue = d.companyPay || 0; break;
                       case 'Rev Base': fieldValue = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0); break;
                       case 'Bal Change': fieldValue = Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0) + Number((d as any).po_settle ?? (d as any).poSettle ?? 0) - Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0); break;
@@ -3469,7 +3492,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                       case 'Tolls Adj': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
                       case 'Cash Adv': fieldValue = Number((d as any).cash_advance_percent ?? (d as any).cashAdvancePercent ?? 0); break;
                       case 'CPM Adj': fieldValue = Number((d as any).revenue_cpm ?? (d as any).revenueCpm ?? 0) * (Number(d.milesDriven) || 0); break;
-                      case 'Fuel Adj': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : Math.abs(d.fuelSavings || 0); break;
+                      case 'Fuel Adj': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : (Number((d as any).spotter_fuel_saved ?? 0) !== 0 ? Number((d as any).spotter_fuel_saved ?? 0) : Number((d as any).fuel_saved ?? d.fuelSavings ?? 0)); break;
                       case 'Fuel Reb.': fieldValue = (d as any).fuelRebate || 0; break;
                       case 'Wkly Exp.': fieldValue = (d as any).calculatedFixedCost || 0; break;
                       case 'Tolls': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
@@ -3678,14 +3701,23 @@ if (isCategorical) {
     const margin = initialDrivers.reduce((sum, d) => sum + d.marginAmount, 0);
     const fuelSavings = initialDrivers.reduce((sum, d) => sum + (d.fuelSavings || 0), 0);
     const driverPay = initialDrivers.reduce((sum, d) => sum + d.netPay, 0);
-     const fuel = initialDrivers.reduce((sum, d) => {
-         const ct = d.contractType || '';
-         if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
-             return sum - Math.abs(d.fuelCost || 0);
-         }
-         return sum + Math.abs(d.fuelSavings || 0);
-     }, 0);
-     const maint = initialDrivers.reduce((sum, d) => sum + d.maintenanceCost, 0);
+ const fuel = initialDrivers.reduce((sum, d) => {
+     const ct = d.contractType || '';
+     if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
+         return sum - Math.abs(d.fuelCost || 0);
+     }
+     const spotter = Number((d as any).spotter_fuel_saved ?? 0);
+     const saved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
+     return sum + (spotter !== 0 ? spotter : saved);
+ }, 0);
+ const wosFuel = initialDrivers.reduce((sum, d) => {
+     const ct = d.contractType || '';
+     if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
+         return sum - Math.abs(d.fuelCost || 0);
+     }
+     return sum + Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
+ }, 0);
+ const maint = initialDrivers.reduce((sum, d) => sum + d.maintenanceCost, 0);
     const faults = initialDrivers.reduce((sum, d) => sum + d.driverFaultExpenses, 0);
     
     const totalPO = initialDrivers.reduce((sum, d) => sum + (d.poAmount || 0), 0);
@@ -3870,10 +3902,12 @@ if (isCategorical) {
         const dTrlPhd = Number((d as any).trailer_phd ?? (d as any).trailerPhd ?? 0);
         
         const dCash = Number((d as any).cash_advance_percent ?? (d as any).cashAdvancePercent ?? 0);
-        const dRevCpm = Number((d as any).revenue_cpm ?? (d as any).revenueCpm ?? 0);
-        const dMiles = Number((d as any).total_miles ?? d.milesDriven ?? 0);
-        const fSaved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
-        const fSpent = Number((d as any).fuel_spent ?? (d as any).fuelCost ?? 0);
+    const dRevCpm = Number((d as any).revenue_cpm ?? (d as any).revenueCpm ?? 0);
+    const dMiles = Number((d as any).total_miles ?? d.milesDriven ?? 0);
+    const spotter = Number((d as any).spotter_fuel_saved ?? 0);
+    const saved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
+    const fSaved = spotter !== 0 ? spotter : saved;
+    const fSpent = Number((d as any).fuel_spent ?? (d as any).fuelCost ?? 0);
 
         const revWithoutFuelVal = Number((d as any).rev_without_fuel ?? (d as any).revWithoutFuel ?? 0);
         const mileCapFactor = (revWithoutFuelVal > 0 && dMiles === 0) ? 0 : 1;
@@ -4078,9 +4112,9 @@ if (isCategorical) {
     const netIncome = pnlCompanyPay + pnlFuelRebate + pnlDispGrossAmount + pnlDispMarginAmount - pnlAllocatedFixed - Math.abs(pnlTotalPOCov) - Math.abs(pnlTotalRecruiting) - Math.abs(pnlTolls);
     const pnlPerDriver = effNonTeams > 0 ? netIncome / effNonTeams : 0;
 
-    return {
-      rawEffCount, effCount, effNonTeamsCount, effTrailersCount, gross, margin, fuelSavings, companyPay, cogs, allocatedFixed, baseFixed, adjFixed, netIncome, pnlPerDriver,
-      driverPay, fuel, maint, tolls, faults, dispatcherPay, dispGrossAmount, dispMarginAmount, dispSharedLiability, dispFixedAmount, fullSharedLiability, totalFixedPerUnit,
+   return {
+  rawEffCount, effCount, effNonTeamsCount, effTrailersCount, gross, margin, fuelSavings, companyPay, cogs, allocatedFixed, baseFixed, adjFixed, netIncome, pnlPerDriver,
+  driverPay, fuel, wosFuel, maint, tolls, faults, dispatcherPay, dispGrossAmount, dispMarginAmount, dispSharedLiability, dispFixedAmount, fullSharedLiability, totalFixedPerUnit,
       totalPO, totalPOCov, totalEscrow, totalBalance, totalRecruiting,
       effNonTeams, currentPayDate,
       numOfTrucks, avgTruckPrice, numOfTrailers, avgTrailerPrice, truckUtilization, trailerUtilization, totalCalculatedTrucks, totalCalculatedTrailers,
@@ -4371,23 +4405,40 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
             totalNetIncome += drvM.netIncome;
          });
 
-         row[`${key}_gross`] = m.gross;
-         row[`${key}_netIncome`] = totalNetIncome;
-         row[`${key}_margin`] = m.margin;
+         const div = m.effNonTeamsCount > 0 ? m.effNonTeamsCount : (m.effCount > 0 ? m.effCount : 1);
+         const assign = (k: string, v: number) => { row[`${key}_${k}`] = v; row[`${key}_${k}Avg`] = v / div; };
+         
+         assign('gross', m.gross);
+         assign('margin', m.margin);
+         assign('driverPay', m.driverPay);
+         assign('insuranceExp', m.insuranceExp);
+         assign('fuel', m.fuel);
+         assign('wosFuel', m.wosFuel);
+         assign('companyPay', m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : m.companyPay);
+         assign('pnlRevBase', m.pnlRevBase);
+         assign('pnlProrated', m.pnlProrated);
+         assign('pnlZeroMiDrop', m.pnlZeroMiDrop);
+         assign('pnlTollsAdj', m.pnlTollsAdj);
+         assign('pnlCashAdv', m.pnlCashAdv);
+         assign('pnlCpmAdj', m.pnlCpmAdj);
+         assign('pnlFuelAdj', m.pnlFuelAdj);
+         assign('fullSharedLiability', m.fullSharedLiability);
+         assign('fuelRebate', m.pnlFuelRebate !== undefined ? m.pnlFuelRebate : m.fuelRebate);
+         assign('allocatedFixed', m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : m.allocatedFixed);
+         assign('tolls', m.pnlTolls !== undefined ? m.pnlTolls : m.tolls);
+         assign('totalPOCov', m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : m.totalPOCov);
+         assign('dispatcherPay', m.dispatcherPay);
+         assign('totalRecruiting', m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : m.totalRecruiting);
+         assign('netIncome', totalNetIncome);
+
          row[`${key}_pnlPerDriver`] = m.pnlPerDriver; 
          row[`${key}_balance`] = m.totalBalance;
          row[`${key}_effCount`] = m.effCount;
          row[`${key}_effNonTeamsCount`] = m.effNonTeamsCount;
          row[`${key}_effTrailersCount`] = m.effTrailersCount;
-         row[`${key}_companyPay`] = m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : m.companyPay;
          row[`${key}_cogs`] = m.cogs;
-         row[`${key}_dispatcherPay`] = m.dispatcherPay;
-         row[`${key}_allocatedFixed`] = m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : m.allocatedFixed;
-         row[`${key}_tolls`] = m.pnlTolls !== undefined ? m.pnlTolls : m.tolls;
          row[`${key}_totalPO`] = m.totalPO;
-         row[`${key}_totalPOCov`] = m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : m.totalPOCov;
          row[`${key}_totalEscrow`] = m.totalEscrow;
-         row[`${key}_totalRecruiting`] = m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : m.totalRecruiting;
       };
 
       const neededEntities = new Set(selectedEntities);
@@ -4421,6 +4472,8 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                   fNetIncome += m.netIncome / 2;
               });
               row['COMPANY_netIncome'] -= fNetIncome;
+              const cDiv = row['COMPANY_effNonTeamsCount'] > 0 ? row['COMPANY_effNonTeamsCount'] : (row['COMPANY_effCount'] > 0 ? row['COMPANY_effCount'] : 1);
+              row['COMPANY_netIncomeAvg'] = row['COMPANY_netIncome'] / cDiv;
           }
       }
       
@@ -4469,7 +4522,12 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
         }));
         if (franDrivers.length > 0) {
           let tNet = 0;
-          let fGross = 0, fMargin = 0, fCompanyPay = 0, fAllocatedFixed = 0, fTolls = 0, fTotalPOCov = 0, fTotalRecruiting = 0;
+          let fGross = 0, fMargin = 0, fDriverPay = 0, fInsuranceExp = 0, fFuel = 0, fWosFuel = 0;
+          let fCompanyPay = 0, fPnlRevBase = 0, fPnlProrated = 0, fPnlZeroMiDrop = 0, fPnlTollsAdj = 0;
+          let fPnlCashAdv = 0, fPnlCpmAdj = 0, fPnlFuelAdj = 0, fFullSharedLiability = 0, fFuelRebate = 0;
+          let fAllocatedFixed = 0, fTolls = 0, fTotalPOCov = 0, fDispatcherPay = 0, fTotalRecruiting = 0;
+          let fEffNT = 0, fEffTr = 0, fEffCt = 0;
+
           const byName = new Map<string, any[]>();
           franDrivers.forEach((d: any) => {
             const n = d.name || 'Unknown';
@@ -4480,22 +4538,46 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
             const m = calculateMetrics(recs, true);
             fGross += m.gross;
             fMargin += m.margin;
+            fDriverPay += m.driverPay;
+            fInsuranceExp += m.insuranceExp;
+            fFuel += m.fuel;
+            fWosFuel += m.wosFuel;
             fCompanyPay += m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay || 0);
+            fPnlRevBase += m.pnlRevBase;
+            fPnlProrated += m.pnlProrated;
+            fPnlZeroMiDrop += m.pnlZeroMiDrop;
+            fPnlTollsAdj += m.pnlTollsAdj;
+            fPnlCashAdv += m.pnlCashAdv;
+            fPnlCpmAdj += m.pnlCpmAdj;
+            fPnlFuelAdj += m.pnlFuelAdj;
+            fFullSharedLiability += m.fullSharedLiability;
+            fFuelRebate += m.pnlFuelRebate !== undefined ? m.pnlFuelRebate : m.fuelRebate;
             fAllocatedFixed += m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed || 0);
             fTolls += Math.abs(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls || 0));
             fTotalPOCov += Math.abs(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov || 0));
+            fDispatcherPay += m.dispatcherPay;
             fTotalRecruiting += Math.abs(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting || 0));
             tNet += m.netIncome / 2;
+            fEffNT += m.effNonTeamsCount;
+            fEffTr += m.effTrailersCount;
+            fEffCt += m.effCount;
           });
-          row['TPOG (Franchise PnL)_netIncome'] = tNet;
-          row['TPOG (Franchise PnL)_gross'] = fGross;
-          row['TPOG (Franchise PnL)_margin'] = fMargin;
-          row['TPOG (Franchise PnL)_companyPay'] = fCompanyPay;
-          row['TPOG (Franchise PnL)_allocatedFixed'] = fAllocatedFixed;
-          row['TPOG (Franchise PnL)_tolls'] = fTolls;
-          row['TPOG (Franchise PnL)_totalPOCov'] = fTotalPOCov;
-          row['TPOG (Franchise PnL)_totalRecruiting'] = fTotalRecruiting;
           
+          const div = fEffNT > 0 ? fEffNT : (fEffCt > 0 ? fEffCt : 1);
+          const assign = (k: string, v: number) => { row[`TPOG (Franchise PnL)_${k}`] = v; row[`TPOG (Franchise PnL)_${k}Avg`] = v / div; };
+          
+          assign('gross', fGross); assign('margin', fMargin); assign('driverPay', fDriverPay);
+          assign('insuranceExp', fInsuranceExp); assign('fuel', fFuel); assign('wosFuel', fWosFuel);
+          assign('companyPay', fCompanyPay); assign('pnlRevBase', fPnlRevBase); assign('pnlProrated', fPnlProrated);
+          assign('pnlZeroMiDrop', fPnlZeroMiDrop); assign('pnlTollsAdj', fPnlTollsAdj); assign('pnlCashAdv', fPnlCashAdv);
+          assign('pnlCpmAdj', fPnlCpmAdj); assign('pnlFuelAdj', fPnlFuelAdj); assign('fullSharedLiability', fFullSharedLiability);
+          assign('fuelRebate', fFuelRebate); assign('allocatedFixed', fAllocatedFixed); assign('tolls', fTolls);
+          assign('totalPOCov', fTotalPOCov); assign('dispatcherPay', fDispatcherPay); assign('totalRecruiting', fTotalRecruiting);
+          assign('netIncome', tNet);
+
+          row['TPOG (Franchise PnL)_effNonTeamsCount'] = fEffNT;
+          row['TPOG (Franchise PnL)_effTrailersCount'] = fEffTr;
+          row['TPOG (Franchise PnL)_effCount'] = fEffCt;
         }
       }
       uniqueCompanies.forEach(cId => {
@@ -4562,14 +4644,29 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
         let color = colorBase;
 
         const metricLabels: any = {
-          gross: 'Gross', netIncome: 'Total PnL', margin: 'Margin',
-          companyPay: 'Rev. Col.', allocatedFixed: 'Wkly Exp.',
-          totalPOCov: 'PO', totalRecruiting: 'Recruiting', tolls: 'Tolls'
+          gross: 'Gross', grossAvg: 'Gross Avg', margin: 'Margin', marginAvg: 'Margin Avg',
+          driverPay: 'Net Pay', driverPayAvg: 'Net Pay Avg', insuranceExp: 'Ins. Exp.', insuranceExpAvg: 'Ins. Exp. Avg',
+          fuel: 'Fuel', fuelAvg: 'Fuel Avg', wosFuel: 'W/O SPOTTER', wosFuelAvg: 'W/O SPOTTER Avg',
+          companyPay: 'Rev. Col.', companyPayAvg: 'Rev. Col. Avg', pnlRevBase: 'Rev Base', pnlRevBaseAvg: 'Rev Base Avg',
+          pnlProrated: 'Rev Prorated', pnlProratedAvg: 'Rev Prorated Avg', pnlZeroMiDrop: '0 Mi Cap', pnlZeroMiDropAvg: '0 Mi Cap Avg',
+          pnlTollsAdj: 'Tolls Adj', pnlTollsAdjAvg: 'Tolls Adj Avg', pnlCashAdv: 'Cash Adv', pnlCashAdvAvg: 'Cash Adv Avg',
+          pnlCpmAdj: 'CPM Adj', pnlCpmAdjAvg: 'CPM Adj Avg', pnlFuelAdj: 'Fuel Adj', pnlFuelAdjAvg: 'Fuel Adj Avg',
+          fullSharedLiability: 'Shared Ins', fullSharedLiabilityAvg: 'Shared Ins Avg', fuelRebate: 'Fuel Reb.', fuelRebateAvg: 'Fuel Reb. Avg',
+          allocatedFixed: 'Wkly Exp.', allocatedFixedAvg: 'Wkly Exp. Avg', tolls: 'Tolls', tollsAvg: 'Tolls Avg',
+          totalPOCov: 'PO', totalPOCovAvg: 'PO Avg', dispatcherPay: 'Disp. Pay', dispatcherPayAvg: 'Disp. Pay Avg',
+          totalRecruiting: 'Recruiting', totalRecruitingAvg: 'Recruiting Avg', netIncome: 'Total PnL', netIncomeAvg: 'Total PnL Avg'
         };
         const metricColors: any = {
-          gross: '#a1a1aa', netIncome: '#ffffff', margin: '#c084fc',
-          companyPay: '#60a5fa', allocatedFixed: '#f87171',
-          totalPOCov: '#4ade80', totalRecruiting: '#fb923c', tolls: '#fde047'
+          gross: '#a1a1aa', grossAvg: '#a1a1aa', netIncome: '#ffffff', netIncomeAvg: '#ffffff', margin: '#c084fc', marginAvg: '#c084fc',
+          companyPay: '#60a5fa', companyPayAvg: '#60a5fa', allocatedFixed: '#f87171', allocatedFixedAvg: '#f87171',
+          totalPOCov: '#4ade80', totalPOCovAvg: '#4ade80', totalRecruiting: '#fb923c', totalRecruitingAvg: '#fb923c', tolls: '#fde047', tollsAvg: '#fde047',
+          driverPay: '#d946ef', driverPayAvg: '#d946ef', insuranceExp: '#8b5cf6', insuranceExpAvg: '#8b5cf6',
+          fuel: '#0ea5e9', fuelAvg: '#0ea5e9', wosFuel: '#38bdf8', wosFuelAvg: '#38bdf8',
+          pnlRevBase: '#94a3b8', pnlRevBaseAvg: '#94a3b8', pnlProrated: '#cbd5e1', pnlProratedAvg: '#cbd5e1',
+          pnlZeroMiDrop: '#fca5a5', pnlZeroMiDropAvg: '#fca5a5', pnlTollsAdj: '#fef08a', pnlTollsAdjAvg: '#fef08a',
+          pnlCashAdv: '#6ee7b7', pnlCashAdvAvg: '#6ee7b7', pnlCpmAdj: '#93c5fd', pnlCpmAdjAvg: '#93c5fd',
+          pnlFuelAdj: '#7dd3fc', pnlFuelAdjAvg: '#7dd3fc', fullSharedLiability: '#d8b4fe', fullSharedLiabilityAvg: '#d8b4fe',
+          fuelRebate: '#818cf8', fuelRebateAvg: '#818cf8', dispatcherPay: '#c4b5fd', dispatcherPayAvg: '#c4b5fd'
         };
 
         if (selectedMetrics.length > 1 && metricColors[metric]) {
@@ -4656,9 +4753,9 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
       };
   }, [allDrivers, drivers, selectedDate, latestPayDate, calculateMetrics, uniqueDates]);
 
-  const activeColIds = useMemo(() => {
-    const ids = ['Segment', 'Gross', 'Margin', 'Net Pay', 'Ins. Exp.', 'Fuel', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Shared Ins', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Disp. Pay', 'Recruiting', 'Total PnL'];
-    if (groupBy === 'Driver') {
+ const activeColIds = useMemo(() => {
+const ids = ['Segment', 'Gross', 'Margin', 'Net Pay', 'Ins. Exp.', 'Fuel', 'W/O SPOTTER', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Shared Ins', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Disp. Pay', 'Recruiting', 'Total PnL'];
+if (groupBy === 'Driver') {
       ids.push('Company', 'Team', 'Franchise', 'Dispatcher', 'Contract');
     }
     if (!isAverageView) {
@@ -4960,20 +5057,48 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                             >
                               <span>Clear All</span>
                             </button>
-                            {['netIncome', 'totalRecruiting', 'totalPOCov', 'tolls', 'allocatedFixed', 'companyPay', 'margin', 'gross'].map(m => {
+                            {[
+                              'gross', 'grossAvg', 'margin', 'marginAvg', 'driverPay', 'driverPayAvg',
+                              'insuranceExp', 'insuranceExpAvg', 'fuel', 'fuelAvg', 'wosFuel', 'wosFuelAvg',
+                              'companyPay', 'companyPayAvg', 'pnlRevBase', 'pnlRevBaseAvg', 'pnlProrated', 'pnlProratedAvg',
+                              'pnlZeroMiDrop', 'pnlZeroMiDropAvg', 'pnlTollsAdj', 'pnlTollsAdjAvg', 'pnlCashAdv', 'pnlCashAdvAvg',
+                              'pnlCpmAdj', 'pnlCpmAdjAvg', 'pnlFuelAdj', 'pnlFuelAdjAvg', 'fullSharedLiability', 'fullSharedLiabilityAvg',
+                              'fuelRebate', 'fuelRebateAvg', 'allocatedFixed', 'allocatedFixedAvg', 'tolls', 'tollsAvg',
+                              'totalPOCov', 'totalPOCovAvg', 'dispatcherPay', 'dispatcherPayAvg', 'totalRecruiting', 'totalRecruitingAvg',
+                              'netIncome', 'netIncomeAvg'
+                            ].map(m => {
                               const labels: any = {
-                                gross: 'Gross', companyPay: 'Rev. Col.', margin: 'Margin',
-                                allocatedFixed: 'Wkly Exp.', tolls: 'Tolls', totalPOCov: 'PO',
-                                totalRecruiting: 'Recruiting', netIncome: 'Total PnL'
+                                gross: 'Gross', grossAvg: 'Gross Avg',
+                                margin: 'Margin', marginAvg: 'Margin Avg',
+                                driverPay: 'Net Pay', driverPayAvg: 'Net Pay Avg',
+                                insuranceExp: 'Ins. Exp.', insuranceExpAvg: 'Ins. Exp. Avg',
+                                fuel: 'Fuel', fuelAvg: 'Fuel Avg',
+                                wosFuel: 'W/O SPOTTER', wosFuelAvg: 'W/O SPOTTER Avg',
+                                companyPay: 'Rev. Col.', companyPayAvg: 'Rev. Col. Avg',
+                                pnlRevBase: 'Rev Base', pnlRevBaseAvg: 'Rev Base Avg',
+                                pnlProrated: 'Rev Prorated', pnlProratedAvg: 'Rev Prorated Avg',
+                                pnlZeroMiDrop: '0 Mi Cap', pnlZeroMiDropAvg: '0 Mi Cap Avg',
+                                pnlTollsAdj: 'Tolls Adj', pnlTollsAdjAvg: 'Tolls Adj Avg',
+                                pnlCashAdv: 'Cash Adv', pnlCashAdvAvg: 'Cash Adv Avg',
+                                pnlCpmAdj: 'CPM Adj', pnlCpmAdjAvg: 'CPM Adj Avg',
+                                pnlFuelAdj: 'Fuel Adj', pnlFuelAdjAvg: 'Fuel Adj Avg',
+                                fullSharedLiability: 'Shared Ins', fullSharedLiabilityAvg: 'Shared Ins Avg',
+                                fuelRebate: 'Fuel Reb.', fuelRebateAvg: 'Fuel Reb. Avg',
+                                allocatedFixed: 'Wkly Exp.', allocatedFixedAvg: 'Wkly Exp. Avg',
+                                tolls: 'Tolls', tollsAvg: 'Tolls Avg',
+                                totalPOCov: 'PO', totalPOCovAvg: 'PO Avg',
+                                dispatcherPay: 'Disp. Pay', dispatcherPayAvg: 'Disp. Pay Avg',
+                                totalRecruiting: 'Recruiting', totalRecruitingAvg: 'Recruiting Avg',
+                                netIncome: 'Total PnL', netIncomeAvg: 'Total PnL Avg'
                               };
                               return (
                               <button
                                 key={m}
                                 onClick={() => toggleSelection(selectedMetrics, m, setSelectedMetrics)}
-                                className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
+                                className="w-full flex items-center justify-start gap-2 px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
                               >
+                                <input type="checkbox" checked={selectedMetrics.includes(m)} readOnly className="pointer-events-none rounded bg-zinc-950 border-zinc-700 accent-emerald-500" />
                                 <span>{labels[m]}</span>
-                                {selectedMetrics.includes(m) && <Check size={10} className="text-emerald-500" />}
                               </button>
                             )})}
                           </div>
@@ -5010,10 +5135,10 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
 
                            <button
                               onClick={() => toggleSelection(selectedEntities, 'COMPANY', setSelectedEntities)}
-                              className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
+                              className="w-full flex items-center justify-start gap-2 px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
                            >
+                              <input type="checkbox" checked={selectedEntities.includes('COMPANY')} readOnly className="pointer-events-none rounded bg-zinc-950 border-zinc-700 accent-emerald-500" />
                               <span>Total Company</span>
-                              {selectedEntities.includes('COMPANY') && <Check size={10} className="text-emerald-500" />}
                            </button>
 
                            <div className="my-1 border-t border-zinc-800/50"></div>
@@ -5025,10 +5150,10 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                                 <button
                                   key={company}
                                   onClick={() => toggleSelection(selectedEntities, company, setSelectedEntities)}
-                                  className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
+                                  className="w-full flex items-center justify-start gap-2 px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
                                 >
+                                  <input type="checkbox" checked={selectedEntities.includes(company)} readOnly className="pointer-events-none rounded bg-zinc-950 border-zinc-700 accent-emerald-400" />
                                   <span>{company}</span>
-                                  {selectedEntities.includes(company) && <Check size={10} className="text-emerald-400" />}
                                 </button>
                               ))}
                               <div className="my-1 border-t border-zinc-800/50"></div>
@@ -5042,10 +5167,10 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                                 <button
                                   key={contract}
                                   onClick={() => toggleSelection(selectedEntities, contract, setSelectedEntities)}
-                                  className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
+                                  className="w-full flex items-center justify-start gap-2 px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
                                 >
+                                  <input type="checkbox" checked={selectedEntities.includes(contract)} readOnly className="pointer-events-none rounded bg-zinc-950 border-zinc-700 accent-purple-400" />
                                   <span>{contract}</span>
-                                  {selectedEntities.includes(contract) && <Check size={10} className="text-purple-400" />}
                                 </button>
                               ))}
                               <div className="my-1 border-t border-zinc-800/50"></div>
@@ -5059,10 +5184,10 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                                 <button
                                   key={team}
                                   onClick={() => toggleSelection(selectedEntities, team, setSelectedEntities)}
-                                  className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
+                                  className="w-full flex items-center justify-start gap-2 px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
                                 >
+                                  <input type="checkbox" checked={selectedEntities.includes(team)} readOnly className="pointer-events-none rounded bg-zinc-950 border-zinc-700 accent-blue-500" />
                                   <span>{team}</span>
-                                  {selectedEntities.includes(team) && <Check size={10} className="text-blue-500" />}
                                 </button>
                               ))}
                               <div className="my-1 border-t border-zinc-800/50"></div>
@@ -5076,10 +5201,10 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                                 <button
                                   key={fran}
                                   onClick={() => toggleSelection(selectedEntities, fran, setSelectedEntities)}
-                                  className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
+                                  className="w-full flex items-center justify-start gap-2 px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
                                 >
+                                  <input type="checkbox" checked={selectedEntities.includes(fran)} readOnly className="pointer-events-none rounded bg-zinc-950 border-zinc-700 accent-amber-500" />
                                   <span>{fran}</span>
-                                  {selectedEntities.includes(fran) && <Check size={10} className="text-amber-500" />}
                                 </button>
                               ))}
                               <div className="my-1 border-t border-zinc-800/50"></div>
@@ -5093,10 +5218,10 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                                 <button
                                   key={driver}
                                   onClick={() => toggleSelection(selectedEntities, driver, setSelectedEntities)}
-                                  className="w-full flex items-center justify-between px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
+                                  className="w-full flex items-center justify-start gap-2 px-2 py-1.5 text-[10px] rounded hover:bg-zinc-800 text-zinc-300"
                                 >
+                                  <input type="checkbox" checked={selectedEntities.includes(driver)} readOnly className="pointer-events-none rounded bg-zinc-950 border-zinc-700 accent-rose-400" />
                                   <span>{driver}</span>
-                                  {selectedEntities.includes(driver) && <Check size={10} className="text-rose-400" />}
                                 </button>
                               ))}
                              </>

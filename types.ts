@@ -154,6 +154,7 @@ export interface DriverPerformance {
       revenue_cpm?: number;
       total_miles?: number;
       fuel_saved?: number;
+      spotter_fuel_saved?: number;
       fuel_spent?: number;
       gross_pay?: number;
       po_deductions?: number;

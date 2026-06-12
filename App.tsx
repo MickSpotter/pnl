@@ -339,6 +339,8 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
             calculatedFixedCost: dbCalculatedFixed,
              fixed_costs: Number(row.fixed_costs || 0),
               fuelSavings: Number(row.fuel_saved || 0),
+              spotter_fuel_saved: Number(row.spotter_fuel_saved || 0),
+              fuel_saved: Number(row.fuel_saved || 0),
               franchise_revenue_collected: Number(row.franchise_revenue || 0),
               franchise_po: Number(row.franchise_po || 0),
               baseFuelCost: 0,
