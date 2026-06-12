@@ -8,6 +8,7 @@ import FuelRebate from './FuelRebate';
 import DispatcherPay from './DispatcherPay';
 import TutorialModal from './ExpensesTutorial';
 import FixedRevenue from './FixedRevenue';
+import { PORules, PORule } from './po_rules';
 import { SimulationConfig, ExpenseItem, ConfigContract, PnlConfig, FixedRevenueItem } from '../types';
 
 interface SimulationModalProps {
@@ -46,10 +47,11 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [localFixedExpenses, setLocalFixedExpenses] = React.useState<ExpenseItem[]>(fixedExpenses);
   const [localConfigContracts, setLocalConfigContracts] = React.useState<ConfigContract[]>(configContracts || []);
   const [localRevenues, setLocalRevenues] = React.useState<FixedRevenueItem[]>([]);
+  const [localPoRules, setLocalPoRules] = React.useState<PORule[]>([]);
   const [isSaving, setIsSaving] = React.useState(false);
-  const [loadingMessage, setLoadingMessage] = React.useState('Saving...');
-  const [activeTab, setActiveTab] = React.useState<'fixed' | 'contracts' | 'dispatcher' | 'fixed_revenue' | 'cpm' | 'pnl' | 'fuel_rebate'>('fixed');
-  const [selectedContractType, setSelectedContractType] = React.useState('');
+  const [loadingMessage, setLoadingMessage] = React.useState('Saving...');
+  const [activeTab, setActiveTab] = React.useState<'fixed' | 'contracts' | 'dispatcher' | 'fixed_revenue' | 'cpm' | 'pnl' | 'fuel_rebate' | 'po_rules'>('fixed');
+  const [selectedContractType, setSelectedContractType] = React.useState('');
   const [pnlConfigs, setPnlConfigs] = React.useState<PnlConfig[]>([]);
   const [selectedExpenseName, setSelectedExpenseName] = React.useState('');
   const [expenseColumns, setExpenseColumns] = React.useState<Record<string, string[]>>({});
@@ -257,6 +259,16 @@ const fixedExpenseNames = Array.from(new Set([
     ...finImportKeys.map(fi => ({ type: 'FINIMPORT', name: fi.name, key: fi.key, puKey: fi.puKey }))
   ];
 
+  const poCategories = React.useMemo(() => {
+      const categories = new Set<string>();
+      (drivers || []).forEach((d: any) => {
+          if (d.po_breakdown && typeof d.po_breakdown === 'object') {
+              Object.keys(d.po_breakdown).forEach(k => categories.add(k));
+          }
+      });
+      return Array.from(categories).sort();
+  }, [drivers]);
+
  React.useEffect(() => {
         if (isOpen) {
           setLocalSimConfig(simulationConfig);
@@ -302,6 +314,11 @@ const fixedExpenseNames = Array.from(new Set([
                     franchiseId: r.franchise_id,
                     is_standalone: true
                 })));
+             }
+             
+             const { data: poRulesData } = await supabase.from('po_rules').select('*');
+             if (poRulesData) {
+                 setLocalPoRules(poRulesData.filter((r: any) => r.status === 'Exclude'));
              }
           };
           fetchFinData();
@@ -848,6 +865,34 @@ const fixedExpenseNames = Array.from(new Set([
       });
       await savePnlConfigs(finalPnlConfigs);
 
+      const { data: currentPoRules } = await supabase.from('po_rules').select('id');
+      const currentPoIds = currentPoRules?.map(r => String(r.id)) || [];
+      const localPoIds = localPoRules.map(r => String(r.id)).filter(id => id && !id.startsWith('new_'));
+      const poIdsToDelete = currentPoIds.filter(id => !localPoIds.includes(id));
+
+      if (poIdsToDelete.length > 0) {
+          await supabase.from('po_rules').delete().in('id', poIdsToDelete);
+      }
+
+      const poToUpdate: any[] = [];
+      const poToInsert: any[] = [];
+      localPoRules.forEach(r => {
+          const out = {
+              contract_type: r.contract_type,
+              category_name: r.category_name,
+              status: r.status,
+              tpog: r.tpog
+          };
+          if (r.id && !String(r.id).startsWith('new_')) {
+              poToUpdate.push({ id: r.id, ...out });
+          } else {
+              poToInsert.push(out);
+          }
+      });
+
+      if (poToUpdate.length > 0) await supabase.from('po_rules').upsert(poToUpdate);
+      if (poToInsert.length > 0) await supabase.from('po_rules').insert(poToInsert);
+
       if (modifiedFinImportIds.length > 0) {
           const cleanData = (dataArray: any[]) => dataArray.map(item => {
               const cleaned = { ...item };
@@ -950,6 +995,7 @@ const fixedExpenseNames = Array.from(new Set([
             <button onClick={() => setActiveTab('cpm')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'cpm' ? 'border-pink-500 text-pink-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>CPM REVENUE</button>
             <button onClick={() => setActiveTab('pnl')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'pnl' ? 'border-cyan-500 text-cyan-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>PNL CALCULATION</button>
             <button onClick={() => setActiveTab('fuel_rebate')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'fuel_rebate' ? 'border-rose-500 text-rose-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>FUEL REBATE</button>
+            <button onClick={() => setActiveTab('po_rules')} className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 transition-colors whitespace-nowrap ${activeTab === 'po_rules' ? 'border-orange-500 text-orange-500' : 'border-transparent text-zinc-500 hover:text-zinc-300'}`}>PO RULES</button>
         </div>
 
         <div className="h-[600px] overflow-y-auto p-6 bg-zinc-950/30">
@@ -1228,7 +1274,13 @@ const fixedExpenseNames = Array.from(new Set([
               />
            </div>
 
-           <div className={activeTab === 'fixed' ? 'block' : 'hidden'}>
+           <div className={activeTab === 'po_rules' ? 'block' : 'hidden'}>
+              <div className="max-w-5xl mx-auto space-y-2 -mt-4">
+                  <PORules availableCategories={poCategories} poRules={localPoRules} setPoRules={setLocalPoRules} />
+              </div>
+           </div>
+
+           <div className={activeTab === 'fixed' ? 'block' : 'hidden'}>
            <div className="max-w-6xl mx-auto -mt-4">
               <div className="w-full border border-zinc-800 rounded-lg bg-zinc-950/50 mt-4">
                     <table className="w-full text-left border-collapse">

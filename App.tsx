@@ -22,7 +22,7 @@ import PnLView from './components/PnLView';
 import { COMPANY_FIXED_EXPENSES, DEFAULT_SIMULATION_CONFIG } from './constants';
 import { UserRole, SimulationConfig, DriverPerformance, ExpenseItem, DriverStatus, SupabaseDriverRecord, FinImportRecord, ConfigContract } from './types';
 import { supabase, isSupabaseConfigured, fetchFixedExpenses, saveFixedExpenses, fetchConfigContracts } from './lib/supabase';
-
+import { applyPORules, PORule } from './components/po_calculation';
 interface ErrorBoundaryProps {
   children?: ReactNode;
 }
@@ -204,7 +204,8 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
 
   const [rawDrivers, setRawDrivers] = useState<Partial<DriverPerformance>[]>([]);
   const [finImportData, setFinImportData] = useState<FinImportRecord[]>([]);
-  const [fixedCostsData, setFixedCostsData] = useState<any[]>([]);
+const [fixedCostsData, setFixedCostsData] = useState<any[]>([]);
+const [poRules, setPoRules] = useState<PORule[]>([]);
   
   const [isConnected, setIsConnected] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
@@ -287,13 +288,19 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
           const fixedExpensesPromise = fetchFixedExpenses().then(res => { tickPromise(); return res; });
           const finResPromise = supabase.from('finImport').select('*').limit(1000).then(res => { tickPromise(); return res; });
           const fixedCostsPromise = supabase.from('fixed_costs').select('*').order('pay_date', { ascending: false }).then(res => { tickPromise(); return res; });
+          const poRulesPromise = supabase.from('po_rules').select('*').then(res => { tickPromise(); return res; });
 
-          const [finRes, confC, dbExpenses, fixedCostsRes] = await Promise.all([
+          const [finRes, confC, dbExpenses, fixedCostsRes, poRulesRes] = await Promise.all([
             finResPromise,
             confContractsPromise,
             fixedExpensesPromise,
-            fixedCostsPromise
+            fixedCostsPromise,
+            poRulesPromise
           ]);
+
+      if (poRulesRes && poRulesRes.data) {
+        setPoRules(poRulesRes.data);
+      }
       
       if (fixedCostsRes && fixedCostsRes.data) {
         setFixedCostsData(fixedCostsRes.data);
@@ -342,7 +349,12 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
               spotter_fuel_saved: Number(row.spotter_fuel_saved || 0),
               fuel_saved: Number(row.fuel_saved || 0),
               franchise_revenue_collected: Number(row.franchise_revenue || 0),
-              franchise_po: Number(row.franchise_po || 0),
+              franchise_po: applyPORules(
+                  typeof row.franchise_po_breakdown === 'string' ? (()=>{try{return JSON.parse(row.franchise_po_breakdown);}catch(e){return {};}})() : (row.franchise_po_breakdown || {}), 
+                  Number(row.franchise_po || 0), 
+                  row.contract_type === 'TPOG' ? 'TPOG Franchise PnL' : (row.contract_type || 'Unassigned'), 
+                  poRulesRes?.data || []
+              ),
               baseFuelCost: 0,
             tollCost: Number(row.tolls_amount || 0) !== 0 ? -Math.abs(Number(row.tolls_amount || 0)) : 0,
              baseMaintenanceCost: 0,
@@ -357,8 +369,20 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
             escrowBalance: Number(row.escrow_needed || 0),
             negativeBalance: Number(row.balance || 0) < 0 ? Number(row.balance) : 0,
             poAmount: 0,
-            poCoverage: Number(row.total_po_comp_covered || 0),
-            driverPoCoverage: Number(row.total_po_comp_covered || 0),
+            poCoverage: applyPORules(
+                typeof row.po_breakdown === 'string' ? (()=>{try{return JSON.parse(row.po_breakdown);}catch(e){return {};}})() : (row.po_breakdown || {}),
+                Number(row.total_po_comp_covered || 0),
+                row.contract_type || 'Unassigned',
+                poRulesRes?.data || [],
+                !!row.franchise_name
+            ),
+            driverPoCoverage: applyPORules(
+                typeof row.po_breakdown === 'string' ? (()=>{try{return JSON.parse(row.po_breakdown);}catch(e){return {};}})() : (row.po_breakdown || {}),
+                Number(row.total_po_comp_covered || 0),
+                row.contract_type || 'Unassigned',
+                poRulesRes?.data || [],
+                !!row.franchise_name
+            ),
             po_breakdown: typeof row.po_breakdown === 'string' ? (()=>{try{return JSON.parse(row.po_breakdown);}catch(e){return {};}})() : (row.po_breakdown || {}),
             franchise_po_breakdown: typeof row.franchise_po_breakdown === 'string' ? (()=>{try{return JSON.parse(row.franchise_po_breakdown);}catch(e){return {};}})() : (row.franchise_po_breakdown || {}),
             balanceTotal: Number(row.balance || 0),
@@ -423,6 +447,9 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
         fetchData(true);
       })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'finImport' }, () => {
+        fetchData(true);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'po_rules' }, () => {
         fetchData(true);
       })
 

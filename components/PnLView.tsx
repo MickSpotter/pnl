@@ -278,6 +278,7 @@ const MasterTable: React.FC<{
             rows.forEach(row => {
                 const originalCells = originalOrder.get(row);
                 if (originalCells) {
+                    const currentChildren = new Set(Array.from(row.children));
                     originalCells.forEach((cell: HTMLElement) => {
                         const orig = originalStyles.get(cell);
                         if (orig) {
@@ -287,12 +288,14 @@ const MasterTable: React.FC<{
                             cell.style.right = orig.right;
                             cell.style.zIndex = orig.zIndex;
                             cell.style.backgroundColor = orig.backgroundColor;
-                                    }
-                                   row.appendChild(cell);
-                            });
+                        }
+                        if (currentChildren.has(cell)) {
+                            row.appendChild(cell);
                         }
                     });
-                };
+                }
+            });
+        };
               }, [tableColumns, isAverageView, isRevColExpanded, isFuelExpanded, selectedDate, drivers, sortConfig, groupBy]);
 
                   const requestSort = (key: string) => {
@@ -378,6 +381,7 @@ const MasterTable: React.FC<{
             fcTruck: 0, fcCpm: 0, fcTrailer: 0, fcPlates: 0, fcTelematics: 0, fcPhone: 0, fcOffice: 0, fcRent: 0, fcBackupMc: 0, fcBoReg: 0, fcBoTech: 0, fcFactoring: 0,
             pnlCompanyPay: 0, pnlFuelRebate: 0, pnlAllocatedFixed: 0, pnlTotalPOCov: 0, pnlTotalRecruiting: 0, pnlTolls: 0, pnlDispGrossAmount: 0, pnlDispMarginAmount: 0,
             pnlRevBase: 0, pnlFranchiseBase: 0, pnlPoDeductions: 0, pnlPoSettle: 0, pnlNegNetPay: 0, pnlStrictNegNetPay: 0, pnlBalanceSettle: 0, pnlBalanceChange: 0, pnlExcludedBalanceChange: 0, pnlIncludedBalanceChange: 0, pnlTruckFloat: 0, pnlTruckWkly: 0, pnlOccIns: 0, pnlEld: 0, pnlIfta: 0, pnlMaintSupport: 0, pnlLiability: 0, pnlTruckPhd: 0, pnlTrailer: 0, pnlTrailerPhd: 0, pnlEscrowAdj: 0, pnlTollsAdj: 0, pnlCashAdv: 0, pnlCpmAdj: 0, pnlFuelAdj: 0, pnlProrated: 0, pnlZeroMiDrop: 0,
+            excludedPoTotal: 0,
             poBreakdown: {},
             sharedInsBreakdown: {},
             dispBreakdown: {}
@@ -472,6 +476,7 @@ const MasterTable: React.FC<{
             t.pnlFuelAdj += m.pnlFuelAdj || 0;
             t.pnlProrated += m.pnlProrated || 0;
             t.pnlZeroMiDrop += m.pnlZeroMiDrop || 0;
+            t.excludedPoTotal += m.excludedPoTotal || 0;
             if (m.poBreakdown) {
                 Object.entries(m.poBreakdown).forEach(([k, v]) => {
                     if (!t.poBreakdown[k]) t.poBreakdown[k] = 0;
@@ -526,14 +531,13 @@ const MasterTable: React.FC<{
           }));
           if (tpogFranchiseDrivers.length > 0) {
               const fMetrics: any = getAggregatedMetrics(tpogFranchiseDrivers);
-              fMetrics.netIncome = fMetrics.netIncome / 2;
+              fMetrics.netIncome = (fMetrics.netIncome + (fMetrics.excludedPoTotal || 0)) / 2;
               metrics.netIncome -= fMetrics.netIncome;
               metrics.pnlPerDriver = metrics.effNonTeams > 0 ? metrics.netIncome / metrics.effNonTeams : 0;
               metrics.isAdjusted = true;
           }
           return metrics;
       };
-
   const groupedDrivers = useMemo(() => {
                  const map = new Map<string, DriverPerformance[]>();
                  drivers.forEach(d => {
@@ -586,7 +590,7 @@ const MasterTable: React.FC<{
         if (tpogFranchiseDrivers.length > 0) {
             const rawF = getAggregatedMetrics(tpogFranchiseDrivers);
             const fMetrics: any = { ...rawF };
-            fMetrics.netIncome = fMetrics.netIncome / 2;
+            fMetrics.netIncome = (fMetrics.netIncome + (fMetrics.excludedPoTotal || 0)) / 2;
 
             t.netIncome -= fMetrics.netIncome;
             t.pnlPerDriver = t.effNonTeams > 0 ? t.netIncome / t.effNonTeams : 0;
@@ -958,11 +962,10 @@ const MasterTable: React.FC<{
                  if (rowDrivers.some(d => d.contractType === 'MCLOO')) {
                      finalAmount = finalAmount / 0.3;
                  }
-                 if (finalAmount === 0) return null;
                  return (
                    <div key={reason} className="flex justify-between gap-4">
-                     <span>{reason}:</span>
-                     <span className="font-mono text-zinc-300 shrink-0">
+                     <span className={finalAmount === 0 ? 'text-zinc-500' : ''}>{reason}:</span>
+                     <span className={`font-mono shrink-0 ${finalAmount === 0 ? 'text-zinc-500' : 'text-zinc-300'}`}>
                         {finalAmount < 0 ? '-' : ''}{formatCurrency(Math.abs(val(finalAmount, div)))}
                      </span>
                    </div>
@@ -1543,10 +1546,10 @@ const MasterTable: React.FC<{
                    <div className="flex items-center justify-end gap-1">Total PnL {sortConfig?.key === 'netIncome' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</div>
                    <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[320px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                      <div className="font-bold text-white mb-0.5">Total PnL (Net Income) Calculation:</div>
-                     <div className="text-emerald-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-700">PnL = Revenue Collected + Fuel Rebate - Disp. Pay (Gross and Margin %) - Fixed - PO Co Cov - Recruiting - Tolls</div>
+                     <div className="text-emerald-400 font-mono bg-zinc-900/50 p-2 rounded border border-zinc-700">PnL = Revenue Collected + Fuel Rebate - Disp. Pay (Gross, Margin & Fixed) - Fixed - PO Co Cov - Recruiting - Tolls</div>
                      <div className="text-[9px] text-zinc-400 mt-1 italic">* Items included in this formula can be dynamically enabled or disabled per contract in the PNL Calculation settings.</div>
                    </div>
-                 </th>
+                 </th>
                </tr>
         </thead>
         <tbody className="divide-y divide-zinc-800/50 font-mono">
@@ -1589,7 +1592,7 @@ const MasterTable: React.FC<{
                if (franchiseStubs.length > 0) {
                        const rawMetrics = getAggregatedMetrics(franchiseStubs);
                        fMetrics = { ...rawMetrics };
-                       fMetrics.netIncome = fMetrics.netIncome / 2;
+                       fMetrics.netIncome = (fMetrics.netIncome + (fMetrics.excludedPoTotal || 0)) / 2;
                    
                    franchiseW4 = get4wMetrics('TPOG (Franchise PnL)');
 
@@ -2027,12 +2030,12 @@ const MasterTable: React.FC<{
                         <div className="fixed hidden group-hover/footerpobreakdown:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-auto min-w-[200px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
                           <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Total PO Breakdown:</div>
                           {Object.entries(dynamicTotals.poBreakdown).map(([reason, amount]: any) => {
-                             if (Number(amount) === 0) return null;
+                             const finalAmount = Number(amount);
                              return (
                                <div key={reason} className="flex justify-between gap-4">
-                                 <span>{reason}:</span>
-                                 <span className="font-mono text-zinc-300">
-                                    {Number(amount) < 0 ? '-' : ''}{formatCurrency(Math.abs(val(Number(amount), div)))}
+                                 <span className={finalAmount === 0 ? 'text-zinc-500' : ''}>{reason}:</span>
+                                 <span className={`font-mono ${finalAmount === 0 ? 'text-zinc-500' : 'text-zinc-300'}`}>
+                                    {finalAmount < 0 ? '-' : ''}{formatCurrency(Math.abs(val(finalAmount, div)))}
                                  </span>
                                </div>
                              );
@@ -2176,6 +2179,7 @@ const PnLView: React.FC<PnLViewProps> = ({
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [pnlConfigs, setPnlConfigs] = useState<any[]>([]);
+  const [poRules, setPoRules] = useState<any[]>([]);
   
 
   useEffect(() => {
@@ -2189,7 +2193,14 @@ const PnLView: React.FC<PnLViewProps> = ({
                 }
             } catch(e) { console.error("Error loading PNL configs:", e); }
         };
+        const loadPoRules = async () => {
+            try {
+                const { data } = await supabase.from('po_rules').select('*');
+                if (data) setPoRules(data);
+            } catch(e) { console.error("Error loading PO rules:", e); }
+        };
         loadPnlConfigs();
+        loadPoRules();
     }
   }, [isModalOpen]);
 
@@ -2444,7 +2455,8 @@ const PnLView: React.FC<PnLViewProps> = ({
     const configHash = JSON.stringify(configContracts || []);
     const expHash = JSON.stringify(fixedExpenses || []);
     const fcHash = JSON.stringify(fixedCostsData || []);
-    return `${(allDrivers || drivers)?.length}-${finImportData?.length}-${simulationConfig?.globalFixedExpenseAdjustment}-${configHash}-${expHash}-${fcHash}`;
+    const driversHash = (allDrivers || drivers)?.reduce((sum, d) => sum + (d.poCoverage || 0) + (d.poAmount || 0) + (d.tolls || 0) + (d.companyPay || 0) + (d.netPay || 0), 0) || 0;
+    return `${(allDrivers || drivers)?.length}-${driversHash}-${finImportData?.length}-${simulationConfig?.globalFixedExpenseAdjustment}-${configHash}-${expHash}-${fcHash}`;
   }, [allDrivers, drivers, fixedExpenses, finImportData, fixedCostsData, simulationConfig, configContracts]);
 
   const enrichedDrivers = useMemo(() => {
@@ -3724,12 +3736,61 @@ if (isCategorical) {
     const totalEscrow = initialDrivers.reduce((sum, d) => sum + (d.escrowBalance || 0), 0);
     const totalBalance = initialDrivers.reduce((sum, d) => sum + (d.balanceTotal || 0), 0);
     const fuelRebate = initialDrivers.reduce((sum, d) => sum + ((d as any).fuelRebate || 0), 0);
+    let excludedPoTotal = 0;
     const poBreakdown = initialDrivers.reduce((acc: any, d: any) => {
         let pb = d.po_breakdown;
         if (pb && typeof pb === 'object') {
+            const cType = (d as any).isFranchiseStub ? 'TPOG Franchise PnL' : (d.contractType || 'Unknown');
             Object.entries(pb).forEach(([key, val]) => {
                 let adjustedVal = Number(val);
-                if (adjustedVal !== 0) {
+                
+                const relevantRule = poRules.find(r =>
+                (r.contract_type === cType || r.contract_type === 'ALL') &&
+                r.category_name === key &&
+                r.status === 'Exclude'
+            );
+
+            let isExcludedCurrent = false;
+            if (relevantRule) {
+                if (cType === 'TPOG') {
+                    const tpogScope = relevantRule.tpog || 'Only TPOG with franchises';
+                    if (tpogScope === 'ALL TPOG') {
+                        isExcludedCurrent = true;
+                    } else if (tpogScope === 'Only TPOG with franchises' && !!d.franchiseId) {
+                        isExcludedCurrent = true;
+                    } else if (tpogScope === 'Only TPOG without franchises' && !d.franchiseId) {
+                        isExcludedCurrent = true;
+                    }
+                } else {
+                    isExcludedCurrent = true;
+                }
+            }
+
+            if (isExcludedCurrent) {
+                adjustedVal = 0;
+            }
+
+            if ((d as any).isFranchiseStub) {
+                const tpogRule = poRules.find(r =>
+                    (r.contract_type === 'TPOG' || r.contract_type === 'ALL') &&
+                    r.category_name === key &&
+                    r.status === 'Exclude'
+                );
+                
+                let isExcludedForTPOG = false;
+                if (tpogRule) {
+                    const tpogScope = tpogRule.tpog || 'Only TPOG with franchises';
+                    if (tpogScope === 'ALL TPOG' || tpogScope === 'Only TPOG with franchises') {
+                        isExcludedForTPOG = true;
+                    }
+                }
+                
+                if (isExcludedForTPOG && !isExcludedCurrent) {
+                    excludedPoTotal += -Math.abs(Number(val));
+                }
+            }
+
+                if (adjustedVal !== 0 || isExcludedCurrent) {
                     if (!acc[key]) acc[key] = 0;
                     acc[key] += adjustedVal;
                 }
@@ -3792,6 +3853,7 @@ if (isCategorical) {
     let pnlFuelRebate = 0;
     let pnlDispGrossAmount = 0;
     let pnlDispMarginAmount = 0;
+    let pnlDispFixedAmount = 0;
     
     let fcTruck = 0, fcCpm = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0;
 
@@ -3860,6 +3922,7 @@ if (isCategorical) {
         if (activeItems.includes('dispatcher_pay')) {
             pnlDispGrossAmount += ((d as any).dispGrossAmount || 0);
             pnlDispMarginAmount += ((d as any).dispMarginAmount || 0);
+            pnlDispFixedAmount += ((d as any).dispFixedAmount || 0);
         }
 
         const dBaseFixed = (d as any).fixed_costs || 0;
@@ -4105,14 +4168,14 @@ if (isCategorical) {
 
     const cogs = driverPay + fuel + maint + tolls + faults;
 
-    const allocatedFixed = baseFixed + adjFixed;
+    const allocatedFixed = baseFixed + adjFixed;
     const pnlAllocatedFixed = pnlBaseFixed + pnlAdjFixed;
     const totalFixedPerUnit = effCount > 0 ? (allocatedFixed / effCount) : 0;
 
-    const netIncome = pnlCompanyPay + pnlFuelRebate + pnlDispGrossAmount + pnlDispMarginAmount - pnlAllocatedFixed - Math.abs(pnlTotalPOCov) - Math.abs(pnlTotalRecruiting) - Math.abs(pnlTolls);
+    const netIncome = pnlCompanyPay + pnlFuelRebate + pnlDispGrossAmount + pnlDispMarginAmount + pnlDispFixedAmount - pnlAllocatedFixed - Math.abs(pnlTotalPOCov) - Math.abs(pnlTotalRecruiting) - Math.abs(pnlTolls);
     const pnlPerDriver = effNonTeams > 0 ? netIncome / effNonTeams : 0;
 
-   return {
+   return {
   rawEffCount, effCount, effNonTeamsCount, effTrailersCount, gross, margin, fuelSavings, companyPay, cogs, allocatedFixed, baseFixed, adjFixed, netIncome, pnlPerDriver,
   driverPay, fuel, wosFuel, maint, tolls, faults, dispatcherPay, dispGrossAmount, dispMarginAmount, dispSharedLiability, dispFixedAmount, fullSharedLiability, totalFixedPerUnit,
       totalPO, totalPOCov, totalEscrow, totalBalance, totalRecruiting,
@@ -4122,9 +4185,10 @@ if (isCategorical) {
       insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate, poBreakdown, sharedInsBreakdown, dispBreakdown,
       fcTruck, fcCpm, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring,
       pnlCompanyPay, pnlFuelRebate, pnlAllocatedFixed, pnlTotalPOCov, pnlTotalRecruiting, pnlTolls, pnlDispGrossAmount, pnlDispMarginAmount,
-      pnlRevBase, pnlFranchiseBase, pnlPoDeductions, pnlPoSettle, pnlNegNetPay, pnlStrictNegNetPay, pnlBalanceSettle, pnlBalanceChange, pnlExcludedBalanceChange, pnlIncludedBalanceChange, pnlTruckFloat, pnlTruckWkly, pnlOccIns, pnlEld, pnlIfta, pnlMaintSupport, pnlLiability, pnlTruckPhd, pnlTrailer, pnlTrailerPhd, pnlEscrowAdj, pnlTollsAdj, pnlCashAdv, pnlCpmAdj, pnlFuelAdj, pnlProrated, pnlZeroMiDrop
+      pnlRevBase, pnlFranchiseBase, pnlPoDeductions, pnlPoSettle, pnlNegNetPay, pnlStrictNegNetPay, pnlBalanceSettle, pnlBalanceChange, pnlExcludedBalanceChange, pnlIncludedBalanceChange, pnlTruckFloat, pnlTruckWkly, pnlOccIns, pnlEld, pnlIfta, pnlMaintSupport, pnlLiability, pnlTruckPhd, pnlTrailer, pnlTrailerPhd, pnlEscrowAdj, pnlTollsAdj, pnlCashAdv, pnlCpmAdj, pnlFuelAdj, pnlProrated, pnlZeroMiDrop,
+      excludedPoTotal
     };
-  }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems, configContracts]);
+  }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems, configContracts, poRules]);
 
   const rawTotalActive = displayedDrivers.reduce((sum, d) => sum + (d.effectiveDrivers || 0), 0);
   const totalActiveCount = Number(rawTotalActive.toFixed(2));
@@ -4156,7 +4220,7 @@ if (isCategorical) {
          fUniqueDriverNames.forEach(dName => {
              const drvRecords = tpogFranchiseDrivers.filter(drv => drv.name === dName);
              const m = calculateMetrics(drvRecords, true);
-             fNetIncome += m.netIncome / 2;
+             fNetIncome += (m.netIncome + (m.excludedPoTotal || 0)) / 2;
          });
          totalNetIncome -= fNetIncome;
      }
@@ -4306,7 +4370,7 @@ if (isCategorical) {
                   });
                   driversByName.forEach(drvRecords => {
                       const m = calculateMetrics(drvRecords, true);
-                      fNetIncome += m.netIncome / 2;
+                      fNetIncome += (m.netIncome + (m.excludedPoTotal || 0)) / 2;
                       fNt += (m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount) / 2;
                   });
                   totalNetIncome -= fNetIncome;
@@ -4469,7 +4533,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
               });
               driversByName.forEach(drvRecords => {
                   const m = calculateMetrics(drvRecords, true);
-                  fNetIncome += m.netIncome / 2;
+                  fNetIncome += (m.netIncome + (m.excludedPoTotal || 0)) / 2;
               });
               row['COMPANY_netIncome'] -= fNetIncome;
               const cDiv = row['COMPANY_effNonTeamsCount'] > 0 ? row['COMPANY_effNonTeamsCount'] : (row['COMPANY_effCount'] > 0 ? row['COMPANY_effCount'] : 1);
@@ -4557,7 +4621,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
             fTotalPOCov += Math.abs(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov || 0));
             fDispatcherPay += m.dispatcherPay;
             fTotalRecruiting += Math.abs(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting || 0));
-            tNet += m.netIncome / 2;
+            tNet += (m.netIncome + (m.excludedPoTotal || 0)) / 2;
             fEffNT += m.effNonTeamsCount;
             fEffTr += m.effTrailersCount;
             fEffCt += m.effCount;
@@ -4782,7 +4846,7 @@ if (groupBy === 'Driver') {
         onSaveExpenses={onSaveExpenses}
         companies={allUniqueCompanies}
         configContracts={configContracts}
-        drivers={displayedDrivers}
+        drivers={enrichedDrivers}
         currentNetIncome={companyMetrics.netIncome}
         onDataSync={onDataSync}
         fixedCostsData={fixedCostsData}
