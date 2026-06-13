@@ -156,6 +156,10 @@ export interface DriverPerformance {
       fuel_saved?: number;
       spotter_fuel_saved?: number;
       fuel_spent?: number;
+      fuel_retail_price?: number;
+      spotter_retail_price?: number;
+      fuel_discount_price?: number;
+      fuel_quantity?: number;
       gross_pay?: number;
       po_deductions?: number;
       po_settle?: number;

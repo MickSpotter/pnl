@@ -382,6 +382,14 @@ const MasterTable: React.FC<{
             pnlCompanyPay: 0, pnlFuelRebate: 0, pnlAllocatedFixed: 0, pnlTotalPOCov: 0, pnlTotalRecruiting: 0, pnlTolls: 0, pnlDispGrossAmount: 0, pnlDispMarginAmount: 0,
             pnlRevBase: 0, pnlFranchiseBase: 0, pnlPoDeductions: 0, pnlPoSettle: 0, pnlNegNetPay: 0, pnlStrictNegNetPay: 0, pnlBalanceSettle: 0, pnlBalanceChange: 0, pnlExcludedBalanceChange: 0, pnlIncludedBalanceChange: 0, pnlTruckFloat: 0, pnlTruckWkly: 0, pnlOccIns: 0, pnlEld: 0, pnlIfta: 0, pnlMaintSupport: 0, pnlLiability: 0, pnlTruckPhd: 0, pnlTrailer: 0, pnlTrailerPhd: 0, pnlEscrowAdj: 0, pnlTollsAdj: 0, pnlCashAdv: 0, pnlCpmAdj: 0, pnlFuelAdj: 0, pnlProrated: 0, pnlZeroMiDrop: 0,
             excludedPoTotal: 0,
+            fuel_retail_price: 0,
+            spotter_retail_price: 0,
+            fuel_discount_price: 0,
+            fuel_quantity: 0,
+            recordCount: 0,
+            fuel_retail_price_count: 0,
+            spotter_retail_price_count: 0,
+            fuel_discount_price_count: 0,
             poBreakdown: {},
             sharedInsBreakdown: {},
             dispBreakdown: {}
@@ -418,6 +426,14 @@ const MasterTable: React.FC<{
         t.fuel += m.fuel || 0;
         t.wosFuel += m.wosFuel || 0;
         t.fuelRebate += m.fuelRebate || 0;
+        t.fuel_retail_price += m.fuel_retail_price || 0;
+        t.fuel_retail_price_count += m.fuel_retail_price_count !== undefined ? m.fuel_retail_price_count : ((m.fuel_retail_price || 0) !== 0 ? 1 : 0);
+        t.spotter_retail_price += m.spotter_retail_price || 0;
+        t.spotter_retail_price_count += m.spotter_retail_price_count !== undefined ? m.spotter_retail_price_count : ((m.spotter_retail_price || 0) !== 0 ? 1 : 0);
+        t.fuel_discount_price += m.fuel_discount_price || 0;
+        t.fuel_discount_price_count += m.fuel_discount_price_count !== undefined ? m.fuel_discount_price_count : ((m.fuel_discount_price || 0) !== 0 ? 1 : 0);
+        t.fuel_quantity += m.fuel_quantity || 0;
+        t.recordCount += m.recordCount || 0;
             t.maint += m.maint || 0;
             t.tolls += m.tolls || 0;
             t.faults += m.faults || 0;
@@ -632,6 +648,12 @@ const MasterTable: React.FC<{
         else if (sortConfig.key === 'contractType') { aVal = a.original.contractType || ''; bVal = b.original.contractType || ''; }
         else if (sortConfig.key === 'w4Sum') { aVal = val(a.w4.sum, a.div); bVal = val(b.w4.sum, b.div); }
         else if (sortConfig.key === 'w4Avg') { aVal = val(a.w4.avg, a.div); bVal = val(b.w4.avg, b.div); }
+        else if (['fuel_retail_price', 'spotter_retail_price', 'fuel_discount_price'].includes(sortConfig.key)) { 
+            const aCount = a.metrics[`${sortConfig.key}_count`];
+            const bCount = b.metrics[`${sortConfig.key}_count`];
+            aVal = aCount > 0 ? a.metrics[sortConfig.key] / aCount : 0; 
+            bVal = bCount > 0 ? b.metrics[sortConfig.key] / bCount : 0; 
+        }
         else { aVal = val((a.metrics as any)[sortConfig.key] || 0, a.div); bVal = val((b.metrics as any)[sortConfig.key] || 0, b.div); }
 
         if (typeof aVal === 'string') return sortConfig.direction === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
@@ -682,7 +704,15 @@ const MasterTable: React.FC<{
     )}
   />
    <td className="px-1 py-0.5 text-right text-purple-400">{val(metrics.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.fuel, div)))}` : formatCurrency(val(metrics.fuel, div))}</td>
-   {isFuelExpanded && <td className="px-1 py-0.5 text-right text-purple-400 opacity-70">{val(metrics.wosFuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.wosFuel, div)))}` : formatCurrency(val(metrics.wosFuel, div))}</td>}
+   {isFuelExpanded && (
+     <>
+       <td className="px-1 py-0.5 text-right text-purple-400 opacity-70">{val(metrics.wosFuel, div) < 0 ? `-${formatCurrency(Math.abs(val(metrics.wosFuel, div)))}` : formatCurrency(val(metrics.wosFuel, div))}</td>
+       <td className="px-1 py-0.5 text-right text-purple-400 opacity-70">{formatCurrency(metrics.fuel_retail_price_count > 0 ? metrics.fuel_retail_price / metrics.fuel_retail_price_count : 0, 2)}</td>
+       <td className="px-1 py-0.5 text-right text-purple-400 opacity-70">{formatCurrency(metrics.spotter_retail_price_count > 0 ? metrics.spotter_retail_price / metrics.spotter_retail_price_count : 0, 2)}</td>
+       <td className="px-1 py-0.5 text-right text-purple-400 opacity-70">{formatCurrency(metrics.fuel_discount_price_count > 0 ? metrics.fuel_discount_price / metrics.fuel_discount_price_count : 0, 2)}</td>
+       <td className="px-1 py-0.5 text-right text-purple-400 opacity-70">{Math.round(val(metrics.fuel_quantity, div))}</td>
+     </>
+   )}
   <td className="px-1 py-0.5 text-right text-blue-400">
         {formatCurrency(val(metrics.companyPay, div))}
       </td>
@@ -1381,13 +1411,43 @@ const MasterTable: React.FC<{
                </div>
              </th>
              {isFuelExpanded && (
+               <>
                <th onClick={() => requestSort('wosFuel')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
-                 <span className="opacity-70 group-hover:opacity-100 transition-opacity">W/O SPOTTER {sortConfig?.key === 'wosFuel' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</span>
+                 <span className="opacity-70 group-hover:opacity-100 transition-opacity">SPOTTER FUEL {sortConfig?.key === 'wosFuel' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</span>
                  <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-                   <div className="font-bold text-white mb-0.5">Without Spotter Fuel:</div>
-                   <div>Reflects the estimated fuel costs or savings assuming no spotter fuel adjustments were applied.</div>
+                   <div className="font-bold text-white mb-0.5">Spotter Fuel Difference:</div>
+                   <div>Displays the difference in fuel amount resulting from the use of spotter fuel. A negative value indicates a loss compared to regular fuel savings, while a positive value indicates a gain.</div>
                  </div>
                </th>
+               <th onClick={() => requestSort('fuel_retail_price')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
+                 <span className="opacity-70 group-hover:opacity-100 transition-opacity">Ret. Price {sortConfig?.key === 'fuel_retail_price' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</span>
+                 <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                   <div className="font-bold text-white mb-0.5">Fuel Retail Price:</div>
+                   <div>Displays the average retail price of fuel. This value represents a driver-level average and remains a constant average when viewed across aggregates.</div>
+                 </div>
+               </th>
+               <th onClick={() => requestSort('spotter_retail_price')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
+                 <span className="opacity-70 group-hover:opacity-100 transition-opacity">Spotter Ret. Price {sortConfig?.key === 'spotter_retail_price' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</span>
+                 <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                   <div className="font-bold text-white mb-0.5">Spotter Retail Price:</div>
+                   <div>Displays the average retail price of fuel specifically for spotter card transactions.</div>
+                 </div>
+               </th>
+               <th onClick={() => requestSort('fuel_discount_price')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
+                 <span className="opacity-70 group-hover:opacity-100 transition-opacity">Disc Price {sortConfig?.key === 'fuel_discount_price' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</span>
+                 <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                   <div className="font-bold text-white mb-0.5">Discounted Price:</div>
+                   <div>Displays the average price of fuel after all available discounts have been applied.</div>
+                 </div>
+               </th>
+               <th onClick={() => requestSort('fuel_quantity')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
+                 <span className="opacity-70 group-hover:opacity-100 transition-opacity">Quantity {sortConfig?.key === 'fuel_quantity' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}</span>
+                 <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                   <div className="font-bold text-white mb-0.5">Fuel Quantity:</div>
+                   <div>Displays the amount of fuel in gallons.</div>
+                 </div>
+               </th>
+               </>
              )}
              <th onClick={() => requestSort('companyPay')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
               <div className="flex items-center justify-end gap-1">
@@ -1737,7 +1797,7 @@ const MasterTable: React.FC<{
             {!isAverageView && Array.from({ length: 3 }).map((_, i) => (
           <td key={`empty-counts-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
         ))}
-        {Array.from({ length: (isRevColExpanded ? (groupBy === 'Driver' ? 22 : 23) : (groupBy === 'Driver' ? 12 : 13)) + (isFuelExpanded ? 1 : 0) }).map((_, i) => (
+        {Array.from({ length: (isRevColExpanded ? (groupBy === 'Driver' ? 22 : 23) : (groupBy === 'Driver' ? 12 : 13)) + (isFuelExpanded ? 5 : 0) }).map((_, i) => (
            <td key={`empty-metrics-${i}`} className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>
          ))}
         {show4w && <td className="p-0 border-0 pointer-events-none bg-transparent" style={{ backgroundImage: 'repeating-linear-gradient(to bottom, transparent, transparent 25px, #27272a 25px, #27272a 26px)', backgroundPosition: 'top left' }}></td>}
@@ -1826,7 +1886,15 @@ const MasterTable: React.FC<{
                      </div>
                 </td>
                  <td className="px-1 py-1 text-right text-purple-400">{val(dynamicTotals.fuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.fuel, div)))}` : formatCurrency(val(dynamicTotals.fuel, div))}</td>
-                 {isFuelExpanded && <td className="px-1 py-1 text-right text-purple-400 opacity-70">{val(dynamicTotals.wosFuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.wosFuel, div)))}` : formatCurrency(val(dynamicTotals.wosFuel, div))}</td>}
+                 {isFuelExpanded && (
+                   <>
+                     <td className="px-1 py-1 text-right text-purple-400 opacity-70">{val(dynamicTotals.wosFuel, div) < 0 ? `-${formatCurrency(Math.abs(val(dynamicTotals.wosFuel, div)))}` : formatCurrency(val(dynamicTotals.wosFuel, div))}</td>
+                     <td className="px-1 py-1 text-right text-purple-400 opacity-70">{formatCurrency(dynamicTotals.fuel_retail_price_count > 0 ? dynamicTotals.fuel_retail_price / dynamicTotals.fuel_retail_price_count : 0, 2)}</td>
+                     <td className="px-1 py-1 text-right text-purple-400 opacity-70">{formatCurrency(dynamicTotals.spotter_retail_price_count > 0 ? dynamicTotals.spotter_retail_price / dynamicTotals.spotter_retail_price_count : 0, 2)}</td>
+                     <td className="px-1 py-1 text-right text-purple-400 opacity-70">{formatCurrency(dynamicTotals.fuel_discount_price_count > 0 ? dynamicTotals.fuel_discount_price / dynamicTotals.fuel_discount_price_count : 0, 2)}</td>
+                     <td className="px-1 py-1 text-right text-purple-400 opacity-70">{Math.round(val(dynamicTotals.fuel_quantity, div))}</td>
+                   </>
+                 )}
                 <td className="px-1 py-1 text-right text-blue-400">
                   {formatCurrency(val(dynamicTotals.pnlCompanyPay !== undefined ? dynamicTotals.pnlCompanyPay : dynamicTotals.companyPay, div))}
                     </td>
@@ -2253,8 +2321,12 @@ const PnLView: React.FC<PnLViewProps> = ({
     { id: 'Med. Net Pay', label: 'Med. Net Pay', pinned: null, hidden: false },
     { id: 'Ins. Exp.', label: 'Ins. Exp.', pinned: null, hidden: false },
 { id: 'Fuel', label: 'Fuel', pinned: null, hidden: false },
-{ id: 'W/O SPOTTER', label: 'W/O SPOTTER', pinned: null, hidden: false },
-{ id: 'Rev. Col.', label: 'Rev. Col.', pinned: null, hidden: false },
+    { id: 'SPOTTER FUEL', label: 'SPOTTER FUEL', pinned: null, hidden: false },
+    { id: 'Ret. Price', label: 'Ret. Price', pinned: null, hidden: false },
+    { id: 'Spotter Ret. Price', label: 'Spotter Ret. Price', pinned: null, hidden: false },
+    { id: 'Disc Price', label: 'Disc Price', pinned: null, hidden: false },
+    { id: 'Quantity', label: 'Quantity', pinned: null, hidden: false },
+    { id: 'Rev. Col.', label: 'Rev. Col.', pinned: null, hidden: false },
     { id: 'Rev Base', label: 'Rev Base', pinned: null, hidden: false },
     { id: 'Bal Change', label: 'Bal Change', pinned: null, hidden: false },
     { id: 'Rev Prorated', label: 'Rev Prorated', pinned: null, hidden: false },
@@ -3721,13 +3793,23 @@ if (isCategorical) {
      const spotter = Number((d as any).spotter_fuel_saved ?? 0);
      const saved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
      return sum + (spotter !== 0 ? spotter : saved);
- }, 0);
+    }, 0);
+    const fuel_retail_price = initialDrivers.reduce((sum, d) => sum + (Number((d as any).fuel_retail_price) || 0), 0);
+    const fuel_retail_price_count = initialDrivers.filter(d => (Number((d as any).fuel_retail_price) || 0) !== 0).length;
+    const spotter_retail_price = initialDrivers.reduce((sum, d) => sum + (Number((d as any).spotter_retail_price) || 0), 0);
+    const spotter_retail_price_count = initialDrivers.filter(d => (Number((d as any).spotter_retail_price) || 0) !== 0).length;
+    const fuel_discount_price = initialDrivers.reduce((sum, d) => sum + (Number((d as any).fuel_discount_price) || 0), 0);
+    const fuel_discount_price_count = initialDrivers.filter(d => (Number((d as any).fuel_discount_price) || 0) !== 0).length;
+    const fuel_quantity = initialDrivers.reduce((sum, d) => sum + (Number((d as any).fuel_quantity) || 0), 0);
+    const recordCount = initialDrivers.length;
  const wosFuel = initialDrivers.reduce((sum, d) => {
      const ct = d.contractType || '';
      if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
-         return sum - Math.abs(d.fuelCost || 0);
+         return sum;
      }
-     return sum + Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
+     const spotter = Number((d as any).spotter_fuel_saved ?? 0);
+     const saved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
+     return sum + (spotter !== 0 ? (spotter - saved) : 0);
  }, 0);
  const maint = initialDrivers.reduce((sum, d) => sum + d.maintenanceCost, 0);
     const faults = initialDrivers.reduce((sum, d) => sum + d.driverFaultExpenses, 0);
@@ -4182,6 +4264,8 @@ if (isCategorical) {
       effNonTeams, currentPayDate,
       numOfTrucks, avgTruckPrice, numOfTrailers, avgTrailerPrice, truckUtilization, trailerUtilization, totalCalculatedTrucks, totalCalculatedTrailers,
       rawFinImportData, effNonTeamsForTrucks: effNonTeamsNoOOCount,
+      fuel_retail_price, spotter_retail_price, fuel_discount_price, fuel_quantity, recordCount,
+      fuel_retail_price_count, spotter_retail_price_count, fuel_discount_price_count,
       insuranceExp, insLiabAuto, insLiabGen, insCargo, insLeaseGapCoverage, insTrailerInterchange, insLago, insPhdPremium, insPhdTruck, insPhdTrailer, fuelRebate, poBreakdown, sharedInsBreakdown, dispBreakdown,
       fcTruck, fcCpm, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring,
       pnlCompanyPay, pnlFuelRebate, pnlAllocatedFixed, pnlTotalPOCov, pnlTotalRecruiting, pnlTolls, pnlDispGrossAmount, pnlDispMarginAmount,
@@ -4710,7 +4794,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
         const metricLabels: any = {
           gross: 'Gross', grossAvg: 'Gross Avg', margin: 'Margin', marginAvg: 'Margin Avg',
           driverPay: 'Net Pay', driverPayAvg: 'Net Pay Avg', insuranceExp: 'Ins. Exp.', insuranceExpAvg: 'Ins. Exp. Avg',
-          fuel: 'Fuel', fuelAvg: 'Fuel Avg', wosFuel: 'W/O SPOTTER', wosFuelAvg: 'W/O SPOTTER Avg',
+          fuel: 'Fuel', fuelAvg: 'Fuel Avg', wosFuel: 'SPOTTER FUEL', wosFuelAvg: 'SPOTTER FUEL Avg',
           companyPay: 'Rev. Col.', companyPayAvg: 'Rev. Col. Avg', pnlRevBase: 'Rev Base', pnlRevBaseAvg: 'Rev Base Avg',
           pnlProrated: 'Rev Prorated', pnlProratedAvg: 'Rev Prorated Avg', pnlZeroMiDrop: '0 Mi Cap', pnlZeroMiDropAvg: '0 Mi Cap Avg',
           pnlTollsAdj: 'Tolls Adj', pnlTollsAdjAvg: 'Tolls Adj Avg', pnlCashAdv: 'Cash Adv', pnlCashAdvAvg: 'Cash Adv Avg',
@@ -4818,7 +4902,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
   }, [allDrivers, drivers, selectedDate, latestPayDate, calculateMetrics, uniqueDates]);
 
  const activeColIds = useMemo(() => {
-const ids = ['Segment', 'Gross', 'Margin', 'Net Pay', 'Ins. Exp.', 'Fuel', 'W/O SPOTTER', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Shared Ins', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Disp. Pay', 'Recruiting', 'Total PnL'];
+const ids = ['Segment', 'Gross', 'Margin', 'Net Pay', 'Ins. Exp.', 'Fuel', 'SPOTTER FUEL', 'Ret. Price', 'Spotter Ret. Price', 'Disc Price', 'Quantity', 'Rev. Col.', 'Rev Base', 'Bal Change', 'Rev Prorated', '0 Mi Cap', 'Escrow Adj', 'Tolls Adj', 'Cash Adv', 'CPM Adj', 'Fuel Adj', 'Shared Ins', 'Fuel Reb.', 'Wkly Exp.', 'Tolls', 'PO', 'Disp. Pay', 'Recruiting', 'Total PnL'];
 if (groupBy === 'Driver') {
       ids.push('Company', 'Team', 'Franchise', 'Dispatcher', 'Contract');
     }
@@ -5137,7 +5221,7 @@ if (groupBy === 'Driver') {
                                 driverPay: 'Net Pay', driverPayAvg: 'Net Pay Avg',
                                 insuranceExp: 'Ins. Exp.', insuranceExpAvg: 'Ins. Exp. Avg',
                                 fuel: 'Fuel', fuelAvg: 'Fuel Avg',
-                                wosFuel: 'W/O SPOTTER', wosFuelAvg: 'W/O SPOTTER Avg',
+                                wosFuel: 'SPOTTER FUEL', wosFuelAvg: 'SPOTTER FUEL Avg',
                                 companyPay: 'Rev. Col.', companyPayAvg: 'Rev. Col. Avg',
                                 pnlRevBase: 'Rev Base', pnlRevBaseAvg: 'Rev Base Avg',
                                 pnlProrated: 'Rev Prorated', pnlProratedAvg: 'Rev Prorated Avg',

@@ -60,26 +60,26 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
     );
 
     return (
-        <div className="bg-zinc-950/50 p-6 rounded-lg border border-zinc-800">
-            <div className="flex items-center gap-4 sticky top-[-24px] z-50 bg-zinc-950 p-4 -mx-6 -mt-6 mb-6 border-b border-zinc-800 rounded-t-lg shadow-md">
+        <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800 text-sm">
+            <div className="flex items-center gap-3 mb-4">
                 <input
                     type="text"
                     placeholder="Search..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full md:w-1/3 p-2 bg-zinc-900 border border-zinc-700 rounded-md text-zinc-200 focus:border-emerald-500 outline-none"
+                    className="w-full md:w-1/3 px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-500 outline-none"
                 />
                 <select
                     value={selectedContract}
                     onChange={(e) => setSelectedContract(e.target.value)}
-                    className="w-full md:w-1/3 p-2 bg-zinc-900 border border-zinc-700 rounded-md text-zinc-200 focus:border-emerald-500 outline-none"
+                    className="w-full md:w-1/3 px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-500 outline-none"
                 >
                     {contracts.map(c => (
                         <option key={c} value={c}>{c}</option>
                     ))}
                 </select>
                 <div className="group relative cursor-help text-zinc-500 hover:text-orange-500 transition-colors ml-auto">
-                    <Info size={20} />
+                    <Info size={16} />
                     <div className="hidden group-hover:block absolute right-0 top-full mt-2 w-72 bg-zinc-800 text-zinc-200 text-xs p-3 rounded shadow-xl normal-case font-normal z-50 pointer-events-none text-left border border-zinc-600">
                         <p className="font-bold text-orange-400 mb-1">PO Rules</p>
                         <p className="mb-2">Determine which Purchase Order categories are included or excluded from calculations for each contract type.</p>
@@ -91,31 +91,31 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                 </div>
             </div>
             
-            <div className="flex flex-col">
-                <div className="flex items-center justify-between pb-2 border-b border-zinc-800 font-medium text-zinc-400">
+            <div className="flex flex-col relative">
+                <div className="sticky top-[-1px] z-50 bg-[#09090b] flex items-center justify-between pb-2 pt-2 border-b border-zinc-800 font-bold text-zinc-500 text-[10px] uppercase tracking-wider">
                     <div>Category</div>
-                    <div className="flex items-center justify-end gap-8">
+                    <div className="flex items-center justify-end gap-6">
                         {selectedContract === 'TPOG' && <div>TPOG Scope</div>}
-                        <div className="w-28 text-right">Action</div>
+                        <div className="w-24 text-right">Action</div>
                     </div>
                 </div>
                 {filteredCategories.length === 0 && (
-                    <div className="text-zinc-500 text-sm italic mt-4">No matching PO categories.</div>
+                    <div className="text-zinc-500 text-xs italic mt-4">No matching PO categories.</div>
                 )}
                 {filteredCategories.map(category => {
                     const status = getStatusForCategory(category);
                     const tpogValue = getTpogForCategory(category);
                     return (
-                        <div key={category} className="flex items-center justify-between py-3 border-b border-zinc-800/50 last:border-0">
-                            <div className="text-zinc-300 font-medium">{category}</div>
-                            <div className="flex items-center justify-end gap-8">
+                        <div key={category} className="flex items-center justify-between py-2 border-b border-zinc-800/50 last:border-0">
+                            <div className="text-zinc-300 font-medium text-xs">{category}</div>
+                            <div className="flex items-center justify-end gap-6">
                                 {selectedContract === 'TPOG' && (
                                     <div>
                                         {status === 'Exclude' && (
                                             <select
                                                 value={tpogValue}
                                                 onChange={(e) => handleTpogChange(category, e.target.value)}
-                                                className="p-2 w-max border rounded-md shadow-sm outline-none font-semibold bg-zinc-900 border-zinc-700 text-zinc-300 focus:border-emerald-500"
+                                                className="px-2 py-1 text-[10px] w-max border rounded shadow-sm outline-none font-semibold bg-zinc-900 border-zinc-700 text-zinc-300 focus:border-emerald-500"
                                             >
                                                 <option value="Only TPOG with franchises">Only TPOG with franchises</option>
                                                 <option value="Only TPOG without franchises">Only TPOG without franchises</option>
@@ -124,11 +124,11 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                                         )}
                                     </div>
                                 )}
-                                <div className="w-28 flex justify-end">
+                                <div className="w-24 flex justify-end">
                                     <select
                                         value={status}
                                         onChange={(e) => handleStatusChange(category, e.target.value as 'Include' | 'Exclude')}
-                                        className={`p-2 border rounded-md shadow-sm outline-none font-semibold w-full text-center ${
+                                        className={`px-2 py-1 text-[10px] border rounded shadow-sm outline-none font-bold w-full text-center uppercase tracking-wider ${
                                             status === 'Include' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-rose-500/10 text-rose-500 border-rose-500/30'
                                         }`}
                                     >
