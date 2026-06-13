@@ -60,19 +60,19 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
     );
 
     return (
-        <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800 text-sm">
-            <div className="flex items-center gap-3 mb-4">
+        <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800 text-sm flex flex-col h-full min-h-[400px] max-h-[60vh]">
+            <div className="flex items-center gap-3 mb-4 shrink-0 relative z-[60]">
                 <input
                     type="text"
                     placeholder="Search..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full md:w-1/3 px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-500 outline-none"
+                    className="w-full md:w-48 px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-500 outline-none"
                 />
                 <select
                     value={selectedContract}
                     onChange={(e) => setSelectedContract(e.target.value)}
-                    className="w-full md:w-1/3 px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-500 outline-none"
+                    className="w-full md:w-48 px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-500 outline-none"
                 >
                     {contracts.map(c => (
                         <option key={c} value={c}>{c}</option>
@@ -80,7 +80,7 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                 </select>
                 <div className="group relative cursor-help text-zinc-500 hover:text-orange-500 transition-colors ml-auto">
                     <Info size={16} />
-                    <div className="hidden group-hover:block absolute right-0 top-full mt-2 w-72 bg-zinc-800 text-zinc-200 text-xs p-3 rounded shadow-xl normal-case font-normal z-50 pointer-events-none text-left border border-zinc-600">
+                    <div className="hidden group-hover:block absolute right-0 top-full mt-2 w-72 bg-zinc-800 text-zinc-200 text-xs p-3 rounded shadow-xl normal-case font-normal z-[100] pointer-events-none text-left border border-zinc-600">
                         <p className="font-bold text-orange-400 mb-1">PO Rules</p>
                         <p className="mb-2">Determine which Purchase Order categories are included or excluded from calculations for each contract type.</p>
                         <p className="font-bold text-orange-400 mb-1">TPOG Scope</p>
@@ -91,12 +91,12 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                 </div>
             </div>
             
-            <div className="flex flex-col relative">
-                <div className="sticky top-[-1px] z-50 bg-[#09090b] flex items-center justify-between pb-2 pt-2 border-b border-zinc-800 font-bold text-zinc-500 text-[10px] uppercase tracking-wider">
+            <div className="flex flex-col relative flex-1 min-h-0 overflow-y-auto pr-2">
+                <div className="sticky top-0 z-50 bg-[#09090b] flex items-center justify-between pb-2 pt-2 border-b border-zinc-800 font-bold text-zinc-500 text-[10px] uppercase tracking-wider">
                     <div>Category</div>
                     <div className="flex items-center justify-end gap-6">
-                        {selectedContract === 'TPOG' && <div>TPOG Scope</div>}
-                        <div className="w-24 text-right">Action</div>
+                        {selectedContract === 'TPOG' && <div className="w-56 text-center">TPOG Scope</div>}
+                        <div className="w-24 text-center">Action</div>
                     </div>
                 </div>
                 {filteredCategories.length === 0 && (
@@ -110,7 +110,7 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                             <div className="text-zinc-300 font-medium text-xs">{category}</div>
                             <div className="flex items-center justify-end gap-6">
                                 {selectedContract === 'TPOG' && (
-                                    <div>
+                                    <div className="w-56 flex justify-center">
                                         {status === 'Exclude' && (
                                             <select
                                                 value={tpogValue}
@@ -124,7 +124,7 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                                         )}
                                     </div>
                                 )}
-                                <div className="w-24 flex justify-end">
+                                <div className="w-24 flex justify-center">
                                     <select
                                         value={status}
                                         onChange={(e) => handleStatusChange(category, e.target.value as 'Include' | 'Exclude')}

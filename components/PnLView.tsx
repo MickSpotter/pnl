@@ -11,6 +11,7 @@ import HistoricalChart, { ChartSeries } from './HistoricalChart';
 import Simulator from './Simulator';
 import TableFilter, { FilterRule } from './TableFilter';
 import { ColumnsEditor } from './Columns';
+import PnLHistoryCard from './PnLHistoryCard';
 
 
 let hasPlayedInitialAnimations = false;
@@ -307,8 +308,9 @@ const MasterTable: React.FC<{
   };
 
   const handleTooltipMove = (e: React.MouseEvent) => {
-    const tooltip = e.currentTarget.querySelector('.dynamic-tooltip') as HTMLElement;
-    if (tooltip) {
+    const tooltips = e.currentTarget.querySelectorAll('.dynamic-tooltip');
+    tooltips.forEach((t) => {
+        const tooltip = t as HTMLElement;
         const x = e.clientX;
         const y = e.clientY;
         const vh = window.innerHeight;
@@ -321,11 +323,66 @@ const MasterTable: React.FC<{
         tooltip.style.transform = `translateY(-${percentY}%)`;
         tooltip.style.maxHeight = '90vh';
         tooltip.style.overflowY = 'auto';
-    }
+    });
   };
 
   const val = (amount: number, divisor: number) => isAverageView ? (divisor > 0 ? amount / divisor : amount) : amount;
-    const getContractRuleForDate = (contractType: string, refDate?: string | null) => {
+
+  const renderDisabledVal = (itemKey: string, content: React.ReactNode, isDisabled: boolean, rowDrvs: DriverPerformance[], currentDiv: number, isTotalsRow: boolean = false) => {
+      const isMixedGroup = ['Company', 'Franchise', 'Team'].includes(groupBy) && !isTotalsRow;
+      
+      if (isMixedGroup) {
+          const excludedContracts = new Set<string>();
+          let excludedAmount = 0;
+          const driversByContract = new Map<string, DriverPerformance[]>();
+          
+          rowDrvs.forEach(d => {
+              const c = d.contractType || 'Unknown';
+              if (!driversByContract.has(c)) driversByContract.set(c, []);
+              driversByContract.get(c)!.push(d);
+          });
+          
+          driversByContract.forEach((drvs, c) => {
+              const cm = calculateMetrics(drvs, true);
+              if (cm.disabledPnlItems?.includes(itemKey)) {
+                  excludedContracts.add(c);
+                  if (itemKey === 'revenue_collected') excludedAmount += cm.companyPay;
+                  else if (itemKey === 'fuel_rebate') excludedAmount += cm.fuelRebate;
+                  else if (itemKey === 'tolls') excludedAmount += cm.tolls;
+                  else if (itemKey === 'po') excludedAmount += cm.totalPOCov;
+                  else if (itemKey === 'recruiting') excludedAmount += cm.totalRecruiting;
+                  else if (itemKey === 'dispatcher_pay') excludedAmount += cm.dispatcherPay;
+                  else if (itemKey === 'weekly_expenses') excludedAmount += cm.allocatedFixed;
+              }
+          });
+
+          if (excludedContracts.size > 0) {
+              return (
+                  <span className="relative group/disableditem flex items-center justify-end gap-0.5 cursor-help w-full" onMouseMove={handleTooltipMove}>
+                      <span>{content}</span>
+                      <span className="text-rose-500 font-bold text-[14px] shrink-0 leading-none pb-[1px]">!</span>
+                      <div className="fixed hidden group-hover/disableditem:block z-[100000] bg-zinc-800 border border-zinc-500 text-rose-300 px-2 py-1.5 rounded shadow-xl text-[10px] whitespace-normal w-max max-w-[200px] text-left pointer-events-none font-bold opacity-100 dynamic-tooltip">
+                          Excluded from PnL Calculation for {Array.from(excludedContracts).join(', ')}: {formatCurrency(Math.abs(val(excludedAmount, currentDiv)))}
+                      </div>
+                  </span>
+              );
+          }
+          return <>{content}</>;
+      }
+
+      if (!isDisabled) return <>{content}</>;
+      
+      return (
+          <span className="relative group/disableditem inline-block line-through decoration-rose-500 opacity-100 cursor-help" onMouseMove={handleTooltipMove}>
+              {content}
+              <div className="fixed hidden group-hover/disableditem:block z-[100000] bg-zinc-800 border border-zinc-500 text-rose-300 px-2 py-1.5 rounded shadow-xl text-[10px] whitespace-nowrap pointer-events-none font-bold opacity-100 dynamic-tooltip">
+                  Excluded from PnL Calculation
+              </div>
+          </span>
+      );
+  };
+
+  const getContractRuleForDate = (contractType: string, refDate?: string | null) => {
     const rules = (configContracts || []).filter((c: any) => c.contract_type === contractType);
     const targetTime = refDate && refDate !== 'ALL' && refDate !== 'LATEST' ? new Date(refDate).getTime() : null;
 
@@ -392,11 +449,18 @@ const MasterTable: React.FC<{
             fuel_discount_price_count: 0,
             poBreakdown: {},
             sharedInsBreakdown: {},
-            dispBreakdown: {}
+            dispBreakdown: {},
+            disabledPnlItems: null
           };
           driversByName.forEach((drvRecords) => {
             const m = calculateMetrics(drvRecords, true);
             
+            if (t.disabledPnlItems === null) {
+                t.disabledPnlItems = m.disabledPnlItems || [];
+            } else {
+                t.disabledPnlItems = t.disabledPnlItems.filter((i: string) => (m.disabledPnlItems || []).includes(i));
+            }
+
             t.rawEffCount += m.rawEffCount;
             t.effCount += m.effCount;
             t.effNonTeamsCount += m.effNonTeamsCount;
@@ -713,8 +777,8 @@ const MasterTable: React.FC<{
        <td className="px-1 py-0.5 text-right text-purple-400 opacity-70">{Math.round(val(metrics.fuel_quantity, div))}</td>
      </>
    )}
-  <td className="px-1 py-0.5 text-right text-blue-400">
-        {formatCurrency(val(metrics.companyPay, div))}
+  <td className="px-1 py-0.5 text-right text-blue-400 !overflow-visible">
+        {renderDisabledVal('revenue_collected', formatCurrency(val(metrics.companyPay, div)), !!metrics.disabledPnlItems?.includes('revenue_collected'), rowDrivers, div)}
       </td>
 {isRevColExpanded && (
           <>
@@ -951,9 +1015,11 @@ const MasterTable: React.FC<{
           </td>
         </>
       )}
-       <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.fuelRebate, div))}</td>
+       <td className="px-1 py-0.5 text-right text-blue-400 !overflow-visible">
+         {renderDisabledVal('fuel_rebate', formatCurrency(val(metrics.fuelRebate, div)), !!metrics.disabledPnlItems?.includes('fuel_rebate'), rowDrivers, div)}
+       </td>
       <td className="group/fixed relative hover:z-[99999] px-1 py-0.5 text-right text-blue-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
-        -{formatCurrency(Math.abs(val(metrics.allocatedFixed, div)))}
+        {renderDisabledVal('weekly_expenses', `-${formatCurrency(Math.abs(val(metrics.allocatedFixed, div)))}`, !!metrics.disabledPnlItems?.includes('weekly_expenses'), rowDrivers, div)}
         <div className="fixed hidden group-hover/fixed:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 whitespace-normal break-words dynamic-tooltip">
           <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Weekly Expenses Breakdown:</div>
          {val(metrics.insLiabAuto, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Liability (Auto):</span><span className="font-mono">{val(metrics.insLiabAuto, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(metrics.insLiabAuto, div)))}</span></div>}
@@ -981,9 +1047,11 @@ const MasterTable: React.FC<{
           <div className="flex justify-between gap-2 border-t border-zinc-600 pt-1 font-bold text-white"><span>Total Wkly Exp:</span><span className="font-mono">-{formatCurrency(Math.abs(val(metrics.allocatedFixed, div)))}</span></div>
         </div>
       </td>
-      <td className="px-1 py-0.5 text-right text-blue-400">{val(metrics.tolls, div) === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(val(metrics.tolls, div)))}`}</td>
+      <td className="px-1 py-0.5 text-right text-blue-400 !overflow-visible">
+        {renderDisabledVal('tolls', val(metrics.tolls, div) === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(val(metrics.tolls, div)))}`, !!metrics.disabledPnlItems?.includes('tolls'), rowDrivers, div)}
+      </td>
       <td className="group/pobreakdown relative hover:z-[99999] px-1 py-0.5 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
-        {formatCurrency(val(metrics.totalPOCov, div))}
+        {renderDisabledVal('po', formatCurrency(val(metrics.totalPOCov, div)), !!metrics.disabledPnlItems?.includes('po'), rowDrivers, div)}
         {metrics.poBreakdown && Object.keys(metrics.poBreakdown).length > 0 && (
           <div className="fixed hidden group-hover/pobreakdown:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[240px] pointer-events-none flex flex-col gap-1 dynamic-tooltip whitespace-normal break-words">
             <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">PO Breakdown:</div>
@@ -1011,7 +1079,7 @@ const MasterTable: React.FC<{
         )}
       </td>
       <td className="group/disp relative hover:z-[99999] px-1 py-0.5 text-right text-blue-400 !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
-        <span>{val(metrics.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(metrics.dispatcherPay, div))}</span>
+        {renderDisabledVal('dispatcher_pay', `${val(metrics.dispatcherPay, div) > 0 ? '+' : ''}${formatCurrency(val(metrics.dispatcherPay, div))}`, !!metrics.disabledPnlItems?.includes('dispatcher_pay'), rowDrivers, div)}
         <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[540px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
           <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
           {metrics.dispBreakdown && Object.keys(metrics.dispBreakdown).length > 0 && (
@@ -1053,7 +1121,9 @@ const MasterTable: React.FC<{
           <div className="text-[9px] text-zinc-400 mt-1 italic leading-tight">* Note: Shared liability is included in this total but excluded from Total PnL as it is already in Revenue Collected.</div>
         </div>
       </td>
-       <td className="px-1 py-0.5 text-right text-blue-400">{formatCurrency(val(metrics.totalRecruiting, div))}</td>
+       <td className="px-1 py-0.5 text-right text-blue-400 !overflow-visible">
+         {renderDisabledVal('recruiting', formatCurrency(val(metrics.totalRecruiting, div)), !!metrics.disabledPnlItems?.includes('recruiting'), rowDrivers, div)}
+       </td>
        {show4w && <td className="px-1 py-0.5 text-right font-medium text-orange-300">{isStub ? '-' : formatCurrency(val(w4.sum, div))}</td>}
       {show4w && <td className="px-1 py-0.5 text-right font-bold text-orange-300">{isStub ? '-' : formatCurrency(val(w4.avg, div))}</td>}
       <td className={`px-1 py-0.5 text-right font-medium sticky z-10 hover:z-[100] bg-zinc-950 group-hover:bg-zinc-900 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] right-0 ${val(metrics.netIncome, div) >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${metrics.isAdjusted ? 'group/tpogpnl relative cursor-help !overflow-visible' : ''}`} onMouseMove={metrics.isAdjusted ? handleTooltipMove : undefined}>
@@ -1895,10 +1965,10 @@ const MasterTable: React.FC<{
                      <td className="px-1 py-1 text-right text-purple-400 opacity-70">{Math.round(val(dynamicTotals.fuel_quantity, div))}</td>
                    </>
                  )}
-                <td className="px-1 py-1 text-right text-blue-400">
-                  {formatCurrency(val(dynamicTotals.pnlCompanyPay !== undefined ? dynamicTotals.pnlCompanyPay : dynamicTotals.companyPay, div))}
+                <td className="px-1 py-1 text-right text-blue-400 !overflow-visible">
+                      {renderDisabledVal('revenue_collected', formatCurrency(val(dynamicTotals.pnlCompanyPay !== undefined ? dynamicTotals.pnlCompanyPay : dynamicTotals.companyPay, div)), !!dynamicTotals.disabledPnlItems?.includes('revenue_collected'), drivers, div, true)}
                     </td>
-                    {isRevColExpanded && (
+                {isRevColExpanded && (
                       <>
                         <td className="group/revbase relative hover:z-[99999] px-1 py-1 text-right text-zinc-400 font-mono cursor-help !overflow-visible" onMouseMove={handleTooltipMove}>
                           {val(dynamicTotals.pnlRevBase, div) < 0 ? '-' : '+'}{formatCurrency(Math.abs(val(dynamicTotals.pnlRevBase, div)))}
@@ -2061,9 +2131,11 @@ const MasterTable: React.FC<{
                         </td>
                       </>
                     )}
-                     <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.pnlFuelRebate !== undefined ? dynamicTotals.pnlFuelRebate : dynamicTotals.fuelRebate, div))}</td>
+                     <td className="px-1 py-1 text-right text-blue-400 !overflow-visible">
+                       {renderDisabledVal('fuel_rebate', formatCurrency(val(dynamicTotals.pnlFuelRebate !== undefined ? dynamicTotals.pnlFuelRebate : dynamicTotals.fuelRebate, div)), !!dynamicTotals.disabledPnlItems?.includes('fuel_rebate'), drivers, div, true)}
+                     </td>
                     <td onClick={() => setIsExpModalOpen(true)} className="group/fixed relative hover:z-[99999] px-1 py-1 text-right text-blue-400 cursor-pointer !overflow-visible hover:bg-zinc-800/50 transition-colors" onMouseMove={handleTooltipMove}>
-                      -{formatCurrency(Math.abs(val(dynamicTotals.pnlAllocatedFixed !== undefined ? dynamicTotals.pnlAllocatedFixed : dynamicTotals.allocatedFixed, div)))}
+                      {renderDisabledVal('weekly_expenses', `-${formatCurrency(Math.abs(val(dynamicTotals.pnlAllocatedFixed !== undefined ? dynamicTotals.pnlAllocatedFixed : dynamicTotals.allocatedFixed, div)))}`, !!dynamicTotals.disabledPnlItems?.includes('weekly_expenses'), drivers, div, true)}
                       <div className="fixed hidden group-hover/fixed:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[260px] pointer-events-none flex flex-col gap-1 whitespace-normal break-words dynamic-tooltip">
                         <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Weekly Expenses Breakdown:</div>
                         {val(dynamicTotals.insLiabAuto, div) !== 0 && <div className="flex justify-between gap-2 text-zinc-400"><span>Liability (Auto):</span><span className="font-mono">{val(dynamicTotals.insLiabAuto, div) < 0 ? '+' : '-'}{formatCurrency(Math.abs(val(dynamicTotals.insLiabAuto, div)))}</span></div>}
@@ -2091,9 +2163,11 @@ const MasterTable: React.FC<{
                         <div className="flex justify-between gap-2 border-t border-zinc-600 pt-1 font-bold text-white"><span>Total Wkly Exp:</span><span className="font-mono">-{formatCurrency(Math.abs(val(dynamicTotals.pnlAllocatedFixed !== undefined ? dynamicTotals.pnlAllocatedFixed : dynamicTotals.allocatedFixed, div)))}</span></div>
                       </div>
                     </td>
-                    <td className="px-1 py-1 text-right text-blue-400">{val(dynamicTotals.pnlTolls !== undefined ? dynamicTotals.pnlTolls : dynamicTotals.tolls, div) === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(val(dynamicTotals.pnlTolls !== undefined ? dynamicTotals.pnlTolls : dynamicTotals.tolls, div)))}`}</td>
+                    <td className="px-1 py-1 text-right text-blue-400 !overflow-visible">
+                      {renderDisabledVal('tolls', val(dynamicTotals.pnlTolls !== undefined ? dynamicTotals.pnlTolls : dynamicTotals.tolls, div) === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(val(dynamicTotals.pnlTolls !== undefined ? dynamicTotals.pnlTolls : dynamicTotals.tolls, div)))}`, !!dynamicTotals.disabledPnlItems?.includes('tolls'), drivers, div, true)}
+                    </td>
                     <td onClick={() => setIsPoModalOpen(true)} className="group/footerpobreakdown relative hover:z-[99999] px-1 py-1 text-right text-blue-400 cursor-pointer !overflow-visible hover:bg-zinc-800/50 transition-colors" onMouseMove={handleTooltipMove}>
-                      {formatCurrency(val(dynamicTotals.pnlTotalPOCov !== undefined ? dynamicTotals.pnlTotalPOCov : dynamicTotals.totalPOCov, div))}
+                      {renderDisabledVal('po', formatCurrency(val(dynamicTotals.pnlTotalPOCov !== undefined ? dynamicTotals.pnlTotalPOCov : dynamicTotals.totalPOCov, div)), !!dynamicTotals.disabledPnlItems?.includes('po'), drivers, div, true)}
                       {dynamicTotals.poBreakdown && Object.keys(dynamicTotals.poBreakdown).length > 0 && (
                         <div className="fixed hidden group-hover/footerpobreakdown:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-auto min-w-[200px] pointer-events-none flex flex-col gap-1 dynamic-tooltip">
                           <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Total PO Breakdown:</div>
@@ -2112,7 +2186,7 @@ const MasterTable: React.FC<{
                       )}
                     </td>
                     <td className="group/disp relative hover:z-[99999] px-1 py-1 text-right text-blue-400 font-medium !overflow-visible cursor-help" onMouseMove={handleTooltipMove}>
-                      <span>{val(dynamicTotals.dispatcherPay, div) > 0 ? '+' : ''}{formatCurrency(val(dynamicTotals.dispatcherPay, div))}</span>
+                      {renderDisabledVal('dispatcher_pay', `${val(dynamicTotals.dispatcherPay, div) > 0 ? '+' : ''}${formatCurrency(val(dynamicTotals.dispatcherPay, div))}`, !!dynamicTotals.disabledPnlItems?.includes('dispatcher_pay'), drivers, div, true)}
                       <div className="fixed hidden group-hover/disp:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[540px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                         <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
                         {dynamicTotals.dispBreakdown && Object.keys(dynamicTotals.dispBreakdown).length > 0 && (
@@ -2154,7 +2228,9 @@ const MasterTable: React.FC<{
                         <div className="text-[9px] text-zinc-400 mt-1 italic leading-tight">* Note: Shared liability is included in this total but excluded from Total PnL as it is already in Revenue Collected.</div>
                       </div>
                     </td>
-                     <td className="px-1 py-1 text-right text-blue-400">{formatCurrency(val(dynamicTotals.pnlTotalRecruiting !== undefined ? dynamicTotals.pnlTotalRecruiting : dynamicTotals.totalRecruiting, div))}</td>
+                     <td className="px-1 py-1 text-right text-blue-400 !overflow-visible">
+                       {renderDisabledVal('recruiting', formatCurrency(val(dynamicTotals.pnlTotalRecruiting !== undefined ? dynamicTotals.pnlTotalRecruiting : dynamicTotals.totalRecruiting, div)), !!dynamicTotals.disabledPnlItems?.includes('recruiting'), drivers, div, true)}
+                     </td>
                      {show4w && <td className="px-1 py-1 text-right font-medium text-orange-300">{formatCurrency(val(dynamicTotals.w4Sum, div))}</td>}
                     {show4w && <td className="px-1 py-1 text-right text-xs font-bold text-orange-300">{formatCurrency(val(dynamicTotals.w4Avg, div))}</td>}
                     <td className={`px-1 py-1 text-right text-xs sticky z-20 bg-zinc-950 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] right-0 ${val(dynamicTotals.netIncome, div) >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
@@ -2283,15 +2359,11 @@ const PnLView: React.FC<PnLViewProps> = ({
   }, [pnlConfigs]);
   const [isSimulatorOpen, setIsSimulatorOpen] = useState(false);
   const [isTableExpanded, setIsTableExpanded] = useState(false);
-  const [isPnlHistoryExpanded, setIsPnlHistoryExpanded] = useState(false);
   const [groupBy, setGroupBy] = useState<'Contract' | 'Company' | 'Franchise' | 'Team' | 'Driver'>('Contract');
-  const [pnlHistoryGroupBy, setPnlHistoryGroupBy] = useState<'Company' | 'Contract' | 'Franchise' | 'Team'>('Contract');
-  const [pnlHistoryFilterValue, setPnlHistoryFilterValue] = useState<string>('');
   const [isAverageView, setIsAverageView] = useState(false);
   
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
   const [chartWeeksLimit, setChartWeeksLimit] = useState<number | 'ALL'>('ALL');
-  const [isPnlHistoryAverageView, setIsPnlHistoryAverageView] = useState(false);
   const [isMetricsOpen, setIsMetricsOpen] = useState(false);
   const [isEntitiesOpen, setIsEntitiesOpen] = useState(false);
   const [isColsOpenMain, setIsColsOpenMain] = useState(false);
@@ -3966,6 +4038,7 @@ if (isCategorical) {
     let pnlFuelAdj = 0;
     let pnlProrated = 0;
         let pnlZeroMiDrop = 0;
+        let activeItemsIntersection: string[] | null = null;
 
         initialDrivers.forEach(d => {
         fcTruck += (d as any).fcTruck || 0;
@@ -3983,7 +4056,11 @@ if (isCategorical) {
 
         const activeItems = getPnlConfigItems(d.contractType || '');
 
-        
+        if (activeItemsIntersection === null) {
+            activeItemsIntersection = [...activeItems];
+        } else {
+            activeItemsIntersection = activeItemsIntersection.filter(i => activeItems.includes(i));
+        }
 
         const dFuelRebate = (d as any).fuelRebate || 0;
         if (activeItems.includes('fuel_rebate')) pnlFuelRebate += dFuelRebate;
@@ -4270,7 +4347,8 @@ if (isCategorical) {
       fcTruck, fcCpm, fcTrailer, fcPlates, fcTelematics, fcPhone, fcOffice, fcRent, fcBackupMc, fcBoReg, fcBoTech, fcFactoring,
       pnlCompanyPay, pnlFuelRebate, pnlAllocatedFixed, pnlTotalPOCov, pnlTotalRecruiting, pnlTolls, pnlDispGrossAmount, pnlDispMarginAmount,
       pnlRevBase, pnlFranchiseBase, pnlPoDeductions, pnlPoSettle, pnlNegNetPay, pnlStrictNegNetPay, pnlBalanceSettle, pnlBalanceChange, pnlExcludedBalanceChange, pnlIncludedBalanceChange, pnlTruckFloat, pnlTruckWkly, pnlOccIns, pnlEld, pnlIfta, pnlMaintSupport, pnlLiability, pnlTruckPhd, pnlTrailer, pnlTrailerPhd, pnlEscrowAdj, pnlTollsAdj, pnlCashAdv, pnlCpmAdj, pnlFuelAdj, pnlProrated, pnlZeroMiDrop,
-      excludedPoTotal
+      excludedPoTotal,
+      disabledPnlItems: ['revenue_collected', 'fuel_rebate', 'dispatcher_pay', 'weekly_expenses', 'po', 'tolls', 'recruiting'].filter(i => !(activeItemsIntersection || []).includes(i))
     };
   }, [fixedExpenses, simulationConfig, finImportByDate, globalStatsByDate, companyStatsMap, getPnlConfigItems, configContracts, poRules]);
 
@@ -4372,136 +4450,7 @@ if (isCategorical) {
      return total;
   }, [companyMetrics, fixedExpenses, getActiveAmount]);
 
-  // -- PNL HISTORY CALCULATION (Dynamic) --
-  const pnlHistoryOptions = useMemo(() => {
-    const options = new Set<string>();
-    let hasTpogFranchise = false;
-    enrichedDrivers.forEach(d => {
-      if (pnlHistoryGroupBy === 'Company' && d.companyId) options.add(d.companyId);
-      if (pnlHistoryGroupBy === 'Contract' && d.contractType) {
-          options.add(d.contractType);
-          if (d.contractType === 'TPOG' && d.franchiseId) hasTpogFranchise = true;
-      }
-      if (pnlHistoryGroupBy === 'Franchise' && d.franchiseId) options.add(d.franchiseId);
-      if (pnlHistoryGroupBy === 'Team' && d.teamId) options.add(d.teamId);
-    });
-    const arr = Array.from(options).filter(opt => {
-       if (opt === 'UNRECONCILED' || opt === 'Unassigned') return false;
-       if (pnlHistoryGroupBy === 'Contract' && ['TCPML', 'MCLPOO', 'CPML'].includes(opt)) return false;
-       return true;
-    }).sort();
-    if (pnlHistoryGroupBy === 'Contract' && hasTpogFranchise) {
-        arr.push('TPOG (Franchise PnL)');
-    }
-    return arr;
-  }, [enrichedDrivers, pnlHistoryGroupBy]);
-
-  const resolvedPnlFilter = useMemo(() => {
-     if (pnlHistoryOptions.includes(pnlHistoryFilterValue)) return pnlHistoryFilterValue;
-     return pnlHistoryOptions.length > 0 ? pnlHistoryOptions[0] : '';
-  }, [pnlHistoryGroupBy, pnlHistoryFilterValue, pnlHistoryOptions]);
-
-  const pnlHistory = useMemo(() => {
-    const groups: { [date: string]: any[] } = {};
-    enrichedDrivers.forEach(d => {
-      if (!d.payDate) return;
-      if (!groups[d.payDate]) groups[d.payDate] = [];
-      groups[d.payDate].push(d);
-    });
-
-    const calcAggregated = (groupDrivers: any[]) => {
-        const driversByName = new Map<string, any[]>();
-        groupDrivers.forEach(d => {
-            const name = d.name || 'Unknown';
-            if (!driversByName.has(name)) driversByName.set(name, []);
-            driversByName.get(name)!.push(d);
-        });
-        let netIncome = 0;
-        let nt = 0;
-        driversByName.forEach(drvRecords => {
-            const m = calculateMetrics(drvRecords, true);
-            netIncome += m.netIncome;
-            nt += m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount;
-        });
-        return { netIncome, nt };
-    };
-
-    const history = Object.keys(groups).map(date => {
-              const weekDrivers = groups[date];
-              
-              const totalMetrics = calcAggregated(weekDrivers);
-              let totalNetIncome = totalMetrics.netIncome;
-              const totalNT = totalMetrics.nt;
-
-              const tpogFranchiseDrivers = weekDrivers.filter(d => d.contractType === 'TPOG' && !!d.franchiseId).map(d => ({
-                  ...d,
-                  companyPay: (d as any).franchise_revenue_collected || 0,
-                  fixed_costs: (d as any).franchise_fixed_costs_full || 0,
-                  poCoverage: (d as any).franchise_po ? -Math.abs(Number((d as any).franchise_po)) : 0,
-                  poAmount: (d as any).franchise_po || 0,
-                  ...((d as any).franchise_fixed_breakdown || {}),
-                  isFranchiseStub: true
-              }));
-
-              let fNetIncome = 0;
-              let fNt = 0;
-              if (tpogFranchiseDrivers.length > 0) {
-                  const driversByName = new Map<string, any[]>();
-                  tpogFranchiseDrivers.forEach(d => {
-                      const name = d.name || 'Unknown';
-                      if (!driversByName.has(name)) driversByName.set(name, []);
-                      driversByName.get(name)!.push(d);
-                  });
-                  driversByName.forEach(drvRecords => {
-                      const m = calculateMetrics(drvRecords, true);
-                      fNetIncome += (m.netIncome + (m.excludedPoTotal || 0)) / 2;
-                      fNt += (m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount) / 2;
-                  });
-                  totalNetIncome -= fNetIncome;
-              }
-              
-              const entityData: Record<string, { amount: number, nt: number }> = {};
-      pnlHistoryOptions.forEach(opt => entityData[opt] = { amount: 0, nt: 0 });
-
-      const groupedByEntity = new Map<string, any[]>();
-      weekDrivers.forEach(d => {
-           let groupKey = 'Unknown';
-           if (pnlHistoryGroupBy === 'Company') groupKey = d.companyId || 'Unknown';
-           else if (pnlHistoryGroupBy === 'Contract') groupKey = d.contractType || 'Unknown';
-           else if (pnlHistoryGroupBy === 'Franchise') groupKey = d.franchiseId || 'Unknown';
-           else if (pnlHistoryGroupBy === 'Team') groupKey = d.teamId || 'Unknown';
-           
-           if (!groupedByEntity.has(groupKey)) groupedByEntity.set(groupKey, []);
-           groupedByEntity.get(groupKey)!.push(d);
-      });
-
-      groupedByEntity.forEach((records, entityKey) => {
-          if (entityData[entityKey] !== undefined) {
-              const m = calcAggregated(records);
-              entityData[entityKey] = { amount: m.netIncome, nt: m.nt };
-          }
-      });
-      
-      if (pnlHistoryGroupBy === 'Contract' && entityData['TPOG'] !== undefined) {
-          entityData['TPOG'].amount -= fNetIncome;
-      }
-      
-      if (pnlHistoryGroupBy === 'Contract' && entityData['TPOG (Franchise PnL)'] !== undefined) {
-          entityData['TPOG (Franchise PnL)'].amount = fNetIncome;
-          entityData['TPOG (Franchise PnL)'].nt = fNt;
-      }
-
-      return { 
-         date,
-         totalAmount: totalNetIncome,
-         totalNT,
-         entityData
-      };
-    });
-
-    const sortedHistory = history.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-return sortedHistory.length > 6 ? sortedHistory.slice(0, -6) : sortedHistory;
-  }, [enrichedDrivers, calculateMetrics, pnlHistoryGroupBy, pnlHistoryOptions]);
+  
 
 
   const chartData = useMemo(() => {
@@ -6469,143 +6418,10 @@ const finalTrailerInterchangePerUnit = filteredNT > 0 ? finalTrailerInterchangeT
   
 
           {/* PNL History */}
-          <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-0 flex flex-col flex-1 min-h-0 overflow-hidden relative">
-            <div className="p-3 border-b border-zinc-800 bg-zinc-950/30 flex justify-between items-center flex-shrink-0">
-               <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1">
-                 <History size={12} className="text-emerald-500" /> PNL History
-               </h4>
-               <button 
-                 onClick={() => setIsPnlHistoryExpanded(true)}
-                 className="text-zinc-500 hover:text-emerald-400 transition-colors" 
-                 title="Expand PNL History"
-               >
-                 <Maximize2 size={12} />
-               </button>
-            </div>
-            <div className="flex-1 overflow-y-auto">
-               <table className="w-full text-[10px]">
-                 <thead className="bg-zinc-900 text-zinc-500 sticky top-0">
-                    <tr>
-                       <th className="px-2 py-1 text-left font-medium">Pay Date</th>
-                       <th className="px-2 py-1 text-right font-medium">Total PnL</th>
-                    </tr>
-                 </thead>
-                 <tbody className="divide-y divide-zinc-800/50">
-                    {pnlHistory.length > 0 ? (
-                      pnlHistory.map((item, idx) => (
-                         <tr key={idx} className="hover:bg-zinc-800/30 transition-colors">
-                            <td className="px-2 py-0.5 text-zinc-400 font-mono">
-                               {(() => {
-                                  const d = new Date(item.date);
-                                  return `${d.getUTCFullYear().toString().slice(-2)}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-                               })()}
-                            </td>
-                            <td className={`px-2 py-0.5 text-right font-mono font-bold ${item.totalAmount >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
-                               {item.totalAmount < 0 ? '-' : ''}{formatCurrency(Math.abs(item.totalAmount))}
-                            </td>
-                         </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={2} className="px-3 py-4 text-center text-zinc-600">No data available</td>
-                      </tr>
-                   )}
-                 </tbody>
-               </table>
-            </div>
-          </div>
-
-          {isPnlHistoryExpanded && (
-             <div className="fixed inset-0 z-[999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-8">
-               <div className="bg-zinc-950 border border-zinc-800 rounded-lg w-full h-full max-w-7xl flex flex-col shadow-2xl overflow-hidden">
-                 <div className="flex justify-between items-center p-3 border-b border-zinc-800 bg-zinc-900/50">
-                    <h2 className="text-sm font-bold text-white flex items-center gap-2">
-                       <History size={16} className="text-emerald-500" />
-                       Detailed PNL History
-                    </h2>
-                    <div className="flex items-center gap-3">
-                       <div className="relative flex items-center">
-                         <Eye size={12} className="absolute left-2 text-zinc-500 pointer-events-none" />
-                         <select
-                           value={pnlHistoryGroupBy}
-                           onChange={(e) => {
-                               setPnlHistoryGroupBy(e.target.value as any);
-                               e.target.blur();
-                           }}
-                           className="peer appearance-none bg-zinc-950 border border-zinc-800 rounded pl-6 pr-6 py-1 text-zinc-400 focus:text-white font-sans text-[10px] font-normal focus:outline-none focus:border-zinc-600 w-32 cursor-pointer"
-                         >
-                           <option value="Contract">By Contract</option>
-                           <option value="Company">By Company</option>
-                           <option value="Team">By Team</option>
-                         </select>
-                         <ChevronDown size={10} className="absolute right-2 text-zinc-500 pointer-events-none transition-transform peer-focus:rotate-180" />
-                       </div>
-                       <button
-                         onClick={() => setIsPnlHistoryAverageView(!isPnlHistoryAverageView)}
-                         className={`px-2 py-1 rounded text-[10px] font-sans font-normal border transition-colors flex justify-start items-center text-left ${isPnlHistoryAverageView ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-950 text-zinc-400 border-zinc-800 hover:border-zinc-700'}`}
-                       >
-                         AVG / DRV
-                       </button>
-                       <button 
-                        onClick={() => {
-                            setIsPnlHistoryExpanded(false);
-                            setPnlHistoryGroupBy('Contract');
-                            setIsPnlHistoryAverageView(false);
-                        }}
-                        className="p-1 hover:bg-zinc-800 rounded-full text-zinc-400 hover:text-white transition-colors ml-2"
-                       >
-                          <X size={18} />
-                       </button>
-                    </div>
-                 </div>
-                 
-                 <div className="flex-1 overflow-auto">
-                     {pnlHistory.length > 0 ? (
-                        <table className="w-full text-xs border-collapse relative">
-                           <thead className="sticky top-0 z-20 shadow-md">
-                              <tr>
-                                 <th className="bg-zinc-900 px-2 py-1 text-left font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">Pay Date</th>
-                                 <th className="bg-zinc-900 px-2 py-1 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">Total PnL</th>
-                                 {pnlHistoryOptions.map(opt => (
-                                     <th key={opt} className="bg-zinc-900 px-2 py-1 text-right font-medium uppercase tracking-wider border-b border-zinc-800 text-zinc-400 whitespace-nowrap">{opt}</th>
-                                 ))}
-                              </tr>
-                           </thead>
-                           <tbody className="divide-y divide-zinc-800/50">
-                              {pnlHistory.map((item, idx) => {
-                                 const d = new Date(item.date);
-                                 const formattedDate = `${d.getUTCFullYear().toString().slice(-2)}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
-                                 
-                                 return (
-                                    <tr key={idx} className="bg-zinc-900/40 hover:bg-zinc-800/40 transition-colors whitespace-nowrap">
-                                       <td className="px-2 py-0.5 font-bold text-zinc-200">{formattedDate}</td>
-                                       <td className={`px-2 py-0.5 text-right font-mono font-bold ${item.totalAmount >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>
-                                          {(() => {
-                                              const val = isPnlHistoryAverageView ? (item.totalNT > 0 ? item.totalAmount / item.totalNT : item.totalAmount) : item.totalAmount;
-                                              return (val < 0 ? '-' : '') + formatCurrency(Math.abs(val));
-                                          })()}
-                                       </td>
-                                       {pnlHistoryOptions.map(opt => {
-                                           const data = item.entityData[opt] || { amount: 0, nt: 0 };
-                                           const val = isPnlHistoryAverageView ? (data.nt > 0 ? data.amount / data.nt : data.amount) : data.amount;
-                                           return (
-                                               <td key={opt} className={`px-2 py-0.5 text-right font-mono font-medium ${val >= 0 ? 'text-emerald-500/80' : 'text-rose-500/80'}`}>
-                                                  {val < 0 ? '-' : ''}{formatCurrency(Math.abs(val))}
-                                               </td>
-                                           );
-                                       })}
-                                    </tr>
-                                 );
-                              })}
-                           </tbody>
-                        </table>
-                     ) : (
-                        <div className="flex justify-center items-center h-full text-zinc-500">No history data available.</div>
-                     )}
-                 </div>
-               </div>
-             </div>
-          )}
+          <PnLHistoryCard 
+            enrichedDrivers={enrichedDrivers} 
+            calculateMetrics={calculateMetrics} 
+          />
         </div>
 
       </div>
