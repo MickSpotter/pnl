@@ -109,6 +109,7 @@ const MasterTable: React.FC<{
       const [isRevColExpanded, setIsRevColExpanded] = useState(false);
       const [isFuelExpanded, setIsFuelExpanded] = useState(false);
       const [isMilesExpanded, setIsMilesExpanded] = useState(false);
+      const [expandedFranchiseRows, setExpandedFranchiseRows] = useState<Record<string, boolean>>({});
       const [isPoModalOpen, setIsPoModalOpen] = useState(false);
       const [isExpModalOpen, setIsExpModalOpen] = useState(false);
       const tableRef = useRef<HTMLTableElement>(null);
@@ -543,6 +544,8 @@ const MasterTable: React.FC<{
             t.pnlStrictNegNetPay += m.pnlStrictNegNetPay || 0;
             t.pnlBalanceSettle += m.pnlBalanceSettle || 0;
             t.pnlBalanceChange += m.pnlBalanceChange || 0;
+            t.pnlExcludedBalanceChange += m.pnlExcludedBalanceChange || 0;
+            t.pnlIncludedBalanceChange += m.pnlIncludedBalanceChange || 0;
             t.pnlTruckFloat += m.pnlTruckFloat || 0;
             t.pnlTruckWkly += m.pnlTruckWkly || 0;
             t.pnlOccIns += m.pnlOccIns || 0;
@@ -894,6 +897,12 @@ const MasterTable: React.FC<{
                   <span>Total:</span>
                   <span className="font-mono">{formatCurrency(val(rowBalChange, div))}</span>
                 </div>
+                {Math.abs(metrics.pnlExcludedBalanceChange || 0) > 0.01 && (
+                  <div className="flex justify-between mt-1 font-bold text-sky-300">
+                    <span>Calculated Amount (TPOG Non-Franchise):</span>
+                    <span className="font-mono">{formatCurrency(val(rowBalChange - metrics.pnlExcludedBalanceChange, div))}</span>
+                  </div>
+                )}
                 {((groupBy === 'Contract' && (rowName === 'TPOG' || rowName === 'TPOG (Franchise PnL)')) ||
                   ((groupBy === 'Company' || groupBy === 'Franchise' || groupBy === 'Team') && rowDrivers.some(d => d.contractType === 'MCLOO' || (d.contractType === 'TPOG' && !!d.franchiseId))) ||
                   (groupBy === 'Driver' && rowDrivers.some(d => d.contractType === 'MCLOO' || (d.contractType === 'TPOG' && !!d.franchiseId)))) && (
@@ -1144,7 +1153,9 @@ const MasterTable: React.FC<{
         {metrics.isAdjusted && (
           <div className="fixed hidden group-hover/tpogpnl:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
             <span className="font-bold text-emerald-400">TPOG PnL Explanation:</span>
-            The columns in this row display the full amount (100%) including the franchise share. However, the Total PnL represents the net PnL for TPOG, calculated as TPOG - TPOG(Franchise PnL)/2.
+            The columns in this row display the full amount (100%) including the franchise share. However, the Total PnL represents the net PnL for TPOG, calculated as TPOG - TPOG(Franchise PnL)/2. 
+            <br/><br/>
+            <span className="text-amber-400 italic">Note: Balance Change, Escrow Collected, and configured PO amounts are paid in full by the franchise and are not divided by 2.</span>
           </div>
         )}
       </td>
@@ -1732,13 +1743,23 @@ const MasterTable: React.FC<{
             const compDrivers = dataItem.drvs;
             const metrics = dataItem.metrics;
             const w4 = dataItem.w4;
+            const isExpanded = expandedFranchiseRows[companyName];
             return (
               <React.Fragment key={companyName}>
                 <tr className="group hover:bg-zinc-800/20 transition-colors">
-                  <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{companyName}</td>
+                  <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">
+                    <div className="flex items-center gap-1.5">
+                      <span>{companyName}</span>
+                      {metrics.fMetrics && (
+                        <button onClick={(e) => { e.stopPropagation(); setExpandedFranchiseRows(prev => ({ ...prev, [companyName]: !prev[companyName] })); }} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                          <ChevronRight size={12} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                  </td>
                   {renderRowCells(metrics, w4, false, companyName, compDrivers)}
                 </tr>
-                {metrics.fMetrics && (
+                {metrics.fMetrics && isExpanded && (
                    <tr className="group hover:bg-zinc-800/20 transition-colors">
                      <td className="px-1 py-0.5 font-bold text-amber-400 font-sans sticky left-0 z-10 group-hover:z-[100] !overflow-visible bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)] pl-4">
                        <div className="flex items-center gap-1.5 ml-4">
@@ -1817,13 +1838,23 @@ const MasterTable: React.FC<{
              const franDrivers = dataItem.drvs;
              const metrics = dataItem.metrics;
              const w4 = dataItem.w4;
+             const isExpanded = expandedFranchiseRows[franchiseName];
              return (
               <React.Fragment key={franchiseName}>
                 <tr className="group hover:bg-zinc-800/20 transition-colors">
-                 <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{displayLabel}</td>
+                 <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">
+                    <div className="flex items-center gap-1.5">
+                      <span>{displayLabel}</span>
+                      {metrics.fMetrics && (
+                        <button onClick={(e) => { e.stopPropagation(); setExpandedFranchiseRows(prev => ({ ...prev, [franchiseName]: !prev[franchiseName] })); }} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                          <ChevronRight size={12} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                 </td>
                   {renderRowCells(metrics, w4, false, displayLabel, franDrivers)}
                 </tr>
-                {metrics.fMetrics && (
+                {metrics.fMetrics && isExpanded && (
                    <tr className="group hover:bg-zinc-800/20 transition-colors">
                      <td className="px-1 py-0.5 font-bold text-amber-400 font-sans sticky left-0 z-10 group-hover:z-[100] !overflow-visible bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)] pl-4">
                        <div className="flex items-center gap-1.5 ml-4">
@@ -1844,13 +1875,24 @@ const MasterTable: React.FC<{
             const teamDrivers = dataItem.drvs;
             const metrics = dataItem.metrics;
             const w4 = dataItem.w4;
+            const isExpanded = expandedFranchiseRows[teamName];
             return (
               <React.Fragment key={teamName}>
                 <tr className="group hover:bg-zinc-800/20 transition-colors">
-                  <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">{displayLabel}</td>
+                  <td className="px-1 py-0.5 text-zinc-300 pl-4 font-sans sticky left-0 z-10 bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)]">
+                    <div className="flex items-center gap-1.5">
+                      <span>{displayLabel}</span>
+                      {metrics.fMetrics && (
+                        <button onClick={(e) => { e.stopPropagation(); setExpandedFranchiseRows(prev => ({ ...prev, [teamName]: !prev[teamName] })); }} className="text-zinc-500 hover:text-zinc-300 transition-colors">
+                          <ChevronRight size={12} className={`transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        </button>
+                      )}
+                    </div>
+                
+                  </td>
                   {renderRowCells(metrics, w4, false, displayLabel, teamDrivers)}
                 </tr>
-                {metrics.fMetrics && (
+                {metrics.fMetrics && isExpanded && (
                    <tr className="group hover:bg-zinc-800/20 transition-colors">
                      <td className="px-1 py-0.5 font-bold text-amber-400 font-sans sticky left-0 z-10 group-hover:z-[100] !overflow-visible bg-zinc-950 group-hover:bg-zinc-900 shadow-[6px_0_12px_-4px_rgba(0,0,0,0.5)] pl-4">
                        <div className="flex items-center gap-1.5 ml-4">
@@ -2165,6 +2207,12 @@ const MasterTable: React.FC<{
                               <span>Total:</span>
                               <span className="font-mono">{formatCurrency(val(footerBalChange, div))}</span>
                             </div>
+                            {Math.abs(dynamicTotals.pnlExcludedBalanceChange || 0) > 0.01 && (
+                              <div className="flex justify-between mt-1 font-bold text-sky-300">
+                                <span>Calculated Amount (TPOG Non-Franchise):</span>
+                                <span className="font-mono">{formatCurrency(val(footerBalChange - dynamicTotals.pnlExcludedBalanceChange, div))}</span>
+                              </div>
+                            )}
                             <div className="flex flex-col gap-1 mt-1 border-t border-zinc-700 pt-1">
                                 {(drivers || []).some(d => d.contractType === 'MCLOO') && (
                                     <span className="text-[9px] text-amber-400 italic leading-tight">
@@ -2463,6 +2511,7 @@ const PnLView: React.FC<PnLViewProps> = ({
   const [isTableExpanded, setIsTableExpanded] = useState(false);
   const [groupBy, setGroupBy] = useState<'Contract' | 'Company' | 'Franchise' | 'Team' | 'Driver'>('Contract');
   const [isAverageView, setIsAverageView] = useState(false);
+  
   
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
   const [chartWeeksLimit, setChartWeeksLimit] = useState<number | 'ALL'>('ALL');
