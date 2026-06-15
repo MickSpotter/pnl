@@ -338,6 +338,8 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
             streakWeeks: 0,
             payDate: row.pay_date,
             milesDriven: Number(row.total_miles) > 0 ? Number(row.total_miles) : 0,
+            loaded_miles: Number(row.loaded_miles || 0),
+            dh: Number(row.dh || 0),
             grossRevenue: Number(row.driver_gross || 0),
             totalGross: Number(row.driver_gross || 0) + Number(row.margin || 0),
             grossPay: 0,

@@ -94,7 +94,7 @@ const PnLHistoryCard: React.FC<PnLHistoryCardProps> = ({ enrichedDrivers, calcul
                   });
                   driversByName.forEach(drvRecords => {
                       const m = calculateMetrics(drvRecords, true);
-                      fNetIncome += (m.netIncome + (m.excludedPoTotal || 0)) / 2;
+                      fNetIncome += ((m.netIncome - (m.pnlBalanceChange || 0) - (m.pnlEscrowAdj || 0)) + (m.excludedPoTotal || 0)) / 2 + (m.pnlBalanceChange || 0) + (m.pnlEscrowAdj || 0);
                       fNt += (m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount) / 2;
                   });
                   totalNetIncome -= fNetIncome;

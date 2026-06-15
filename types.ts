@@ -153,6 +153,8 @@ export interface DriverPerformance {
       cash_advance_percent?: number;
       revenue_cpm?: number;
       total_miles?: number;
+      loaded_miles?: number;
+      dh?: number;
       fuel_saved?: number;
       spotter_fuel_saved?: number;
       fuel_spent?: number;
