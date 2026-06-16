@@ -85,10 +85,12 @@ const FixedRevenue: React.FC<FixedRevenueProps> = ({
     });
   }, [drivers, localRevenues, allDates]);
 
-  const getDefaultsForDate = (itemName: string, dateStr: string) => {
+  const getDefaultsForDate = React.useCallback((itemName: string, dateStr: string) => {
     const key = itemNameToKey[itemName];
     if (!key || !drivers) return [];
-    const matches = drivers;
+    
+    const matches = drivers.filter(d => (d.payDate || d.week_ending) === dateStr);
+    
     const distinctMap = new Map<string, number>();
     matches.forEach(m => {
       const amt = Math.abs(Number(m[key]) || 0);
@@ -97,12 +99,14 @@ const FixedRevenue: React.FC<FixedRevenueProps> = ({
           distinctMap.set(ct, Math.max(distinctMap.get(ct) || 0, amt));
       }
     });
+    
     const distinct: { contractType: string, amount: number }[] = [];
     distinctMap.forEach((amount, contractType) => {
         distinct.push({ contractType, amount });
     });
+    
     return distinct.sort((a, b) => a.contractType.localeCompare(b.contractType));
-  };
+  }, [drivers]);
 
   const handleAddRule = (itemName: string, scopeType: 'ALL' | 'COMPANY' | 'CONTRACT' | 'FRANCHISE', specificDate?: string) => {
     const newRule: FixedRevenueItem = {
@@ -126,6 +130,18 @@ const FixedRevenue: React.FC<FixedRevenueProps> = ({
   const handleDelete = (id: string) => {
     setLocalRevenues(prev => prev.filter(r => String(r.id) !== String(id)));
   };
+
+  const defaultPeriodSet = React.useMemo(() => {
+    return new Set(uniqueDates.map(dateStr => {
+      const dBase = new Date(dateStr);
+      const day = dBase.getUTCDay();
+      const diffToMonday = day === 4 ? -3 : (day === 0 ? 1 : (1 - day));
+      const vTObj = new Date(dBase.getTime() + diffToMonday * 24 * 60 * 60 * 1000);
+      const vF = new Date(vTObj.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+      const vT = vTObj.toISOString().split('T')[0];
+      return `${vF}_${vT}`;
+    }));
+  }, [uniqueDates]);
 
   return (
     <div className="max-w-6xl mx-auto mt-4">
@@ -187,15 +203,7 @@ const FixedRevenue: React.FC<FixedRevenueProps> = ({
             {revenueItems.map(itemName => {
               const isExpanded = selectedItemName === itemName;
               const allRules = localRevenues.filter(r => r.name === itemName);
-              const defaultPeriodSet = new Set(uniqueDates.map(dateStr => {
-                  const dBase = new Date(dateStr);
-                  const day = dBase.getUTCDay();
-                  const diffToMonday = day === 4 ? -3 : (day === 0 ? 1 : (1 - day));
-                  const vTObj = new Date(dBase.getTime() + diffToMonday * 24 * 60 * 60 * 1000);
-                  const vF = new Date(vTObj.getTime() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-                  const vT = vTObj.toISOString().split('T')[0];
-                  return `${vF}_${vT}`;
-              }));
+              
               const standaloneRules = allRules.filter(r => !(r.contractType && r.valid_from && r.valid_to && defaultPeriodSet.has(`${r.valid_from}_${r.valid_to}`)));
 
               return (

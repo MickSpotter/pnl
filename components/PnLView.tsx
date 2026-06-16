@@ -12,6 +12,7 @@ import Simulator from './Simulator';
 import TableFilter, { FilterRule } from './TableFilter';
 import { ColumnsEditor } from './Columns';
 import PnLHistoryCard from './PnLHistoryCard';
+import WeekOverWeekCard from './WeekOverWeekCard';
 
 
 let hasPlayedInitialAnimations = false;
@@ -745,11 +746,11 @@ const MasterTable: React.FC<{
       {!isAverageView && <td className="px-1 py-0.5 text-right text-white">{groupBy === 'Driver' ? `${Number((metrics.effTrailersCount * 7).toFixed(1))}/7` : Number(metrics.effTrailersCount.toFixed(1))}</td>}
       <td className="px-1 py-0.5 text-right text-yellow-400">{formatCurrency(val(metrics.gross, div))}</td>
       <td className="px-1 py-0.5 text-right text-yellow-400 font-medium">{formatCurrency(val(metrics.margin, div))}</td>
-      <td className="px-1 py-0.5 text-right text-yellow-400 font-medium">{Math.round(val(metrics.total_miles, div))}</td>
+      <td className="px-1 py-0.5 text-right text-yellow-400 font-medium">{Math.round(val(metrics.total_miles, div)).toLocaleString()}</td>
       {isMilesExpanded && (
         <>
-           <td className="px-1 py-0.5 text-right text-yellow-400 opacity-70">{Math.round(val(metrics.loaded_miles, div))}</td>
-           <td className="px-1 py-0.5 text-right text-yellow-400 opacity-70">{Math.round(val(metrics.dh, div))}</td>
+           <td className="px-1 py-0.5 text-right text-yellow-400 opacity-70">{Math.round(val(metrics.loaded_miles, div)).toLocaleString()}</td>
+           <td className="px-1 py-0.5 text-right text-yellow-400 opacity-70">{Math.round(val(metrics.dh, div)).toLocaleString()}</td>
         </>
       )}
       <td className="px-1 py-0.5 text-right text-purple-400">{formatCurrency(val(metrics.driverPay, div))}</td>
@@ -2065,11 +2066,11 @@ const MasterTable: React.FC<{
                     {!isAverageView && <td className="px-1 py-1 text-right text-white">{Number(dynamicTotals.effTrailersCount.toFixed(1))}</td>}
                     <td className="px-1 py-1 text-right text-yellow-400">{formatCurrency(val(dynamicTotals.gross, div))}</td>
                     <td className="px-1 py-1 text-right text-yellow-400 font-bold">{formatCurrency(val(dynamicTotals.margin, div))}</td>
-                    <td className="px-1 py-1 text-right text-yellow-400 font-bold">{Math.round(val(dynamicTotals.total_miles, div))}</td>
+                    <td className="px-1 py-1 text-right text-yellow-400 font-bold">{Math.round(val(dynamicTotals.total_miles, div)).toLocaleString()}</td>
                     {isMilesExpanded && (
                       <>
-                         <td className="px-1 py-1 text-right text-yellow-400 opacity-70">{Math.round(val(dynamicTotals.loaded_miles, div))}</td>
-                         <td className="px-1 py-1 text-right text-yellow-400 opacity-70">{Math.round(val(dynamicTotals.dh, div))}</td>
+                         <td className="px-1 py-1 text-right text-yellow-400 opacity-70">{Math.round(val(dynamicTotals.loaded_miles, div)).toLocaleString()}</td>
+                         <td className="px-1 py-1 text-right text-yellow-400 opacity-70">{Math.round(val(dynamicTotals.dh, div)).toLocaleString()}</td>
                       </>
                     )}
                     <td className="px-1 py-1 text-right text-purple-400 font-bold">{formatCurrency(val(dynamicTotals.driverPay, div))}</td>
@@ -4049,66 +4050,60 @@ if (isCategorical) {
     const fuelRebate = initialDrivers.reduce((sum, d) => sum + ((d as any).fuelRebate || 0), 0);
     let excludedPoTotal = 0;
     const poBreakdown = initialDrivers.reduce((acc: any, d: any) => {
-        let pb = d.po_breakdown;
-        if (pb && typeof pb === 'object') {
-            const cType = (d as any).isFranchiseStub ? 'TPOG Franchise PnL' : (d.contractType || 'Unknown');
-            Object.entries(pb).forEach(([key, val]) => {
-                let adjustedVal = Number(val);
-                
-                const relevantRule = poRules.find(r =>
-                (r.contract_type === cType || r.contract_type === 'ALL') &&
-                r.category_name === key &&
-                r.status === 'Exclude'
-            );
+                let pb = d.po_breakdown;
+                if (pb && typeof pb === 'object') {
+                    const isFranchiseStub = (d as any).isFranchiseStub;
+                    Object.entries(pb).forEach(([key, val]) => {
+                        let adjustedVal = Number(val);
+                        let isExcludedCurrent = false;
+                        
+                        const allRule = poRules.find(r => r.contract_type === 'ALL' && r.category_name === key && r.status === 'Exclude');
+                        if (allRule) isExcludedCurrent = true;
 
-            let isExcludedCurrent = false;
-            if (relevantRule) {
-                if (cType === 'TPOG') {
-                    const tpogScope = relevantRule.tpog || 'Only TPOG with franchises';
-                    if (tpogScope === 'ALL TPOG') {
-                        isExcludedCurrent = true;
-                    } else if (tpogScope === 'Only TPOG with franchises' && !!d.franchiseId) {
-                        isExcludedCurrent = true;
-                    } else if (tpogScope === 'Only TPOG without franchises' && !d.franchiseId) {
-                        isExcludedCurrent = true;
-                    }
-                } else {
-                    isExcludedCurrent = true;
-                }
-            }
+                        if (isFranchiseStub) {
+                            const stubRule = poRules.find(r => (r.contract_type === 'TPOG Franchise PnL' || r.contract_type === 'TPOG (Franchise PnL)') && r.category_name === key && r.status === 'Exclude');
+                            if (stubRule) {
+                                isExcludedCurrent = true;
+                            }
+                        } else {
+                            const cType = d.contractType || 'Unknown';
+                            const relevantRule = poRules.find(r => r.contract_type === cType && r.category_name === key && r.status === 'Exclude');
+                            if (relevantRule) {
+                                if (cType === 'TPOG') {
+                                    const tpogScope = relevantRule.tpog || 'Only TPOG with franchises';
+                                    if (tpogScope === 'ALL TPOG') isExcludedCurrent = true;
+                                    else if (tpogScope === 'Only TPOG with franchises' && !!d.franchiseId) isExcludedCurrent = true;
+                                    else if (tpogScope === 'Only TPOG without franchises' && !d.franchiseId) isExcludedCurrent = true;
+                                } else {
+                                    isExcludedCurrent = true;
+                                }
+                            }
+                        }
 
-            if (isExcludedCurrent) {
-                adjustedVal = 0;
-            }
+                        if (isExcludedCurrent) {
+                            adjustedVal = 0;
+                        }
 
-            if ((d as any).isFranchiseStub) {
-                const tpogRule = poRules.find(r =>
-                    (r.contract_type === 'TPOG' || r.contract_type === 'ALL') &&
-                    r.category_name === key &&
-                    r.status === 'Exclude'
-                );
-                
-                let isExcludedForTPOG = false;
-                if (tpogRule) {
-                    const tpogScope = tpogRule.tpog || 'Only TPOG with franchises';
-                    if (tpogScope === 'ALL TPOG' || tpogScope === 'Only TPOG with franchises') {
-                        isExcludedForTPOG = true;
-                    }
-                }
-                
-                if (isExcludedForTPOG && !isExcludedCurrent) {
-                    excludedPoTotal += -Math.abs(Number(val));
-                }
-            }
+                        if (isFranchiseStub) {
+                            const tpogRule = poRules.find(r => (r.contract_type === 'TPOG' || r.contract_type === 'ALL') && r.category_name === key && r.status === 'Exclude');
+                            let isExcludedForTPOG = false;
+                            if (tpogRule) {
+                                const tpogScope = tpogRule.tpog || 'Only TPOG with franchises';
+                                if (tpogScope === 'ALL TPOG' || tpogScope === 'Only TPOG with franchises') isExcludedForTPOG = true;
+                            }
+                            if (isExcludedForTPOG && !isExcludedCurrent) {
+                                excludedPoTotal += -Math.abs(Number(val));
+                            }
+                        }
 
-                if (adjustedVal !== 0 || isExcludedCurrent) {
-                    if (!acc[key]) acc[key] = 0;
-                    acc[key] += adjustedVal;
+                        if (adjustedVal !== 0 || isExcludedCurrent) {
+                            if (!acc[key]) acc[key] = 0;
+                            acc[key] += adjustedVal;
+                        }
+                    });
                 }
-            });
-        }
-        return acc;
-    }, {});
+                return acc;
+            }, {});
     const insuranceExp = initialDrivers.reduce((sum, d) => sum + ((d as any).insuranceCost || 0), 0);
     const insLiabAuto = initialDrivers.reduce((sum, d) => sum + ((d as any).insLiabAuto || 0), 0);
     const insLiabGen = initialDrivers.reduce((sum, d) => sum + ((d as any).insLiabGen || 0), 0);
@@ -4227,7 +4222,39 @@ if (isCategorical) {
         tolls += dTolls;
         if (activeItems.includes('tolls')) pnlTolls += dTolls;
 
-        const dPOCov = Number(d.poCoverage) || 0;
+        let dPOCov = Number(d.poCoverage) || 0;
+        if (d.po_breakdown && typeof d.po_breakdown === 'object') {
+            let recalcPo = 0;
+            const isFranchiseStub = (d as any).isFranchiseStub;
+            Object.entries(d.po_breakdown).forEach(([key, val]) => {
+                let isExcluded = false;
+                const allRule = poRules.find(r => r.contract_type === 'ALL' && r.category_name === key && r.status === 'Exclude');
+                if (allRule) isExcluded = true;
+
+                if (isFranchiseStub) {
+                    const stubRule = poRules.find(r => (r.contract_type === 'TPOG Franchise PnL' || r.contract_type === 'TPOG (Franchise PnL)') && r.category_name === key && r.status === 'Exclude');
+                    if (stubRule) isExcluded = true;
+                } else {
+                    const cType = d.contractType || 'Unknown';
+                    const relevantRule = poRules.find(r => r.contract_type === cType && r.category_name === key && r.status === 'Exclude');
+                    if (relevantRule) {
+                        if (cType === 'TPOG') {
+                            const tpogScope = relevantRule.tpog || 'Only TPOG with franchises';
+                            if (tpogScope === 'ALL TPOG') isExcluded = true;
+                            else if (tpogScope === 'Only TPOG with franchises' && !!d.franchiseId) isExcluded = true;
+                            else if (tpogScope === 'Only TPOG without franchises' && !d.franchiseId) isExcluded = true;
+                        } else {
+                            isExcluded = true;
+                        }
+                    }
+                }
+
+                if (!isExcluded) {
+                    recalcPo += Number(val);
+                }
+            });
+            dPOCov = recalcPo;
+        }
         totalPOCov += dPOCov;
         if (activeItems.includes('po')) pnlTotalPOCov += dPOCov;
 
@@ -5284,12 +5311,13 @@ if (groupBy === 'Driver') {
                 tableColumns={tableColumns}
             />
           </div>
-          <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col min-h-0 overflow-hidden">
+          <div className="flex-1 flex flex-col xl:flex-row gap-2 min-h-0">
+             <div className="flex-1 bg-zinc-900 border border-zinc-800 rounded-lg flex flex-col min-h-0 overflow-hidden">
              
              {/* Chart Controls Toolbar */}
-             <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-950/30 flex flex-wrap gap-2 justify-between items-center flex-shrink-0">
+             <div className="px-3 py-2 border-b border-zinc-800 bg-zinc-950/30 flex flex-nowrap overflow-x-auto gap-2 justify-between items-center flex-shrink-0 [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]">
                 
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-shrink-0">
                   <h4 className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider flex items-center gap-1.5 mr-2">
                     <TrendingUp size={12} className="text-emerald-500"/> Trends
                   </h4>
@@ -5514,9 +5542,9 @@ if (groupBy === 'Driver') {
 
                 </div>
 
-                <div className="flex bg-zinc-950 rounded border border-zinc-800 p-0.5">
+                <div className="flex bg-zinc-950 rounded border border-zinc-800 p-0.5 flex-shrink-0">
                    <button 
-                    onClick={() => setChartType('line')} 
+                    onClick={() => setChartType('line')}
                     className={`p-1 rounded transition-colors ${chartType === 'line' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-600 hover:text-zinc-400'}`}
                    >
                      <LineChart size={12}/>
@@ -5539,6 +5567,8 @@ if (groupBy === 'Driver') {
               />
              </div>
           </div>
+          <WeekOverWeekCard enrichedDrivers={enrichedDrivers} calculateMetrics={calculateMetrics} selectedDate={selectedDate} />
+        </div>
 
         </div>
 

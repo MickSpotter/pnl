@@ -1,8 +1,9 @@
 import TableFilter, { FilterRule } from './TableFilter';
 import React, { useState, useEffect } from 'react';
+import DriverStats from './DriverStats';
 import { DriverPerformance, DriverStatus, DispatcherTier } from '../types';
 import { formatCurrency, formatPercent } from '../utils';
-import { AlertCircle, CheckCircle, TrendingUp, UserMinus, ChevronDown, ChevronUp, AlertTriangle, X, Minus, Filter, Info, Settings, Circle, ArrowRightLeft, BarChart2, LineChart } from 'lucide-react';
+import { AlertCircle, CheckCircle, TrendingUp, UserMinus, ChevronDown, ChevronUp, ChevronRight, AlertTriangle, X, Minus, Filter, Info, Settings, Circle, ArrowRightLeft, BarChart2, LineChart, Eye } from 'lucide-react';
 import HistoricalChart from './HistoricalChart';
 import DriverSettings from './DriverSettings';
 import { supabase } from '../lib/supabase';
@@ -260,27 +261,38 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
   let effectiveBalChangeForCompanyPay = drvBalanceChange;
   if (effContractType === 'TPOG WITH FRANCHISE') effectiveBalChangeForCompanyPay = 0;
 
-  let fullSharedLiabAmount = enriched && enriched.fullSharedLiability !== undefined ? Number(enriched.fullSharedLiability) : Number(r.fullSharedLiability || 0);
-  if (!fullSharedLiabAmount) {
-      let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === r.companyId && targetDateStr >= (e.valid_from || '2000-01-01') && targetDateStr <= (e.valid_to || '2099-12-31')).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
-      if (!liabRuleForDisp) liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && targetDateStr >= (e.valid_from || '2000-01-01') && targetDateStr <= (e.valid_to || '2099-12-31')).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
-      
-      if (liabRuleForDisp) {
-          let sharedVal = 0;
-          if (liabRuleForDisp.shared_insurance !== undefined && liabRuleForDisp.shared_insurance !== null && String(liabRuleForDisp.shared_insurance).trim() !== '') sharedVal = Number(liabRuleForDisp.shared_insurance);
-          else if (liabRuleForDisp.shared_liability !== undefined && liabRuleForDisp.shared_liability !== null && String(liabRuleForDisp.shared_liability).trim() !== '') sharedVal = Number(liabRuleForDisp.shared_liability);
-          fullSharedLiabAmount = sharedVal * effNT;
-      }
-
+  let fullSharedLiabAmount = 0;
+  const curTime = (targetDateStr ? new Date(targetDateStr).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
+  let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === r.companyId && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
+  if (!liabRuleForDisp) {
+      liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
   }
+  if (liabRuleForDisp) {
+      let sharedVal = 0;
+      if (liabRuleForDisp.shared_insurance !== undefined && liabRuleForDisp.shared_insurance !== null && String(liabRuleForDisp.shared_insurance).trim() !== '') {
+          sharedVal = Number(liabRuleForDisp.shared_insurance);
+      } else if (liabRuleForDisp.shared_liability !== undefined && liabRuleForDisp.shared_liability !== null && String(liabRuleForDisp.shared_liability).trim() !== '') {
+          sharedVal = Number(liabRuleForDisp.shared_liability);
+      }
+      fullSharedLiabAmount = sharedVal * effNT;
+  }
+  
+  const actualSharedIns = enriched && enriched.fullSharedLiability !== undefined ? Math.abs(Number(enriched.fullSharedLiability)) : (ct === 'MCLOO' ? Math.abs(fullSharedLiabAmount) : 0);
 
-  const revCol = drvRevBase + effectiveBalChangeForCompanyPay + drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd + drvZeroMiDrop + drvEscrowAdj + drvTollsAdj + drvCashAdv + drvCpmAdj + drvFuelAdj + Math.abs(fullSharedLiabAmount);
+let sharedInsBreakdown: Record<string, number> = {};
+if (actualSharedIns !== 0) {
+let comp = r.companyId || 'Unassigned';
+sharedInsBreakdown[comp] = actualSharedIns;
+}
+
+  const revCol = drvRevBase + effectiveBalChangeForCompanyPay + drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd + drvZeroMiDrop + drvEscrowAdj + drvTollsAdj + drvCashAdv + drvCpmAdj + drvFuelAdj + actualSharedIns;
         const po = r.pnlTotalPOCov !== undefined ? Number(r.pnlTotalPOCov) : (enriched && enriched.poCoverage !== undefined ? Number(enriched.poCoverage) : -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0))));
         const dispPay = enriched && enriched.dispatcherCommission !== undefined ? Number(enriched.dispatcherCommission) : calcDispPay;
         const recruiting = enriched && enriched.recruitingCost !== undefined ? Math.abs(Number(enriched.recruitingCost)) : Math.abs(Number(r.recruitingCost ?? r.recruiting_cost ?? 0));
         
         const dispGrossAmt = enriched && enriched.dispGrossAmount !== undefined ? Math.abs(Number(enriched.dispGrossAmount)) : (driver_gross * (dispGrossPerc / 100));
         const dispMarginAmt = enriched && enriched.dispMarginAmount !== undefined ? Math.abs(Number(enriched.dispMarginAmount)) : (margin_amt * (dispMarginPerc / 100));
+        const dispFixedAmt = enriched && enriched.dispFixedAmount !== undefined ? Math.abs(Number(enriched.dispFixedAmount)) : Math.abs(dispFixedAmount);
 
         let configContract = effContractType;
         const upper = configContract.toUpperCase();
@@ -292,13 +304,21 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
 
         let pnlRevCol = activeItems.includes('revenue_collected') ? revCol : 0;
         let pnlFuelReb = activeItems.includes('fuel_rebate') ? fuelRebate : 0;
-        let pnlDisp = activeItems.includes('dispatcher_pay') ? (dispGrossAmt + dispMarginAmt) : 0;
+        let pnlDisp = activeItems.includes('dispatcher_pay') ? (dispGrossAmt + dispMarginAmt + dispFixedAmt) : 0;
         let pnlWkly = activeItems.includes('weekly_expenses') ? wklyExp : 0;
         let pnlPo = activeItems.includes('po') ? Math.abs(po) : 0;
         let pnlRecruiting = activeItems.includes('recruiting') ? recruiting : 0;
         let pnlTolls = activeItems.includes('tolls') ? Math.abs(dTollsFinal) : 0;
 
         let franchisePnl = 0;
+        let franchisePnlCalculated = 0;
+        let franchiseRevCol = 0;
+        let franchiseFuelReb = 0;
+        let franchiseDispPay = 0;
+        let franchiseWklyExp = 0;
+        let franchisePo = 0;
+        let franchiseRecruiting = 0;
+        let franchiseTolls = 0;
         if (effContractType === 'TPOG WITH FRANCHISE' || (ct === 'TPOG' && r.franchiseId)) {
             let fRevCol = enriched && enriched.franchise_revenue_collected !== undefined ? Number(enriched.franchise_revenue_collected) : Number(r.franchise_revenue_collected || 0);
             let fWklyExp = enriched && enriched.franchise_fixed_costs_full !== undefined ? Number(enriched.franchise_fixed_costs_full) : Number(r.franchise_fixed_costs_full || 0);
@@ -306,12 +326,37 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
             if (!activeItems.includes('revenue_collected')) fRevCol = 0;
             if (!activeItems.includes('weekly_expenses')) fWklyExp = 0;
             if (!activeItems.includes('po')) fPo = 0;
+            franchiseRevCol = fRevCol;
+            franchiseFuelReb = pnlFuelReb;
+            franchiseDispPay = pnlDisp;
+            franchiseWklyExp = fWklyExp;
+            franchisePo = fPo;
+            franchiseRecruiting = pnlRecruiting;
+            franchiseTolls = pnlTolls;
             franchisePnl = fRevCol + pnlFuelReb - pnlDisp - fWklyExp - fPo - pnlRecruiting - pnlTolls;
+            
+            let fBalChange = activeItems.includes('revenue_collected') ? drvBalanceChange : 0;
+            let fEscrowAdj = activeItems.includes('revenue_collected') ? drvEscrowAdj : 0;
+            franchisePnlCalculated = ((franchisePnl - fBalChange - fEscrowAdj) / 2) + fBalChange + fEscrowAdj;
         }
 
         const pnl = pnlRevCol + pnlFuelReb - pnlDisp - pnlWkly - pnlPo - pnlRecruiting - pnlTolls;
 
-        const result = { wklyExp, insExp, fuel, fuelRebate, revCol, tolls: Math.abs(dTollsFinal), po, dispPay, pnl, recruiting, franchisePnl };
+        const result = { 
+          wklyExp, insExp, fuel, fuelRebate, revCol, tolls: Math.abs(dTollsFinal), po, dispPay, pnl, recruiting, 
+          franchisePnl, franchisePnlCalculated, franchiseRevCol, franchiseFuelReb, franchiseDispPay, franchiseWklyExp, franchisePo, franchiseRecruiting, franchiseTolls,
+          revBase: drvRevBase,
+          balChange: effectiveBalChangeForCompanyPay,
+          prorated: drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd,
+          zeroMiDrop: drvZeroMiDrop,
+          escrowAdj: drvEscrowAdj,
+          tollsAdj: drvTollsAdj,
+          cashAdv: drvCashAdv,
+          cpmAdj: drvCpmAdj,
+          fuelAdj: drvFuelAdj,
+          fullSharedLiability: actualSharedIns,
+          sharedInsBreakdown
+        };
         metricsCache.set(cacheKey, result);
         return result;
 };
@@ -320,7 +365,7 @@ interface DriverTableProps {
   drivers: DriverPerformance[];
 }
 
-const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek, tpogMode }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean; tpogMode: 'ALL' | 'CALCULATED' }) => {
+const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek, tpogMode, isRevColExpanded, isFuelExpanded, isWklyExpExpanded, isPoExpanded, isMilesExpanded, poColumns }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean; tpogMode: 'ALL' | 'CALCULATED'; isRevColExpanded: boolean; isFuelExpanded: boolean; isWklyExpExpanded: boolean; isPoExpanded: boolean; isMilesExpanded: boolean; poColumns: string[] }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>('TOTAL');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['pnl']);
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
@@ -415,37 +460,107 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
   }, [filteredRecords]);
 
   const rowMetrics = React.useMemo(() => {
-    if (selectedEntity === 'TOTAL') {
-      return {
-        totalGross: driver.totalGross, marginAmount: driver.marginAmount, netPay: driver.netPay,
-        insuranceExp: driver.insuranceExp, totalFuel: driver.totalFuel, companyPay: driver.companyPay,
-        fuelRebate: driver.fuelRebate, wklyExp: driver.wklyExp, tollCost: driver.tollCost,
-        poCoverage: driver.poCoverage, dispatcherPay: driver.dispatcherPay,
-        recruitingCost: driver.recruitingCost, totalPnL: driver.totalPnL
-      };
-    }
+    
+    
 
     let totalGross = 0, marginAmount = 0, netPay = 0, insuranceExp = 0, totalFuel = 0;
+    let wosFuel = 0, fuelRetailPrice = 0, fuelRetailCount = 0, spotterRetailPrice = 0, spotterRetailCount = 0, fuelDiscountPrice = 0, fuelDiscountCount = 0, fuelQuantity = 0;
+    let totalMiles = 0, loadedMiles = 0, dh = 0;
+    let fcTruck = 0, fcCpm = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0, adjFixed = 0;
+    let insLiabAuto = 0, insLiabGen = 0, insCargo = 0, insLeaseGapCoverage = 0, insTrailerInterchange = 0, insLago = 0, insPhdPremium = 0, insPhdTruck = 0, insPhdTrailer = 0;
+    let poBreakdown: Record<string, number> = {};
     let companyPay = 0, fuelRebate = 0, wklyExp = 0, tollCost = 0, poCoverage = 0;
     let dispatcherPay = 0, recruitingCost = 0, totalPnL = 0;
+    let revBase = 0, balChange = 0, prorated = 0, zeroMiDrop = 0, escrowAdj = 0, tollsAdj = 0, cashAdv = 0, cpmAdj = 0, fuelAdj = 0, fullSharedLiability = 0;
+    let sharedInsBreakdown: Record<string, number> = {};
 
     filteredRecords.forEach((r: any) => {
       const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+      const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
       totalGross += (r.grossRevenue || r.driver_gross || 0);
       marginAmount += (r.marginAmount || 0);
+      totalMiles += (Number(r.milesDriven) || 0);
+      loadedMiles += (Number(r.loaded_miles) || 0);
+      dh += (Number(r.dh) || 0);
       netPay += (r.netPay || 0);
       insuranceExp += m.insExp;
       totalFuel += m.fuel;
-      companyPay += m.revCol;
-      fuelRebate += m.fuelRebate;
-      wklyExp += m.wklyExp;
-      tollCost += -m.tolls;
-      poCoverage += m.po;
-      dispatcherPay += m.dispPay;
-      recruitingCost += m.recruiting;
+      
+      const ct = r.contractType || '';
+      const spotter = Number(r.spotter_fuel_saved ?? 0);
+      const saved = Number(r.fuel_saved ?? r.fuelSavings ?? 0);
+      wosFuel += (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') ? 0 : (spotter !== 0 ? (spotter - saved) : 0);
+      
+      const frp = Number(r.fuel_retail_price || 0);
+      if (frp !== 0) { fuelRetailPrice += frp; fuelRetailCount++; }
+      const srp = Number(r.spotter_retail_price || 0);
+      if (srp !== 0) { spotterRetailPrice += srp; spotterRetailCount++; }
+      const fdp = Number(r.fuel_discount_price || 0);
+      if (fdp !== 0) { fuelDiscountPrice += fdp; fuelDiscountCount++; }
+      fuelQuantity += Number(r.fuel_quantity ?? r.fuelUsed ?? r.fuel_gallons ?? 0);
+
+      companyPay += m.revCol - (tpogCalc * m.franchiseRevCol / 2);
+      fuelRebate += m.fuelRebate - (tpogCalc * m.franchiseFuelReb / 2);
+      wklyExp += m.wklyExp - (tpogCalc * m.franchiseWklyExp / 2);
+      tollCost += -m.tolls + (tpogCalc * m.franchiseTolls / 2);
+      poCoverage += m.po + (tpogCalc * m.franchisePo / 2);
+      dispatcherPay += m.dispPay - (tpogCalc * m.franchiseDispPay / 2);
+      recruitingCost += m.recruiting - (tpogCalc * m.franchiseRecruiting / 2);
+      
+      revBase += m.revBase || 0;
+      balChange += m.balChange || 0;
+      prorated += m.prorated || 0;
+      zeroMiDrop += m.zeroMiDrop || 0;
+      escrowAdj += m.escrowAdj || 0;
+      tollsAdj += m.tollsAdj || 0;
+      cashAdv += m.cashAdv || 0;
+      cpmAdj += m.cpmAdj || 0;
+      fuelAdj += m.fuelAdj || 0;
+      fullSharedLiability += m.fullSharedLiability || 0;
+      
+      const enrichedR = enrichedMap ? enrichedMap.get(`${r.name}_${r.payDate || r.week_ending}_${r.contractType}_${r.companyId}`) : (window as any).__ENRICHED_DRIVERS__?.find((ed: any) => ed.name === r.name && ed.payDate === (r.payDate || r.week_ending) && ed.contractType === r.contractType && ed.companyId === r.companyId);
+      if (enrichedR) {
+        fcTruck += Number(enrichedR.fcTruck || 0);
+        fcCpm += Number(enrichedR.fcCpm || 0) * (Number(r.milesDriven) || 0);
+        fcTrailer += Number(enrichedR.fcTrailer || 0);
+        fcPlates += Number(enrichedR.fcPlates || 0);
+        fcTelematics += Number(enrichedR.fcTelematics || 0);
+        fcPhone += Number(enrichedR.fcPhone || 0);
+        fcOffice += Number(enrichedR.fcOffice || 0);
+        fcRent += Number(enrichedR.fcRent || 0);
+        fcBackupMc += Number(enrichedR.fcBackupMc || 0);
+        fcBoReg += Number(enrichedR.fcBoReg || 0);
+        fcBoTech += Number(enrichedR.fcBoTech || 0);
+        fcFactoring += Number(enrichedR.fcFactoring || 0);
+        insLiabAuto += Number(enrichedR.insLiabAuto || 0);
+        insLiabGen += Number(enrichedR.insLiabGen || 0);
+        insCargo += Number(enrichedR.insCargo || 0);
+        insLeaseGapCoverage += Number(enrichedR.insLeaseGapCoverage || 0);
+        insTrailerInterchange += Number(enrichedR.insTrailerInterchange || 0);
+        insLago += Number(enrichedR.insLago || 0);
+        insPhdPremium += Number(enrichedR.insPhdPremium || 0);
+        insPhdTruck += Number(enrichedR.insPhdTruck || 0);
+        insPhdTrailer += Number(enrichedR.insPhdTrailer || 0);
+
+        if (enrichedR.po_breakdown) {
+            Object.entries(enrichedR.po_breakdown).forEach(([k, v]: [string, any]) => {
+                const adjVal = Number(v) - (tpogCalc * (r.contractType === 'TPOG' && r.franchiseId ? Number(v) / 2 : 0));
+                if (!poBreakdown[k]) poBreakdown[k] = 0;
+                poBreakdown[k] += adjVal;
+            });
+        }
+      }
+
+      if (m.sharedInsBreakdown) {
+          Object.entries(m.sharedInsBreakdown).forEach(([k, v]) => {
+              if (!sharedInsBreakdown[k]) sharedInsBreakdown[k] = 0;
+              sharedInsBreakdown[k] += Number(v);
+          });
+      }
+
       let finalPnl = m.pnl;
-      if (tpogMode === 'CALCULATED' && m.franchisePnl) {
-          finalPnl -= (m.franchisePnl / 2);
+      if (m.franchisePnlCalculated) {
+          finalPnl = finalPnl - m.franchisePnlCalculated;
       }
       totalPnL += finalPnl;
     });
@@ -456,13 +571,111 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     const div = isAvgPerWeek ? count : 1;
 
     return {
-      totalGross: totalGross / div, marginAmount: marginAmount / div, netPay: netPay / div,
-      insuranceExp: insuranceExp / div, totalFuel: totalFuel / div, companyPay: companyPay / div,
+      totalGross: totalGross / div, marginAmount: marginAmount / div, 
+      totalMiles: totalMiles / div, loadedMiles: loadedMiles / div, dh: dh / div,
+      netPay: netPay / div,
+      insuranceExp: insuranceExp / div, totalFuel: totalFuel / div,
+      wosFuel: wosFuel / div, fuelRetailPrice: fuelRetailCount > 0 ? fuelRetailPrice / fuelRetailCount : 0, spotterRetailPrice: spotterRetailCount > 0 ? spotterRetailPrice / spotterRetailCount : 0, fuelDiscountPrice: fuelDiscountCount > 0 ? fuelDiscountPrice / fuelDiscountCount : 0, fuelQuantity: fuelQuantity / div,
+      companyPay: companyPay / div,
       fuelRebate: fuelRebate / div, wklyExp: wklyExp / div, tollCost: tollCost / div,
       poCoverage: poCoverage / div, dispatcherPay: dispatcherPay / div,
-      recruitingCost: recruitingCost / div, totalPnL: totalPnL / div
+      recruitingCost: recruitingCost / div, totalPnL: totalPnL / div,
+      revBase: revBase / div, balChange: balChange / div, prorated: prorated / div,
+      zeroMiDrop: zeroMiDrop / div, escrowAdj: escrowAdj / div, tollsAdj: tollsAdj / div,
+      cashAdv: cashAdv / div, cpmAdj: cpmAdj / div, fuelAdj: fuelAdj / div, fullSharedLiability: fullSharedLiability / div,
+      sharedInsBreakdown: Object.fromEntries(Object.entries(sharedInsBreakdown).map(([k, v]) => [k, Number(v) / div])),
+      poBreakdown: Object.fromEntries(Object.entries(poBreakdown).map(([k, v]) => [k, Number(v) / div])),
+      fcTruck: fcTruck / div, fcCpm: fcCpm / div, fcTrailer: fcTrailer / div, fcPlates: fcPlates / div, fcTelematics: fcTelematics / div, fcPhone: fcPhone / div, fcOffice: fcOffice / div, fcRent: fcRent / div, fcBackupMc: fcBackupMc / div, fcBoReg: fcBoReg / div, fcBoTech: fcBoTech / div, fcFactoring: fcFactoring / div, adjFixed: adjFixed / div,
+      insLiabAuto: insLiabAuto / div, insLiabGen: insLiabGen / div, insCargo: insCargo / div, insLeaseGapCoverage: insLeaseGapCoverage / div, insTrailerInterchange: insTrailerInterchange / div, insLago: insLago / div, insPhdPremium: insPhdPremium / div, insPhdTruck: insPhdTruck / div, insPhdTrailer: insPhdTrailer / div
     };
   }, [filteredRecords, driver, fixedExpenses, enrichedMap, pnlConfigs, selectedEntity, isAvgPerWeek, tpogMode]);
+
+  const franchiseRowMetrics = React.useMemo(() => {
+    let companyPay = 0, fuelRebate = 0, wklyExp = 0, tollCost = 0, poCoverage = 0, dispatcherPay = 0, recruitingCost = 0, totalPnL = 0;
+    let revBase = 0, balChange = 0, prorated = 0, zeroMiDrop = 0, escrowAdj = 0, tollsAdj = 0, cashAdv = 0, cpmAdj = 0, fuelAdj = 0, fullSharedLiability = 0;
+    let fcTruck = 0, fcCpm = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0;
+    let insLiabAuto = 0, insLiabGen = 0, insCargo = 0, insLeaseGapCoverage = 0, insTrailerInterchange = 0, insLago = 0, insPhdPremium = 0, insPhdTruck = 0, insPhdTrailer = 0;
+    let poBreakdown: Record<string, number> = {};
+    let hasFranchise = false;
+
+    filteredRecords.forEach((r: any) => {
+      const ct = r.contractType || '';
+      if (ct === 'TPOG' && r.franchiseId) {
+        hasFranchise = true;
+        const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+        companyPay += m.franchiseRevCol;
+        fuelRebate += m.franchiseFuelReb;
+        wklyExp += m.franchiseWklyExp;
+        tollCost += -m.franchiseTolls;
+        poCoverage += -m.franchisePo;
+        dispatcherPay += m.franchiseDispPay;
+        recruitingCost += m.franchiseRecruiting;
+        totalPnL += m.franchisePnlCalculated;
+
+        revBase += m.revBase || 0;
+        balChange += m.balChange || 0;
+        prorated += m.prorated || 0;
+        zeroMiDrop += m.zeroMiDrop || 0;
+        escrowAdj += m.escrowAdj || 0;
+        tollsAdj += m.tollsAdj || 0;
+        cashAdv += m.cashAdv || 0;
+        cpmAdj += m.cpmAdj || 0;
+        fuelAdj += m.fuelAdj || 0;
+        fullSharedLiability += m.fullSharedLiability || 0;
+
+        const enrichedR = enrichedMap ? enrichedMap.get(`${r.name}_${r.payDate || r.week_ending}_${r.contractType}_${r.companyId}`) : (window as any).__ENRICHED_DRIVERS__?.find((ed: any) => ed.name === r.name && ed.payDate === (r.payDate || r.week_ending) && ed.contractType === r.contractType && ed.companyId === r.companyId);
+        if (enrichedR) {
+          fcTruck += Number(enrichedR.franchise_fcTruck !== undefined ? enrichedR.franchise_fcTruck : (enrichedR.fcTruck || 0));
+          fcCpm += Number(enrichedR.franchise_fcCpm !== undefined ? enrichedR.franchise_fcCpm : (enrichedR.franchise_fixed_breakdown?.fcCpm !== undefined ? enrichedR.franchise_fixed_breakdown.fcCpm : (enrichedR.fcCpm || 0) * (Number(r.milesDriven) || 0)));
+          fcTrailer += Number(enrichedR.franchise_fcTrailer !== undefined ? enrichedR.franchise_fcTrailer : (enrichedR.fcTrailer || 0));
+          fcPlates += Number(enrichedR.franchise_fcPlates !== undefined ? enrichedR.franchise_fcPlates : (enrichedR.fcPlates || 0));
+          fcTelematics += Number(enrichedR.franchise_fcTelematics !== undefined ? enrichedR.franchise_fcTelematics : (enrichedR.fcTelematics || 0));
+          fcPhone += Number(enrichedR.franchise_fcPhone !== undefined ? enrichedR.franchise_fcPhone : (enrichedR.fcPhone || 0));
+          fcOffice += Number(enrichedR.franchise_fcOffice !== undefined ? enrichedR.franchise_fcOffice : (enrichedR.fcOffice || 0));
+          fcRent += Number(enrichedR.franchise_fcRent !== undefined ? enrichedR.franchise_fcRent : (enrichedR.fcRent || 0));
+          fcBackupMc += Number(enrichedR.franchise_fcBackupMc !== undefined ? enrichedR.franchise_fcBackupMc : (enrichedR.fcBackupMc || 0));
+          fcBoReg += Number(enrichedR.franchise_fcBoReg !== undefined ? enrichedR.franchise_fcBoReg : (enrichedR.fcBoReg || 0));
+          fcBoTech += Number(enrichedR.franchise_fcBoTech !== undefined ? enrichedR.franchise_fcBoTech : (enrichedR.fcBoTech || 0));
+          fcFactoring += Number(enrichedR.franchise_fcFactoring !== undefined ? enrichedR.franchise_fcFactoring : (enrichedR.fcFactoring || 0));
+          insLiabAuto += Number(enrichedR.franchise_insLiabAuto !== undefined ? enrichedR.franchise_insLiabAuto : (enrichedR.insLiabAuto || 0));
+          insLiabGen += Number(enrichedR.franchise_insLiabGen !== undefined ? enrichedR.franchise_insLiabGen : (enrichedR.insLiabGen || 0));
+          insCargo += Number(enrichedR.franchise_insCargo !== undefined ? enrichedR.franchise_insCargo : (enrichedR.insCargo || 0));
+          insLeaseGapCoverage += Number(enrichedR.franchise_insLeaseGapCoverage !== undefined ? enrichedR.franchise_insLeaseGapCoverage : (enrichedR.insLeaseGapCoverage || 0));
+          insTrailerInterchange += Number(enrichedR.franchise_insTrailerInterchange !== undefined ? enrichedR.franchise_insTrailerInterchange : (enrichedR.insTrailerInterchange || 0));
+          insLago += Number(enrichedR.franchise_insLago !== undefined ? enrichedR.franchise_insLago : (enrichedR.insLago || 0));
+          insPhdPremium += Number(enrichedR.franchise_insPhdPremium !== undefined ? enrichedR.franchise_insPhdPremium : (enrichedR.insPhdPremium || 0));
+          insPhdTruck += Number(enrichedR.franchise_insPhdTruck !== undefined ? enrichedR.franchise_insPhdTruck : (enrichedR.insPhdTruck || 0));
+          insPhdTrailer += Number(enrichedR.franchise_insPhdTrailer !== undefined ? enrichedR.franchise_insPhdTrailer : (enrichedR.insPhdTrailer || 0));
+
+          if (enrichedR.po_breakdown) {
+            Object.entries(enrichedR.po_breakdown).forEach(([k, v]: [string, any]) => {
+              if (!poBreakdown[k]) poBreakdown[k] = 0;
+              poBreakdown[k] += Number(v);
+            });
+          }
+        }
+      }
+    });
+
+    const tpogRecords = filteredRecords.filter((r: any) => r.contractType === 'TPOG' && r.franchiseId);
+    const effNonTeamsCount = tpogRecords.reduce((s: number, r: any) => s + (r.effectiveNonTeams || 0), 0);
+    const effCount = tpogRecords.reduce((s: number, r: any) => s + (r.effectiveDrivers || 0), 0);
+    const count = effNonTeamsCount > 0 ? effNonTeamsCount : (effCount > 0 ? effCount : (tpogRecords.length > 0 ? tpogRecords.length : 1));
+    const div = isAvgPerWeek ? count : 1;
+
+    return {
+      hasFranchise,
+      companyPay: companyPay / div, fuelRebate: fuelRebate / div, wklyExp: wklyExp / div,
+      tollCost: tollCost / div, poCoverage: poCoverage / div, dispatcherPay: dispatcherPay / div,
+      recruitingCost: recruitingCost / div, totalPnL: totalPnL / div,
+      revBase: revBase / div, balChange: balChange / div, prorated: prorated / div,
+      zeroMiDrop: zeroMiDrop / div, escrowAdj: escrowAdj / div, tollsAdj: tollsAdj / div,
+      cashAdv: cashAdv / div, cpmAdj: cpmAdj / div, fuelAdj: fuelAdj / div, fullSharedLiability: fullSharedLiability / div,
+      poBreakdown: Object.fromEntries(Object.entries(poBreakdown).map(([k, v]) => [k, v / div])),
+      fcTruck: fcTruck / div, fcCpm: fcCpm / div, fcTrailer: fcTrailer / div, fcPlates: fcPlates / div, fcTelematics: fcTelematics / div, fcPhone: fcPhone / div, fcOffice: fcOffice / div, fcRent: fcRent / div, fcBackupMc: fcBackupMc / div, fcBoReg: fcBoReg / div, fcBoTech: fcBoTech / div, fcFactoring: fcFactoring / div,
+      insLiabAuto: insLiabAuto / div, insLiabGen: insLiabGen / div, insCargo: insCargo / div, insLeaseGapCoverage: insLeaseGapCoverage / div, insTrailerInterchange: insTrailerInterchange / div, insLago: insLago / div, insPhdPremium: insPhdPremium / div, insPhdTruck: insPhdTruck / div, insPhdTrailer: insPhdTrailer / div
+    };
+  }, [filteredRecords, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek]);
 
   const calcGross = filteredRecords.reduce((s: number, r: any) => s + (r.grossRevenue || r.driver_gross || 0), 0);
   const expFuel = filteredRecords.reduce((s: number, r: any) => s + (r.fuelCost || 0), 0);
@@ -494,8 +707,35 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       if (fleetAverages[primaryContract]) targetAvg = fleetAverages[primaryContract];
     }
 
-    if (filteredRecords.length === 0) {
-      iss.push({ label: "No records available for calculation", diff: 0, severity: "neutral" });
+    const { sGross, sMargin, sNetPay, sDispPay, sInsExp, sMiles, sFuel, sRevCol, sFuelReb, sWklyExp, sTolls, sPO, sRecruiting, sPnL } = filteredRecords.reduce((sums: any, r: any) => {
+        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+        sums.sGross += (r.grossRevenue || r.driver_gross || 0);
+        sums.sMargin += (r.marginAmount || 0);
+        sums.sNetPay += (r.netPay || 0);
+        sums.sDispPay += rm.dispPay;
+        sums.sInsExp += rm.insExp;
+        sums.sMiles += (r.milesDriven || 0);
+        sums.sFuel += rm.fuel;
+        sums.sRevCol += rm.revCol;
+        sums.sFuelReb += rm.fuelRebate;
+        sums.sWklyExp += rm.wklyExp;
+        sums.sTolls += rm.tolls;
+        sums.sPO += rm.po;
+        sums.sRecruiting += rm.recruiting;
+        let finalPnl = rm.pnl;
+        if (rm.franchisePnlCalculated) {
+            finalPnl = finalPnl - rm.franchisePnlCalculated;
+        }
+        sums.sPnL += finalPnl;
+        return sums;
+    }, { sGross: 0, sMargin: 0, sNetPay: 0, sDispPay: 0, sInsExp: 0, sMiles: 0, sFuel: 0, sRevCol: 0, sFuelReb: 0, sWklyExp: 0, sTolls: 0, sPO: 0, sRecruiting: 0, sPnL: 0 });
+
+    if (filteredRecords.length === 0 || sMiles === 0) {
+      if (sMiles === 0 && filteredRecords.length > 0) {
+        iss.push({ label: "Not enough data. 0 miles driven.", diff: 0, severity: "neutral" });
+      } else {
+        iss.push({ label: "No records available for calculation", diff: 0, severity: "neutral" });
+      }
       const emptyStats = [
         { name: 'Gross', val: null, fleet: targetAvg.gross || 0, diff: 0, severity: 'neutral' },
         { name: 'Margin', val: null, fleet: targetAvg.margin || 0, diff: 0, severity: 'neutral' },
@@ -514,29 +754,6 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     }
 
     const calcVal = (val: number) => val / count;
-
-    const { sGross, sMargin, sNetPay, sDispPay, sInsExp, sMiles, sFuel, sRevCol, sFuelReb, sWklyExp, sTolls, sPO, sRecruiting, sPnL } = filteredRecords.reduce((sums: any, r: any) => {
-        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
-        sums.sGross += (r.grossRevenue || r.driver_gross || 0);
-        sums.sMargin += (r.marginAmount || 0);
-        sums.sNetPay += (r.netPay || 0);
-        sums.sDispPay += rm.dispPay;
-        sums.sInsExp += rm.insExp;
-        sums.sMiles += (r.milesDriven || 0);
-        sums.sFuel += rm.fuel;
-        sums.sRevCol += rm.revCol;
-        sums.sFuelReb += rm.fuelRebate;
-        sums.sWklyExp += rm.wklyExp;
-        sums.sTolls += rm.tolls;
-        sums.sPO += rm.po;
-        sums.sRecruiting += rm.recruiting;
-        let finalPnl = rm.pnl;
-        if (tpogMode === 'CALCULATED' && rm.franchisePnl) {
-            finalPnl -= (rm.franchisePnl / 2);
-        }
-        sums.sPnL += finalPnl;
-        return sums;
-    }, { sGross: 0, sMargin: 0, sNetPay: 0, sDispPay: 0, sInsExp: 0, sMiles: 0, sFuel: 0, sRevCol: 0, sFuelReb: 0, sWklyExp: 0, sTolls: 0, sPO: 0, sRecruiting: 0, sPnL: 0 });
 
     const avgGross = calcVal(sGross);
     const avgMargin = calcVal(sMargin);
@@ -627,8 +844,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
         if ((r.effectiveDrivers || 0) >= 1) dateCount += 1;
         let finalPnl = rm.pnl;
-        if (tpogMode === 'CALCULATED' && rm.franchisePnl) {
-            finalPnl -= (rm.franchisePnl / 2);
+        if (rm.franchisePnlCalculated) {
+            finalPnl -= rm.franchisePnlCalculated;
         }
         runningSums.pnl += finalPnl;
         runningSums.gross += (r.grossRevenue || r.driver_gross || 0);
@@ -671,8 +888,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       records.forEach((r: any) => {
         const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
         let finalPnl = rm.pnl;
-        if (tpogMode === 'CALCULATED' && rm.franchisePnl) {
-            finalPnl -= (rm.franchisePnl / 2);
+        if (rm.franchisePnlCalculated) {
+            finalPnl = finalPnl - rm.franchisePnlCalculated;
         }
         fPnl += finalPnl;
         fGross += (r.grossRevenue || r.driver_gross || 0);
@@ -746,22 +963,191 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         </td>
         <td className="px-2 py-1 text-right text-yellow-400">{formatCurrency(rowMetrics.totalGross)}</td>
         <td className="px-2 py-1 text-right text-yellow-400 font-medium">{formatCurrency(rowMetrics.marginAmount)}</td>
+        <td className="px-2 py-1 text-right text-yellow-400 font-medium">{Math.round(rowMetrics.totalMiles).toLocaleString()}</td>
+        {isMilesExpanded && (
+          <>
+            <td className="px-2 py-1 text-right text-yellow-400 opacity-70">{Math.round(rowMetrics.loadedMiles).toLocaleString()}</td>
+            <td className="px-2 py-1 text-right text-yellow-400 opacity-70">{Math.round(rowMetrics.dh).toLocaleString()}</td>
+          </>
+        )}
         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(rowMetrics.netPay)}</td>
         <td className="px-2 py-1 text-right text-purple-400">-{formatCurrency(Math.abs(rowMetrics.insuranceExp))}</td>
         <td className="px-2 py-1 text-right text-purple-400">{rowMetrics.totalFuel < 0 ? `-$${Math.abs(rowMetrics.totalFuel).toFixed(0)}` : `$${rowMetrics.totalFuel.toFixed(0)}`}</td>
+        {isFuelExpanded && (
+          <>
+            <td className="px-2 py-1 text-right text-purple-400 opacity-70">{rowMetrics.wosFuel < 0 ? `-$${Math.abs(rowMetrics.wosFuel).toFixed(0)}` : `$${rowMetrics.wosFuel.toFixed(0)}`}</td>
+            <td className="px-2 py-1 text-right text-purple-400 opacity-70">{formatCurrency(rowMetrics.fuelRetailPrice, 2)}</td>
+            <td className="px-2 py-1 text-right text-purple-400 opacity-70">{formatCurrency(rowMetrics.spotterRetailPrice, 2)}</td>
+            <td className="px-2 py-1 text-right text-purple-400 opacity-70">{formatCurrency(rowMetrics.fuelDiscountPrice, 2)}</td>
+            <td className="px-2 py-1 text-right text-purple-400 opacity-70">{Math.round(rowMetrics.fuelQuantity)}</td>
+          </>
+        )}
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.companyPay)}</td>
+        {isRevColExpanded && (
+          <>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.revBase < 0 ? '-' : '+'}{formatCurrency(Math.abs(rowMetrics.revBase))}</td>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.balChange < 0 ? '-' : '+'}{formatCurrency(Math.abs(rowMetrics.balChange))}</td>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.prorated < 0 ? '-' : '+'}{formatCurrency(Math.abs(rowMetrics.prorated))}</td>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.zeroMiDrop < 0 ? '-' : (rowMetrics.zeroMiDrop > 0 ? '+' : '')}{formatCurrency(Math.abs(rowMetrics.zeroMiDrop))}</td>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.escrowAdj < 0 ? '-' : '+'}{formatCurrency(Math.abs(rowMetrics.escrowAdj))}</td>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">+{formatCurrency(Math.abs(rowMetrics.tollsAdj))}</td>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.cashAdv < 0 ? '-' : '+'}{formatCurrency(Math.abs(rowMetrics.cashAdv))}</td>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.cpmAdj < 0 ? '-' : '+'}{formatCurrency(Math.abs(rowMetrics.cpmAdj))}</td>
+            <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.fuelAdj < 0 ? '-' : '+'}{formatCurrency(Math.abs(rowMetrics.fuelAdj))}</td>
+            <td className="group/sharedins relative hover:z-[99999] px-2 py-1 text-right text-zinc-400 font-mono cursor-help !overflow-visible">
+  +{formatCurrency(Math.abs(rowMetrics.fullSharedLiability || 0))}
+  {rowMetrics.sharedInsBreakdown && Object.keys(rowMetrics.sharedInsBreakdown).length > 0 && (
+    <div className="absolute hidden group-hover/sharedins:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 bottom-full right-0 mb-1">
+      <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Shared Ins Breakdown:</div>
+      {Object.entries(rowMetrics.sharedInsBreakdown).map(([comp, amount]: any) => (
+         <div key={comp} className="flex justify-between gap-4">
+            <span>{comp}:</span>
+            <span className="font-mono text-zinc-300">+{formatCurrency(Math.abs(Number(amount)))}</span>
+         </div>
+      ))}
+    </div>
+  )}
+</td>
+          </>
+        )}
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.fuelRebate)}</td>
         <td className="px-2 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(rowMetrics.wklyExp))}</td>
+        {isWklyExpExpanded && (
+          <>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insLiabAuto < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLiabAuto))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insLiabGen < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLiabGen))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insCargo < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insCargo))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insLeaseGapCoverage < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLeaseGapCoverage))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insTrailerInterchange < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insTrailerInterchange))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insLago < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLago))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insPhdPremium < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdPremium))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insPhdTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdTruck))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insPhdTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdTrailer))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTruck))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcCpm < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcCpm))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTrailer))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcPlates < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcPlates))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcTelematics < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTelematics))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcPhone < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcPhone))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcOffice < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcOffice))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcRent < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcRent))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcBackupMc < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBackupMc))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcBoReg < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBoReg))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcBoTech < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBoTech))}</td>
+            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcFactoring < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcFactoring))}</td>
+          </>
+        )}
         <td className="px-2 py-1 text-right text-blue-400">{rowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(rowMetrics.tollCost))}`}</td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.poCoverage)}</td>
+        {isPoExpanded && (
+          <>
+            {poColumns.map((reason) => {
+                const poVal = rowMetrics.poBreakdown?.[reason] || 0;
+                return (
+                    <td key={reason} className="px-2 py-1 text-right text-blue-400 opacity-70">
+                        {poVal === 0 ? '-' : `${poVal < 0 ? '-' : ''}${formatCurrency(Math.abs(poVal))}`}
+                    </td>
+                )
+            })}
+          </>
+        )}
         <td className="px-2 py-1 text-right text-blue-400"><span>{rowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(rowMetrics.dispatcherPay)}</span></td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.recruitingCost)}</td>
         <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${rowMetrics.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(rowMetrics.totalPnL)}</td>
-        <td className={`px-2 py-1 text-right font-bold sticky right-0 w-[56px] min-w-[56px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.ranking >= 80 ? 'text-emerald-400' : driver.ranking >= 50 ? 'text-yellow-400' : driver.ranking >= 20 ? 'text-amber-500' : 'text-rose-400'}`}>{driver.ranking.toFixed(2)}%</td>
+        <td className={`px-2 py-1 text-right font-bold sticky right-0 w-[56px] min-w-[56px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.totalMiles === 0 ? 'text-zinc-500' : driver.ranking >= 80 ? 'text-emerald-400' : driver.ranking >= 50 ? 'text-yellow-400' : driver.ranking >= 20 ? 'text-amber-500' : 'text-rose-400'}`}>{driver.totalMiles === 0 ? 'N/A' : `${driver.ranking.toFixed(2)}%`}</td>
       </tr>
+      {tpogMode === 'ALL' && franchiseRowMetrics.hasFranchise && (
+        <tr className="bg-zinc-950/40">
+          <td className={`px-2 py-1 sticky left-0 z-10 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'}`}></td>
+          <td className={`px-2 py-1 font-sans sticky left-[32px] z-10 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'}`}>
+            <span className="text-amber-400/90 text-[10px] pl-4">└ TPOG (Franchise PnL)</span>
+          </td>
+          <td className="px-2 py-1 text-right text-zinc-600">-</td>
+          <td className="px-2 py-1 text-right text-zinc-600">-</td>
+          <td className="px-2 py-1 text-right text-zinc-600">-</td>
+          {isMilesExpanded && (
+            <>
+              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+            </>
+          )}
+          <td className="px-2 py-1 text-right text-zinc-600">-</td>
+          <td className="px-2 py-1 text-right text-zinc-600">-</td>
+          <td className="px-2 py-1 text-right text-zinc-600">-</td>
+          {isFuelExpanded && (
+            <>
+              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+            </>
+          )}
+          <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.companyPay)}</td>
+          {isRevColExpanded && (
+            <>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.revBase < 0 ? '-' : '+'}{formatCurrency(Math.abs(franchiseRowMetrics.revBase))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.balChange < 0 ? '-' : '+'}{formatCurrency(Math.abs(franchiseRowMetrics.balChange))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.prorated < 0 ? '-' : '+'}{formatCurrency(Math.abs(franchiseRowMetrics.prorated))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.zeroMiDrop < 0 ? '-' : (franchiseRowMetrics.zeroMiDrop > 0 ? '+' : '')}{formatCurrency(Math.abs(franchiseRowMetrics.zeroMiDrop))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.escrowAdj < 0 ? '-' : '+'}{formatCurrency(Math.abs(franchiseRowMetrics.escrowAdj))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">+{formatCurrency(Math.abs(franchiseRowMetrics.tollsAdj))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.cashAdv < 0 ? '-' : '+'}{formatCurrency(Math.abs(franchiseRowMetrics.cashAdv))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.cpmAdj < 0 ? '-' : '+'}{formatCurrency(Math.abs(franchiseRowMetrics.cpmAdj))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.fuelAdj < 0 ? '-' : '+'}{formatCurrency(Math.abs(franchiseRowMetrics.fuelAdj))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70 font-mono">+{formatCurrency(Math.abs(franchiseRowMetrics.fullSharedLiability || 0))}</td>
+            </>
+          )}
+          <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.fuelRebate)}</td>
+          <td className="px-2 py-1 text-right text-amber-400/90">-{formatCurrency(Math.abs(franchiseRowMetrics.wklyExp))}</td>
+         {isWklyExpExpanded && (
+            <>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insLiabAuto < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLiabAuto))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insLiabGen < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLiabGen))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insCargo < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insCargo))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insLeaseGapCoverage < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLeaseGapCoverage))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insTrailerInterchange < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insTrailerInterchange))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insLago < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLago))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insPhdPremium < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdPremium))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insPhdTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdTruck))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insPhdTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdTrailer))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTruck))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcCpm < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcCpm))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTrailer))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcPlates < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcPlates))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcTelematics < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTelematics))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcPhone < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcPhone))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcOffice < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcOffice))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcRent < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcRent))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcBackupMc < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBackupMc))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcBoReg < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBoReg))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcBoTech < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBoTech))}</td>
+              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcFactoring < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcFactoring))}</td>
+            </>
+          )}
+          <td className="px-2 py-1 text-right text-amber-400/90">{franchiseRowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(franchiseRowMetrics.tollCost))}`}</td>
+          <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.poCoverage)}</td>
+          {isPoExpanded && (
+            <>
+              {poColumns.map((reason) => {
+                const poVal = franchiseRowMetrics.poBreakdown?.[reason] || 0;
+                return (
+                  <td key={`fran-po-${reason}`} className="px-2 py-1 text-right text-amber-400/70">
+                    {poVal === 0 ? '-' : `${poVal < 0 ? '-' : ''}${formatCurrency(Math.abs(poVal))}`}
+                  </td>
+                );
+              })}
+            </>
+          )}
+          <td className="px-2 py-1 text-right text-amber-400/90">{franchiseRowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(franchiseRowMetrics.dispatcherPay)}</td>
+          <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.recruitingCost)}</td>
+          <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'} ${franchiseRowMetrics.totalPnL >= 0 ? 'text-emerald-400/90' : 'text-rose-400/90'}`}>{formatCurrency(franchiseRowMetrics.totalPnL)}</td>
+          <td className={`px-2 py-1 text-right text-zinc-600 sticky right-0 w-[56px] min-w-[56px] z-20 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'}`}>-</td>
+        </tr>
+      )}
       {isExpanded && (
         <tr className="bg-zinc-950/50 relative z-50 [&>td]:border-b-2 [&>td]:border-l-2 [&>td]:border-r-2 [&>td]:border-emerald-500/50">
-          <td colSpan={16} className="p-0 border-b border-zinc-800 relative z-50 overflow-visible">
+          <td colSpan={(isRevColExpanded ? 10 : 0) + (isMilesExpanded ? 2 : 0) + (isFuelExpanded ? 5 : 0) + (isWklyExpExpanded ? 21 : 0) + (isPoExpanded ? poColumns.length : 0) + 16} className="p-0 border-b border-zinc-800 relative z-50 overflow-visible">
            <div className="sticky left-0 p-4 z-50 overflow-visible" style={{ width: 'var(--visible-width, calc(100vw - 262px))' }}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-h-[260px] items-stretch">
                 <div className="md:col-span-2 flex gap-4 h-full">
@@ -1009,6 +1395,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
   }, [drivers]);
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'totalGross', direction: 'desc' });
   const [isAvgPerWeek, setIsAvgPerWeek] = useState(false);
+  const [isRevColExpanded, setIsRevColExpanded] = useState(false);
+  const [isMilesExpanded, setIsMilesExpanded] = useState(false);
+  const [isFuelExpanded, setIsFuelExpanded] = useState(false);
+  const [isWklyExpExpanded, setIsWklyExpExpanded] = useState(false);
+  const [isPoExpanded, setIsPoExpanded] = useState(false);
   const [tpogMode, setTpogMode] = useState<'ALL' | 'CALCULATED'>('ALL');
   const [search, setSearch] = useState('');
   const [tableFilters, setTableFilters] = useState<FilterRule[]>([{ field: 'Contract', operator: 'status is', value: ['ACTIVE'] }]);
@@ -1115,8 +1506,8 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
                       totalMiles += (r.milesDriven || 0);
                       totalRevCol += rm.revCol;
                       let finalPnl = rm.pnl;
-                      if (tpogMode === 'CALCULATED' && rm.franchisePnl) {
-                          finalPnl -= (rm.franchisePnl / 2);
+                      if (rm.franchisePnlCalculated) {
+                          finalPnl = finalPnl - rm.franchisePnlCalculated;
                       }
                       totalPnL += finalPnl;
                       totalPO += rm.po;
@@ -1323,8 +1714,8 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       const rData = rankMap.get(d.name)!;
       const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
       let finalPnl = m.pnl;
-      if (tpogMode === 'CALCULATED' && m.franchisePnl) {
-          finalPnl -= (m.franchisePnl / 2);
+      if (m.franchisePnlCalculated) {
+          finalPnl -= m.franchisePnlCalculated;
       }
       rData.totalPnL += finalPnl;
       rData.records.push(d);
@@ -1362,6 +1753,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           totalGross: 0,
           companyPay: 0,
           totalPnL: 0,
+          totalMiles: 0,
           marginAmount: 0,
           poCoverage: 0,
           fuelCost: 0,
@@ -1376,6 +1768,17 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           fuelRebate: 0,
           wklyExp: 0,
           recruitingCost: 0,
+          revBase: 0,
+          balChange: 0,
+          prorated: 0,
+          zeroMiDrop: 0,
+          escrowAdj: 0,
+          tollsAdj: 0,
+          cashAdv: 0,
+          cpmAdj: 0,
+          fuelAdj: 0,
+          fullSharedLiability: 0,
+          sharedInsBreakdown: {} as Record<string, number>,
           tpogPercentages: [],
           contracts: new Set(),
           records: [],
@@ -1386,28 +1789,47 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       
       const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
 
+      const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
       agg.totalGross += (d.grossRevenue || d.driver_gross || 0);
-      agg.companyPay += m.revCol;
+      agg.companyPay += m.revCol - (tpogCalc * m.franchiseRevCol / 2);
       let finalPnl = m.pnl;
-      if (tpogMode === 'CALCULATED' && m.franchisePnl) {
-          finalPnl -= (m.franchisePnl / 2);
+      if (m.franchisePnlCalculated) {
+          finalPnl = finalPnl - m.franchisePnlCalculated;
       }
       agg.totalPnL += finalPnl;
+      agg.totalMiles += (Number(d.milesDriven) || 0);
       agg.marginAmount += (d.marginAmount || 0);
-      agg.poCoverage += m.po;
+      agg.poCoverage += m.po + (tpogCalc * m.franchisePo / 2);
       agg.fuelCost += (d.fuelCost ? -Math.abs(d.fuelCost) : 0);
       agg.fuelSavings += (d.fuelSavings || 0);
       agg.totalFuel += m.fuel;
-      agg.tollCost += -m.tolls;
+      agg.tollCost += -m.tolls + (tpogCalc * m.franchiseTolls / 2);
       agg.maintenanceCost += (d.maintenanceCost || 0);
       agg.driverFaultExpenses += (d.driverFaultExpenses || 0);
       agg.netPay += (d.netPay || 0);
-      agg.dispatcherPay += m.dispPay;
+      agg.dispatcherPay += m.dispPay - (tpogCalc * m.franchiseDispPay / 2);
       agg.insuranceExp += m.insExp;
-      agg.fuelRebate += m.fuelRebate;
-      agg.wklyExp += m.wklyExp;
-      agg.recruitingCost += m.recruiting;
+      agg.fuelRebate += m.fuelRebate - (tpogCalc * m.franchiseFuelReb / 2);
+      agg.wklyExp += m.wklyExp - (tpogCalc * m.franchiseWklyExp / 2);
+      agg.recruitingCost += m.recruiting - (tpogCalc * m.franchiseRecruiting / 2);
       
+      agg.revBase += m.revBase || 0;
+      agg.balChange += m.balChange || 0;
+      agg.prorated += m.prorated || 0;
+      agg.zeroMiDrop += m.zeroMiDrop || 0;
+      agg.escrowAdj += m.escrowAdj || 0;
+      agg.tollsAdj += m.tollsAdj || 0;
+      agg.cashAdv += m.cashAdv || 0;
+      agg.cpmAdj += m.cpmAdj || 0;
+      agg.fuelAdj += m.fuelAdj || 0;
+      agg.fullSharedLiability += m.fullSharedLiability || 0;
+      if (m.sharedInsBreakdown) {
+          Object.entries(m.sharedInsBreakdown).forEach(([k, v]) => {
+              if (!agg.sharedInsBreakdown[k]) agg.sharedInsBreakdown[k] = 0;
+              agg.sharedInsBreakdown[k] += Number(v);
+          });
+      }
+
       if (d.tpogPercentage) agg.tpogPercentages.push(d.tpogPercentage);
       if (d.contractType) agg.contracts.add(d.contractType);
       agg.records.push(d);
@@ -1433,6 +1855,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
         return {
           ...agg,
           totalGross: agg.totalGross / count,
+          totalMiles: agg.totalMiles / count,
           marginAmount: agg.marginAmount / count,
           poCoverage: agg.poCoverage / count,
           companyPay: agg.companyPay / count,
@@ -1450,6 +1873,17 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           fuelRebate: agg.fuelRebate / count,
           wklyExp: agg.wklyExp / div,
           recruitingCost: agg.recruitingCost / count,
+          revBase: agg.revBase / count,
+          balChange: agg.balChange / count,
+          prorated: agg.prorated / count,
+          zeroMiDrop: agg.zeroMiDrop / count,
+          escrowAdj: agg.escrowAdj / count,
+          tollsAdj: agg.tollsAdj / count,
+          cashAdv: agg.cashAdv / count,
+          cpmAdj: agg.cpmAdj / count,
+          fuelAdj: agg.fuelAdj / count,
+          fullSharedLiability: agg.fullSharedLiability / count,
+          sharedInsBreakdown: Object.fromEntries(Object.entries(agg.sharedInsBreakdown || {}).map(([k, v]) => [k, Number(v) / count])),
           contracts: Array.from(agg.contracts),
           records: agg.records.sort((a: any, b: any) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime()),
           ranking: finalRankMap.get(agg.name) ?? 100
@@ -1473,6 +1907,19 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       return aVal < bVal ? 1 : -1;
     });
   }, [validDrivers, filteredTableDrivers, isAvgPerWeek, sortConfig, search, fixedExpenses, tableFilters, enrichedMap, tpogMode]);
+
+  const poColumns = React.useMemo(() => {
+    const cols = new Set<string>();
+    aggregatedDrivers.forEach(agg => {
+      agg.records.forEach((r: any) => {
+        const enriched = enrichedMap.get(`${r.name}_${r.payDate || r.week_ending}_${r.contractType}_${r.companyId}`);
+        if (enriched?.po_breakdown) {
+          Object.keys(enriched.po_breakdown).forEach(k => cols.add(k));
+        }
+      });
+    });
+    return Array.from(cols).sort();
+  }, [aggregatedDrivers, enrichedMap]);
 
   const fleetAverages = React.useMemo(() => {
     const contractAvgs: Record<string, any> = {};
@@ -1514,8 +1961,8 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
          if (dTollsRaw) { contractAvgs[cType].tollsSum += Math.abs(dTollsRaw); }
          if (recruit) { contractAvgs[cType].recruitingSum += recruit; }
          let finalPnl = pnl;
-         if (tpogMode === 'CALCULATED' && m.franchisePnl) {
-             finalPnl -= (m.franchisePnl / 2);
+         if (m.franchisePnlCalculated) {
+             finalPnl = finalPnl - m.franchisePnlCalculated;
          }
          contractAvgs[cType].pnlSum += finalPnl;
          contractAvgs[cType].pnlCount++;
@@ -1626,35 +2073,46 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
                  }}
                />
             </div>
+            <button 
+              onClick={() => setIsAvgPerWeek(!isAvgPerWeek)}
+              className={`rounded text-[10px] font-bold border transition-colors cursor-pointer flex items-center justify-center px-3 h-[26px] gap-1.5 ${isAvgPerWeek ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
+            >
+              <Eye size={10} /> {isAvgPerWeek ? 'TOTAL' : 'AVERAGE'}
+            </button>
+            <div className="flex bg-zinc-950 border border-zinc-800 rounded h-[26px]">
+              <div className="relative group flex">
+                <button
+                  onClick={() => setTpogMode('ALL')}
+                  className={`px-3 py-1 text-[10px] font-bold transition-colors cursor-pointer h-full rounded-l ${tpogMode === 'ALL' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
+                >
+                  TPOG ALL
+                </button>
+                <div className="hidden group-hover:block absolute top-full right-0 mt-2 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded-lg shadow-2xl border border-zinc-600 whitespace-normal normal-case z-[110] text-center pointer-events-none">
+                  Displays full values for TPOG contracts, including the franchise portion. Franchise PnL can be seen in the sub-row below the driver. Total PnL always shows the final calculated value (Company PnL for TPOG row, Franchise PnL for franchise row).
+                </div>
+              </div>
+              <div className="relative group flex">
+                <button
+                  onClick={() => setTpogMode('CALCULATED')}
+                  className={`px-3 py-1 border-l border-zinc-800 text-[10px] font-bold transition-colors cursor-pointer h-full rounded-r ${tpogMode === 'CALCULATED' ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
+                >
+                  TPOG CALC
+                </button>
+                <div className="hidden group-hover:block absolute top-full right-0 mt-2 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded-lg shadow-2xl border border-zinc-600 whitespace-normal normal-case z-[110] text-center pointer-events-none">
+                  Displays calculated values for TPOG contracts with the franchise portion already deducted. Total PnL always shows the final calculated value (Company PnL for TPOG row, Franchise PnL for franchise row).
+                </div>
+              </div>
+            </div>
             <button
               onClick={() => setShowSettings(true)}
               className="rounded text-[10px] font-bold border transition-colors cursor-pointer bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white flex items-center justify-center gap-1 w-[90px] h-[26px]"
             >
               <Settings size={10} /> SETTINGS
             </button>
-            <button 
-              onClick={() => setIsAvgPerWeek(!isAvgPerWeek)}
-              className={`rounded text-[10px] font-bold border transition-colors cursor-pointer flex items-center justify-center px-3 h-[26px] ${isAvgPerWeek ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
-            >
-              AVERAGE
-            </button>
-            <div className="flex bg-zinc-950 border border-zinc-800 rounded overflow-hidden h-[26px]">
-              <button
-                onClick={() => setTpogMode('ALL')}
-                className={`px-3 py-1 text-[10px] font-bold transition-colors cursor-pointer ${tpogMode === 'ALL' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
-              >
-                TPOG ALL
-              </button>
-              <button
-                onClick={() => setTpogMode('CALCULATED')}
-                className={`px-3 py-1 border-l border-zinc-800 text-[10px] font-bold transition-colors cursor-pointer ${tpogMode === 'CALCULATED' ? 'bg-emerald-500/20 text-emerald-400' : 'text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800'}`}
-              >
-                TPOG CALC
-              </button>
-            </div>
         </div>
       </div>
-      <div ref={tableContainerRef} className="overflow-auto border border-zinc-800 rounded-t-lg bg-zinc-900 flex-1">
+      <div className="flex flex-col flex-[7] min-h-0 mb-1">
+      <div ref={tableContainerRef} className="overflow-auto border border-zinc-800 rounded-t-lg bg-zinc-900 flex-1 min-h-0">
         <table className="w-full text-left text-[11px] whitespace-nowrap relative">
           <thead className="bg-zinc-800/50 text-zinc-400 font-medium uppercase tracking-wider sticky top-0 z-10">
             <tr>
@@ -1662,14 +2120,111 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
               <th onClick={() => requestSort('name')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left sticky top-0 left-[32px] z-30">Driver</th>
               <th onClick={() => requestSort('totalGross')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Drv. Gross{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('marginAmount')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Margin{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('totalMiles')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">
+                <div className="flex items-center justify-end gap-1">
+                  Total Miles{isAvgPerWeek ? ' / wk' : ''}
+                  <button onClick={(e) => { e.stopPropagation(); setIsMilesExpanded(!isMilesExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1 cursor-pointer">
+                    <ChevronRight size={10} className={`transition-transform ${isMilesExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+              </th>
+              {isMilesExpanded && (
+                <>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Loaded Miles</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">DH</th>
+                </>
+              )}
               <th onClick={() => requestSort('netPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Net Pay{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('insuranceExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Ins. Exp.{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('totalFuel')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Fuel{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('companyPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Rev. Col.{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('totalFuel')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">
+                <div className="flex items-center justify-end gap-1">
+                  Fuel{isAvgPerWeek ? ' / wk' : ''}
+                  <button onClick={(e) => { e.stopPropagation(); setIsFuelExpanded(!isFuelExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1 cursor-pointer">
+                    <ChevronRight size={10} className={`transition-transform ${isFuelExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+              </th>
+              {isFuelExpanded && (
+                <>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">SPOTTER FUEL</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Ret. Price</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Spotter Ret. Price</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Disc Price</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-purple-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Quantity</th>
+                </>
+              )}
+              <th onClick={() => requestSort('companyPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">
+                <div className="flex items-center justify-end gap-1">
+                  Rev. Col.{isAvgPerWeek ? ' / wk' : ''}
+                  <button onClick={(e) => { e.stopPropagation(); setIsRevColExpanded(!isRevColExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1 cursor-pointer">
+                    <ChevronRight size={10} className={`transition-transform ${isRevColExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+              </th>
+              {isRevColExpanded && (
+                <>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">Rev Base</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">Bal Change</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">Rev Prorated</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">0 Mi Cap</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">Escrow Adj</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">Tolls Adj</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">Cash Adv</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">CPM Adj</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">Fuel Adj</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-zinc-500 sticky top-0 z-20 whitespace-nowrap">Shared Ins</th>
+                </>
+              )}
               <th onClick={() => requestSort('fuelRebate')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Fuel Reb.{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('wklyExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Wkly Exp.{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('wklyExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">
+                <div className="flex items-center justify-end gap-1">
+                  Wkly Exp.{isAvgPerWeek ? ' / wk' : ''}
+                  <button onClick={(e) => { e.stopPropagation(); setIsWklyExpExpanded(!isWklyExpExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1 cursor-pointer">
+                    <ChevronRight size={10} className={`transition-transform ${isWklyExpExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+              </th>
+              {isWklyExpExpanded && (
+                <>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Liability (Auto)</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Liability (Gen)</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Cargo</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Lease Gap</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Trailer Int.</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">LAGO</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">PhD Prem.</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">PhD Truck</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">PhD Trailer</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Truck Price</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">CPM</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Trailer Price</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Plates</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Telematics</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Phone & Int.</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Office Supp.</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Rent & Pkg.</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Backup MC</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Back Office Pay</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Tech Pay</th>
+                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Factoring</th>
+                </>
+              )}
               <th onClick={() => requestSort('tollCost')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Tolls{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('poCoverage')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">PO{isAvgPerWeek ? ' / wk' : ''}</th>
+              <th onClick={() => requestSort('poCoverage')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">
+                <div className="flex items-center justify-end gap-1">
+                  PO{isAvgPerWeek ? ' / wk' : ''}
+                  <button onClick={(e) => { e.stopPropagation(); setIsPoExpanded(!isPoExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1 cursor-pointer">
+                    <ChevronRight size={10} className={`transition-transform ${isPoExpanded ? 'rotate-180' : ''}`} />
+                  </button>
+                </div>
+              </th>
+              {isPoExpanded && (
+                <>
+                  {poColumns.map((col) => (
+                    <th key={`th-po-${col}`} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">{col}</th>
+                  ))}
+                </>
+              )}
               <th onClick={() => requestSort('dispatcherPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Disp. Pay{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('recruitingCost')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Recruiting{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('totalPnL')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-white cursor-pointer hover:text-emerald-400 select-none sticky top-0 right-[56px] z-40 w-[80px] min-w-[80px]">Total PnL{isAvgPerWeek ? ' / wk' : ''}</th>
@@ -1690,6 +2245,12 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
               pnlConfigs={pnlConfigs}
               isAvgPerWeek={isAvgPerWeek}
               tpogMode={tpogMode}
+              isRevColExpanded={isRevColExpanded}
+              isFuelExpanded={isFuelExpanded}
+              isWklyExpExpanded={isWklyExpExpanded}
+              isPoExpanded={isPoExpanded}
+              isMilesExpanded={isMilesExpanded}
+              poColumns={poColumns}
             />
           ))}
         </tbody>
@@ -1707,17 +2268,23 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
         >
           Prev
         </button>
-        <button 
-          onClick={() => setCurrentPage(p => Math.min(Math.ceil(aggregatedDrivers.length / itemsPerPage), p + 1))} 
-          disabled={currentPage === Math.ceil(aggregatedDrivers.length / itemsPerPage) || aggregatedDrivers.length === 0} 
-          className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-[10px] disabled:opacity-50 hover:bg-zinc-700 transition-colors cursor-pointer"
-        >
-          Next
-        </button>
+       <button 
+            onClick={() => setCurrentPage(p => Math.min(Math.ceil(aggregatedDrivers.length / itemsPerPage), p + 1))} 
+            disabled={currentPage === Math.ceil(aggregatedDrivers.length / itemsPerPage) || aggregatedDrivers.length === 0} 
+            className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-[10px] disabled:opacity-50 hover:bg-zinc-700 transition-colors cursor-pointer"
+          >
+            Next
+          </button>
+        </div>
       </div>
-    </div>
-    </div>
-  );
-};
+      </div>
+      <div className="w-full relative z-50 mt-1 mb-2 flex-[3] min-h-[260px] flex flex-col">
+        <DriverStats 
+          drivers={aggregatedDrivers}
+        />
+      </div>
+      </div>
+    );
+  };
 
-export default DriverTable;
+  export default DriverTable;

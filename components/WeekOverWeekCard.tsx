@@ -1,0 +1,149 @@
+import React, { useMemo } from 'react';
+import { 
+    TrendingUp, 
+    DollarSign, 
+    Coins, 
+    Fuel, 
+    CreditCard, 
+    ClipboardList, 
+    Ticket, 
+    Headphones, 
+    UserPlus 
+} from 'lucide-react';
+import { formatCurrency } from '../utils';
+
+const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate }: any) => {
+    const data = useMemo(() => {
+        const uniqueDates = Array.from(new Set(enrichedDrivers.map((d: any) => d.payDate))).filter(Boolean).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
+        
+        let targetDate = selectedDate;
+        if (targetDate === 'ALL' || targetDate === 'LATEST') {
+            targetDate = uniqueDates[0];
+        }
+        
+        const targetIndex = uniqueDates.indexOf(targetDate);
+        const currDate = targetIndex >= 0 ? uniqueDates[targetIndex] : null;
+        const prevDate = targetIndex >= 0 && targetIndex + 1 < uniqueDates.length ? uniqueDates[targetIndex + 1] : null;
+
+        const getCompanyMetricsForDate = (date: string) => {
+            const dateDrivers = enrichedDrivers.filter((d: any) => d.payDate === date);
+            if (!dateDrivers.length) return null;
+            
+            const rawMetrics = calculateMetrics(dateDrivers, false);
+            
+            let netIncome = rawMetrics.netIncome;
+            const franchiseDrivers = dateDrivers.filter((d: any) => d.contractType === 'TPOG' && !!d.franchiseId).map((d: any) => ({
+                 ...d,
+                 companyPay: d.franchise_revenue_collected || 0,
+                 fixed_costs: d.franchise_fixed_costs_full || 0,
+                 poCoverage: d.franchise_po ? -Math.abs(Number(d.franchise_po)) : 0,
+                 poAmount: d.franchise_po || 0,
+                 po_breakdown: d.franchise_po_breakdown,
+                 ...(d.franchise_fixed_breakdown || {}),
+                 isFranchiseStub: true
+             }));
+             
+             if (franchiseDrivers.length > 0) {
+                 let fNet = 0;
+                 const fNames = Array.from(new Set(franchiseDrivers.map((d: any) => d.name))).filter(Boolean);
+                 fNames.forEach((n: any) => {
+                     const drvs = franchiseDrivers.filter((d: any) => d.name === n);
+                     const m = calculateMetrics(drvs, true);
+                     fNet += ((m.netIncome - (m.pnlBalanceChange || 0) - (m.pnlEscrowAdj || 0)) + (m.excludedPoTotal || 0)) / 2 + (m.pnlBalanceChange || 0) + (m.pnlEscrowAdj || 0);
+                 });
+                 netIncome -= fNet;
+             }
+             
+             return {
+                 netIncome,
+                 revCollected: rawMetrics.pnlCompanyPay !== undefined ? rawMetrics.pnlCompanyPay : rawMetrics.companyPay,
+                 fuelRebate: rawMetrics.pnlFuelRebate !== undefined ? rawMetrics.pnlFuelRebate : rawMetrics.fuelRebate,
+                 weeklyExpenses: rawMetrics.pnlAllocatedFixed !== undefined ? rawMetrics.pnlAllocatedFixed : rawMetrics.allocatedFixed,
+                 po: rawMetrics.pnlTotalPOCov !== undefined ? rawMetrics.pnlTotalPOCov : rawMetrics.totalPOCov,
+                 tolls: rawMetrics.pnlTolls !== undefined ? rawMetrics.pnlTolls : rawMetrics.tolls,
+                 dispatcherPay: rawMetrics.dispatcherPay,
+                 recruiting: rawMetrics.pnlTotalRecruiting !== undefined ? rawMetrics.pnlTotalRecruiting : rawMetrics.totalRecruiting
+             };
+        };
+
+        const currMetrics = currDate ? getCompanyMetricsForDate(currDate as string) : null;
+        const prevMetrics = prevDate ? getCompanyMetricsForDate(prevDate as string) : null;
+
+        return { currDate, currMetrics, prevMetrics };
+    }, [enrichedDrivers, calculateMetrics, selectedDate]);
+
+    if (!data.currMetrics) return null;
+
+    const formatDateObj = (dateStr: string) => {
+        if (!dateStr) return '';
+        const parts = dateStr.split('-');
+        if (parts.length === 3) return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}`;
+        return dateStr;
+    };
+
+    const dateSuffix = data.currDate ? ` (${formatDateObj(data.currDate as string)})` : '';
+
+    const items = [
+        { key: 'netIncome', label: 'Total PnL', isExpense: false, icon: DollarSign },
+        { key: 'revCollected', label: 'Revenue', isExpense: false, icon: Coins },
+        { key: 'fuelRebate', label: 'Fuel Rebate', isExpense: false, icon: Fuel },
+        { key: 'weeklyExpenses', label: 'Weekly Expenses', isExpense: true, icon: CreditCard },
+        { key: 'po', label: 'PO', isExpense: true, icon: ClipboardList },
+        { key: 'tolls', label: 'Tolls', isExpense: true, icon: Ticket },
+        { key: 'dispatcherPay', label: 'Dispatcher Pay', isExpense: true, icon: Headphones },
+        { key: 'recruiting', label: 'Recruiting', isExpense: true, icon: UserPlus }
+    ];
+
+    return (
+        <div className="w-full xl:w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex flex-col gap-2 overflow-y-auto min-h-0 flex-shrink-0">
+           <div className="flex items-center gap-1 text-[9px] font-bold text-amber-500 uppercase tracking-wider mb-1">
+               <TrendingUp size={12} />
+               Week Over Week
+           </div>
+           <div className="flex flex-col gap-2">
+               {items.map(item => {
+                   const currVal = Math.abs(data.currMetrics[item.key] || 0);
+                   const prevVal = data.prevMetrics ? Math.abs(data.prevMetrics[item.key] || 0) : 0;
+                   
+                   const diff = currVal - prevVal;
+                   const diffPct = prevVal !== 0 ? (diff / prevVal) * 100 : 0;
+                   
+                   const isUp = diff >= 0;
+                   const arrow = isUp ? '↗' : '↘';
+                   const pctStr = `${Math.abs(diffPct).toFixed(1)}%`;
+                   const diffStr = diff >= 0 ? `+${formatCurrency(diff)}` : formatCurrency(diff);
+                   
+                   let colorClass = 'text-zinc-500';
+                   if (diff !== 0) {
+                      const isGood = item.isExpense ? diff < 0 : diff > 0;
+                      colorClass = isGood ? 'text-emerald-500' : 'text-rose-500';
+                   }
+
+                   return (
+                       <div key={item.key} className="flex items-start gap-1.5 border-b border-zinc-800/50 pb-1.5 last:border-0 last:pb-0">
+                          <div className="text-zinc-400 mt-[1px] flex-shrink-0">
+                              <item.icon size={12} />
+                          </div>
+                          <div className="flex flex-col gap-0.5 flex-1 min-w-0">
+                             <div className="text-[9px] text-zinc-500 uppercase tracking-wider font-bold truncate mb-1">
+                                 {item.label}
+                             </div>
+                            <div className="flex items-center justify-between w-full">
+                                 <div className="text-[11px] font-bold text-white font-mono leading-none">
+                                     {formatCurrency(currVal)}
+                                 </div>
+                                 <div className={`flex items-center text-[9px] font-bold font-mono ${colorClass} leading-none`}>
+                                     <div className="w-[45px] text-right">{arrow} {pctStr}</div>
+                                     <div className="w-[65px] text-right text-zinc-500">({diffStr})</div>
+                                 </div>
+                             </div>
+                          </div>
+                       </div>
+                   );
+               })}
+           </div>
+        </div>
+    );
+};
+
+export default WeekOverWeekCard;

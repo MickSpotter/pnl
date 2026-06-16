@@ -641,44 +641,48 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
         <div className="flex-1 overflow-auto p-2 lg:p-3 relative">
           <div className="w-full h-full">
             
-           {activeTab === 'financials' && (
-              <PnLView 
-                  allDrivers={simulatedDrivers}
-                  drivers={filteredDrivers} 
-                  simulationConfig={simulationConfig}
-                  setSimulationConfig={setSimulationConfig}
-                  fixedExpenses={fixedExpenses}
-                  setFixedExpenses={setFixedExpenses}
-                  onSaveExpenses={handleSaveExpenses} 
-                  finImportData={finImportData}
-                  fixedCostsData={fixedCostsData}
-                  configContracts={configContracts}
-                  setConfigContracts={setConfigContracts}
-                  onReady={() => setIsDashboardReady(true)}
-                  onDataSync={() => fetchData(true)}
-                  globalFilter={globalFilter}
-                  setGlobalFilter={setGlobalFilter}
-                  currentRole={currentRole}
-                />
-            )}
+           <div className={activeTab === 'financials' ? 'w-full h-full' : 'hidden'}>
+            <PnLView 
+                allDrivers={simulatedDrivers}
+                drivers={filteredDrivers} 
+                simulationConfig={simulationConfig}
+                setSimulationConfig={setSimulationConfig}
+                fixedExpenses={fixedExpenses}
+                setFixedExpenses={setFixedExpenses}
+                onSaveExpenses={handleSaveExpenses} 
+                finImportData={finImportData}
+                fixedCostsData={fixedCostsData}
+                configContracts={configContracts}
+                setConfigContracts={setConfigContracts}
+                onReady={() => setIsDashboardReady(true)}
+                onDataSync={() => fetchData(true)}
+                globalFilter={globalFilter}
+                setGlobalFilter={setGlobalFilter}
+                currentRole={currentRole}
+              />
+          </div>
 
-            {activeTab === 'drivers' && (
-              <div className="flex flex-col h-full">
-                <DriverTable drivers={filteredDrivers} />
+          {isDashboardReady && (
+            <>
+              <div className={activeTab === 'drivers' ? 'w-full h-full' : 'hidden'}>
+                <div className="flex flex-col h-full">
+                  <DriverTable drivers={filteredDrivers} />
+                </div>
               </div>
-            )}
 
-            {activeTab === 'dispatchers' && (
-              <DispatcherTable drivers={filteredDrivers} />
-            )}
+              <div className={activeTab === 'dispatchers' ? 'w-full h-full' : 'hidden'}>
+                <DispatcherTable drivers={filteredDrivers} />
+              </div>
 
-            {activeTab === 'franchises' && (
-              <FranchiseTable drivers={filteredDrivers} simulationConfig={simulationConfig} />
-            )}
+              <div className={activeTab === 'franchises' ? 'w-full h-full' : 'hidden'}>
+                <FranchiseTable drivers={filteredDrivers} simulationConfig={simulationConfig} />
+              </div>
 
-            {activeTab === 'settings' && (
-              <SettingsView onDataSync={() => fetchData(true)} />
-            )}
+              <div className={activeTab === 'settings' ? 'w-full h-full' : 'hidden'}>
+                <SettingsView onDataSync={() => fetchData(true)} />
+              </div>
+            </>
+          )}
             
           </div>
         </div>
