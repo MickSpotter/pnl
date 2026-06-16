@@ -7,14 +7,52 @@ import {
     CreditCard, 
     ClipboardList, 
     Ticket, 
-    Headphones, 
-    UserPlus 
+    Headset, 
+    UserPlus,
+    Info
 } from 'lucide-react';
 import { formatCurrency } from '../utils';
 
-const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate }: any) => {
+const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tableFilters = [] }: any) => {
     const data = useMemo(() => {
-        const uniqueDates = Array.from(new Set(enrichedDrivers.map((d: any) => d.payDate))).filter(Boolean).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
+        const allowedFilters = ['Company', 'Team', 'Franchise', 'Contract'];
+        const activeFilters = tableFilters.filter((f: any) => allowedFilters.includes(f.field));
+        
+        let filteredDrivers = enrichedDrivers;
+        if (activeFilters.length > 0) {
+            filteredDrivers = enrichedDrivers.filter((d: any) => {
+                return activeFilters.every((rule: any) => {
+                    if (!rule.field || !rule.operator) return true;
+                    
+                    const isNoValueOp = rule.operator === 'is empty' || rule.operator === 'is not empty';
+                    const hasNoValue = rule.value === undefined || rule.value === null || rule.value === '' || (Array.isArray(rule.value) && rule.value.length === 0);
+                    
+                    if (!isNoValueOp && hasNoValue) return true;
+
+                    let fieldValue: any;
+                    switch (rule.field) {
+                        case 'Contract': fieldValue = d.contractType; break;
+                        case 'Company': fieldValue = d.companyId; break;
+                        case 'Team': fieldValue = d.teamId; break;
+                        case 'Franchise': fieldValue = d.franchiseId; break;
+                        default: return true;
+                    }
+                    const isEmptyValue = fieldValue === undefined || fieldValue === null || String(fieldValue).trim() === '' || String(fieldValue).trim() === 'Unassigned';
+                    if (rule.operator === 'is empty') return isEmptyValue;
+                    if (rule.operator === 'is not empty') return !isEmptyValue;
+                    
+                    const safeVal = String(fieldValue || 'Unassigned');
+                    const selectedValues = Array.isArray(rule.value) ? rule.value : [rule.value];
+                    if (rule.operator === 'is one of') return selectedValues.includes(safeVal);
+                    if (rule.operator === 'is not one of') return !selectedValues.includes(safeVal);
+                    if (rule.operator === 'is') return selectedValues.length > 0 && selectedValues[0] === safeVal;
+                    if (rule.operator === 'is not') return selectedValues.length > 0 && selectedValues[0] !== safeVal;
+                    return true;
+                });
+            });
+        }
+
+        const uniqueDates = Array.from(new Set(filteredDrivers.map((d: any) => d.payDate))).filter(Boolean).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
         
         let targetDate = selectedDate;
         if (targetDate === 'ALL' || targetDate === 'LATEST') {
@@ -26,7 +64,7 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate }: a
         const prevDate = targetIndex >= 0 && targetIndex + 1 < uniqueDates.length ? uniqueDates[targetIndex + 1] : null;
 
         const getCompanyMetricsForDate = (date: string) => {
-            const dateDrivers = enrichedDrivers.filter((d: any) => d.payDate === date);
+            const dateDrivers = filteredDrivers.filter((d: any) => d.payDate === date);
             if (!dateDrivers.length) return null;
             
             const rawMetrics = calculateMetrics(dateDrivers, false);
@@ -70,7 +108,7 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate }: a
         const prevMetrics = prevDate ? getCompanyMetricsForDate(prevDate as string) : null;
 
         return { currDate, currMetrics, prevMetrics };
-    }, [enrichedDrivers, calculateMetrics, selectedDate]);
+    }, [enrichedDrivers, calculateMetrics, selectedDate, tableFilters]);
 
     if (!data.currMetrics) return null;
 
@@ -90,15 +128,23 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate }: a
         { key: 'weeklyExpenses', label: 'Weekly Expenses', isExpense: true, icon: CreditCard },
         { key: 'po', label: 'PO', isExpense: true, icon: ClipboardList },
         { key: 'tolls', label: 'Tolls', isExpense: true, icon: Ticket },
-        { key: 'dispatcherPay', label: 'Dispatcher Pay', isExpense: true, icon: Headphones },
+        { key: 'dispatcherPay', label: 'Dispatcher Pay', isExpense: true, icon: Headset },
         { key: 'recruiting', label: 'Recruiting', isExpense: true, icon: UserPlus }
     ];
 
     return (
         <div className="w-full xl:w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex flex-col gap-2 overflow-y-auto min-h-0 flex-shrink-0">
-           <div className="flex items-center gap-1 text-[9px] font-bold text-amber-500 uppercase tracking-wider mb-1">
-               <TrendingUp size={12} />
-               Week Over Week
+           <div className="flex items-center justify-between mb-1">
+               <div className="flex items-center gap-1 text-[9px] font-bold text-amber-500 uppercase tracking-wider">
+                   <TrendingUp size={12} />
+                   Weekly Dynamics
+               </div>
+               <div className="group/wowinfo relative flex items-center cursor-help">
+                   <Info size={12} className="text-zinc-500 hover:text-zinc-300 transition-colors" />
+                   <div className="absolute hidden group-hover/wowinfo:block z-[99999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-2 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[200px] pointer-events-none top-full right-0 mt-1 whitespace-normal break-words font-normal">
+                       This card shows week-over-week financial dynamics. It dynamically adjusts when you filter the master table by Company, Franchise, Team, or Contract.
+                   </div>
+               </div>
            </div>
            <div className="flex flex-col gap-2">
                {items.map(item => {

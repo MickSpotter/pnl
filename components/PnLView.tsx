@@ -5567,7 +5567,7 @@ if (groupBy === 'Driver') {
               />
              </div>
           </div>
-          <WeekOverWeekCard enrichedDrivers={enrichedDrivers} calculateMetrics={calculateMetrics} selectedDate={selectedDate} />
+         <WeekOverWeekCard enrichedDrivers={enrichedDrivers} calculateMetrics={calculateMetrics} selectedDate={selectedDate} tableFilters={tableFilters} />
         </div>
 
         </div>
