@@ -47,7 +47,7 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
                     if (rule.operator === 'is not one of') return !selectedValues.includes(safeVal);
                     if (rule.operator === 'is') return selectedValues.length > 0 && selectedValues[0] === safeVal;
                     if (rule.operator === 'is not') return selectedValues.length > 0 && selectedValues[0] !== safeVal;
-                    return true;
+                return true;
                 });
             });
         }
