@@ -133,8 +133,8 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
     ];
 
     return (
-        <div className="w-full xl:w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg p-2 flex flex-col gap-2 overflow-y-auto min-h-0 flex-shrink-0">
-           <div className="flex items-center justify-between mb-1">
+        <div className="w-full xl:w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg px-2 pb-2 flex flex-col gap-2 overflow-y-auto min-h-0 flex-shrink-0">
+           <div className="flex items-center justify-between mb-1 sticky top-0 bg-zinc-900 z-10 pt-2 pb-1 border-b border-zinc-800/50">
                <div className="flex items-center gap-1 text-[9px] font-bold text-amber-500 uppercase tracking-wider">
                    <TrendingUp size={12} />
                    Weekly Dynamics
@@ -162,7 +162,7 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
                    let colorClass = 'text-zinc-500';
                    if (diff !== 0) {
                       const isGood = item.isExpense ? diff < 0 : diff > 0;
-                      colorClass = isGood ? 'text-emerald-500' : 'text-rose-500';
+                      colorClass = isGood ? 'text-emerald-600' : 'text-rose-600';
                    }
 
                    return (
@@ -178,7 +178,7 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
                                  <div className="text-[11px] font-bold text-white font-mono leading-none">
                                      {formatCurrency(currVal)}
                                  </div>
-                                 <div className={`flex items-center text-[9px] font-bold font-mono ${colorClass} leading-none`}>
+                                 <div className={`flex items-center text-[9px] font-medium font-mono ${colorClass} leading-none`}>
                                      <div className="w-[45px] text-right">{arrow} {pctStr}</div>
                                      <div className="w-[65px] text-right text-zinc-500">({diffStr})</div>
                                  </div>

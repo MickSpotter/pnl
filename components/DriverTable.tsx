@@ -365,7 +365,7 @@ interface DriverTableProps {
   drivers: DriverPerformance[];
 }
 
-const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek, tpogMode, isRevColExpanded, isFuelExpanded, isWklyExpExpanded, isPoExpanded, isMilesExpanded, poColumns }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean; tpogMode: 'ALL' | 'CALCULATED'; isRevColExpanded: boolean; isFuelExpanded: boolean; isWklyExpExpanded: boolean; isPoExpanded: boolean; isMilesExpanded: boolean; poColumns: string[] }) => {
+const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek, tpogMode, isRevColExpanded, isFuelExpanded, isWklyExpExpanded, isPoExpanded, isMilesExpanded, poColumns, poRules }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean; tpogMode: 'ALL' | 'CALCULATED'; isRevColExpanded: boolean; isFuelExpanded: boolean; isWklyExpExpanded: boolean; isPoExpanded: boolean; isMilesExpanded: boolean; poColumns: string[]; poRules: any[] }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>('TOTAL');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['pnl']);
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
@@ -544,7 +544,22 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
         if (enrichedR.po_breakdown) {
             Object.entries(enrichedR.po_breakdown).forEach(([k, v]: [string, any]) => {
-                const adjVal = Number(v) - (tpogCalc * (r.contractType === 'TPOG' && r.franchiseId ? Number(v) / 2 : 0));
+                let isExcluded = false;
+                const allRule = poRules.find(ru => ru.contract_type === 'ALL' && ru.category_name === k && ru.status === 'Exclude');
+                if (allRule) isExcluded = true;
+                const cType = r.contractType || 'Unknown';
+                const relevantRule = poRules.find(ru => ru.contract_type === cType && ru.category_name === k && ru.status === 'Exclude');
+                if (relevantRule) {
+                    if (cType === 'TPOG') {
+                        const tpogScope = relevantRule.tpog || 'Only TPOG with franchises';
+                        if (tpogScope === 'ALL TPOG') isExcluded = true;
+                        else if (tpogScope === 'Only TPOG with franchises' && !!r.franchiseId) isExcluded = true;
+                        else if (tpogScope === 'Only TPOG without franchises' && !r.franchiseId) isExcluded = true;
+                    } else {
+                        isExcluded = true;
+                    }
+                }
+                const adjVal = isExcluded ? 0 : Number(v) - (tpogCalc * (r.contractType === 'TPOG' && r.franchiseId ? Number(v) / 2 : 0));
                 if (!poBreakdown[k]) poBreakdown[k] = 0;
                 poBreakdown[k] += adjVal;
             });
@@ -588,7 +603,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       fcTruck: fcTruck / div, fcCpm: fcCpm / div, fcTrailer: fcTrailer / div, fcPlates: fcPlates / div, fcTelematics: fcTelematics / div, fcPhone: fcPhone / div, fcOffice: fcOffice / div, fcRent: fcRent / div, fcBackupMc: fcBackupMc / div, fcBoReg: fcBoReg / div, fcBoTech: fcBoTech / div, fcFactoring: fcFactoring / div, adjFixed: adjFixed / div,
       insLiabAuto: insLiabAuto / div, insLiabGen: insLiabGen / div, insCargo: insCargo / div, insLeaseGapCoverage: insLeaseGapCoverage / div, insTrailerInterchange: insTrailerInterchange / div, insLago: insLago / div, insPhdPremium: insPhdPremium / div, insPhdTruck: insPhdTruck / div, insPhdTrailer: insPhdTrailer / div
     };
-  }, [filteredRecords, driver, fixedExpenses, enrichedMap, pnlConfigs, selectedEntity, isAvgPerWeek, tpogMode]);
+  }, [filteredRecords, driver, fixedExpenses, enrichedMap, pnlConfigs, selectedEntity, isAvgPerWeek, tpogMode, poRules]);
 
   const franchiseRowMetrics = React.useMemo(() => {
     let companyPay = 0, fuelRebate = 0, wklyExp = 0, tollCost = 0, poCoverage = 0, dispatcherPay = 0, recruitingCost = 0, totalPnL = 0;
@@ -649,8 +664,15 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
           if (enrichedR.po_breakdown) {
             Object.entries(enrichedR.po_breakdown).forEach(([k, v]: [string, any]) => {
+              let isExcluded = false;
+              const allRule = poRules.find(ru => ru.contract_type === 'ALL' && ru.category_name === k && ru.status === 'Exclude');
+              if (allRule) isExcluded = true;
+              const stubRule = poRules.find(ru => (ru.contract_type === 'TPOG Franchise PnL' || ru.contract_type === 'TPOG (Franchise PnL)') && ru.category_name === k && ru.status === 'Exclude');
+              if (stubRule) {
+                  isExcluded = true;
+              }
               if (!poBreakdown[k]) poBreakdown[k] = 0;
-              poBreakdown[k] += Number(v);
+              poBreakdown[k] += isExcluded ? 0 : Number(v);
             });
           }
         }
@@ -675,7 +697,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       fcTruck: fcTruck / div, fcCpm: fcCpm / div, fcTrailer: fcTrailer / div, fcPlates: fcPlates / div, fcTelematics: fcTelematics / div, fcPhone: fcPhone / div, fcOffice: fcOffice / div, fcRent: fcRent / div, fcBackupMc: fcBackupMc / div, fcBoReg: fcBoReg / div, fcBoTech: fcBoTech / div, fcFactoring: fcFactoring / div,
       insLiabAuto: insLiabAuto / div, insLiabGen: insLiabGen / div, insCargo: insCargo / div, insLeaseGapCoverage: insLeaseGapCoverage / div, insTrailerInterchange: insTrailerInterchange / div, insLago: insLago / div, insPhdPremium: insPhdPremium / div, insPhdTruck: insPhdTruck / div, insPhdTrailer: insPhdTrailer / div
     };
-  }, [filteredRecords, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek]);
+  }, [filteredRecords, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek, poRules]);
 
   const calcGross = filteredRecords.reduce((s: number, r: any) => s + (r.grossRevenue || r.driver_gross || 0), 0);
   const expFuel = filteredRecords.reduce((s: number, r: any) => s + (r.fuelCost || 0), 0);
@@ -1407,6 +1429,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
   const [driverSettings, setDriverSettings] = useState<any>({});
   const [fixedExpenses, setFixedExpenses] = useState<any[]>([]);
   const [pnlConfigs, setPnlConfigs] = useState<any[]>([]);
+  const [poRules, setPoRules] = useState<any[]>([]);
 
   useEffect(() => {
     const loadPnlConfigs = async () => {
@@ -1418,7 +1441,14 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
         }
       } catch(e) { console.error("Error loading PNL configs:", e); }
     };
+    const loadPoRules = async () => {
+      try {
+        const { data } = await supabase.from('po_rules').select('*');
+        if (data) setPoRules(data);
+      } catch(e) { console.error("Error loading PO rules:", e); }
+    };
     loadPnlConfigs();
+    loadPoRules();
   }, []);
 
   useEffect(() => {
@@ -2251,6 +2281,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
               isPoExpanded={isPoExpanded}
               isMilesExpanded={isMilesExpanded}
               poColumns={poColumns}
+              poRules={poRules}
             />
           ))}
         </tbody>
