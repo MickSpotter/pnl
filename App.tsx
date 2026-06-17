@@ -350,6 +350,7 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
               fuelSavings: Number(row.fuel_saved || 0),
               spotter_fuel_saved: Number(row.spotter_fuel_saved || 0),
               fuel_saved: Number(row.fuel_saved || 0),
+              fuel_saved_2: Number(row.fuel_saved_2 || 0),
               franchise_revenue_collected: Number(row.franchise_revenue || 0),
               franchise_po: applyPORules(
                   typeof row.franchise_po_breakdown === 'string' ? (()=>{try{return JSON.parse(row.franchise_po_breakdown);}catch(e){return {};}})() : (row.franchise_po_breakdown || {}), 

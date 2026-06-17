@@ -157,6 +157,7 @@ export interface DriverPerformance {
       dh?: number;
       fuel_saved?: number;
       spotter_fuel_saved?: number;
+      fuel_saved_2?: number;
       fuel_spent?: number;
       fuel_retail_price?: number;
       spotter_retail_price?: number;

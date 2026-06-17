@@ -95,7 +95,8 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
              return {
                  netIncome,
                  revCollected: rawMetrics.pnlCompanyPay !== undefined ? rawMetrics.pnlCompanyPay : rawMetrics.companyPay,
-                 fuelRebate: rawMetrics.pnlFuelRebate !== undefined ? rawMetrics.pnlFuelRebate : rawMetrics.fuelRebate,
+                 fuel: rawMetrics.pnlFuel !== undefined ? rawMetrics.pnlFuel : rawMetrics.fuel,
+                 spotterFuel: rawMetrics.wosFuel !== undefined ? rawMetrics.wosFuel : 0,
                  weeklyExpenses: rawMetrics.pnlAllocatedFixed !== undefined ? rawMetrics.pnlAllocatedFixed : rawMetrics.allocatedFixed,
                  po: rawMetrics.pnlTotalPOCov !== undefined ? rawMetrics.pnlTotalPOCov : rawMetrics.totalPOCov,
                  tolls: rawMetrics.pnlTolls !== undefined ? rawMetrics.pnlTolls : rawMetrics.tolls,
@@ -122,9 +123,9 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
     const dateSuffix = data.currDate ? ` (${formatDateObj(data.currDate as string)})` : '';
 
     const items = [
-        { key: 'netIncome', label: 'Total PnL', isExpense: false, icon: DollarSign },
-        { key: 'revCollected', label: 'Revenue', isExpense: false, icon: Coins },
-        { key: 'fuelRebate', label: 'Fuel Rebate', isExpense: false, icon: Fuel },
+        { key: 'revCollected', label: 'Revenue Collected', isExpense: false, icon: Coins },
+        { key: 'fuel', label: 'Fuel', isExpense: true, icon: Fuel },
+        { key: 'spotterFuel', label: 'P/L with Spotter Fuel', isExpense: true, icon: Fuel },
         { key: 'weeklyExpenses', label: 'Weekly Expenses', isExpense: true, icon: CreditCard },
         { key: 'po', label: 'PO', isExpense: true, icon: ClipboardList },
         { key: 'tolls', label: 'Tolls', isExpense: true, icon: Ticket },
@@ -135,9 +136,9 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
     return (
         <div className="w-full xl:w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg px-2 pb-2 flex flex-col gap-2 overflow-y-auto min-h-0 flex-shrink-0">
            <div className="flex items-center justify-between mb-1 sticky top-0 bg-zinc-900 z-10 pt-2 pb-1 border-b border-zinc-800/50">
-               <div className="flex items-center gap-1 text-[9px] font-bold text-amber-500 uppercase tracking-wider">
-                   <TrendingUp size={12} />
-                   Weekly Dynamics
+               <div className="flex items-center gap-1 text-[9px] font-bold text-zinc-100 uppercase tracking-wider">
+                   <TrendingUp size={12} className="text-amber-500" />
+                   Week-over-Week
                </div>
                <div className="group/wowinfo relative flex items-center cursor-help">
                    <Info size={12} className="text-zinc-500 hover:text-zinc-300 transition-colors" />

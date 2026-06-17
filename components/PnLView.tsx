@@ -3793,7 +3793,9 @@ const PnLView: React.FC<PnLViewProps> = ({
                       case 'Med Net Pay': fieldValue = d.netPay ?? 0; break;
                       case 'Disp. Pay': fieldValue = d.dispatcherCommission || 0; break;
                       case 'Ins. Exp.': fieldValue = (d as any).insuranceCost || 0; break;
-                      case 'Fuel': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : (Number((d as any).spotter_fuel_saved ?? 0) !== 0 ? Number((d as any).spotter_fuel_saved ?? 0) : Number((d as any).fuel_saved ?? d.fuelSavings ?? 0)); break;
+                     case 'Fuel':
+        fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : (Number((d as any).spotter_fuel_saved ?? 0) !== 0 ? (Number((d as any).spotter_fuel_saved ?? 0) + (Number((d as any).fuel_saved ?? d.fuelSavings ?? 0) - Number((d as any).fuel_saved_2 ?? 0))) : Number((d as any).fuel_saved ?? d.fuelSavings ?? 0));
+        break;
                       case 'Rev. Col.': fieldValue = d.companyPay || 0; break;
                       case 'Rev Base': fieldValue = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0); break;
                       case 'Bal Change': fieldValue = Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0) + Number((d as any).po_settle ?? (d as any).poSettle ?? 0) - Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0); break;
@@ -3803,7 +3805,9 @@ const PnLView: React.FC<PnLViewProps> = ({
                       case 'Tolls Adj': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
                       case 'Cash Adv': fieldValue = Number((d as any).cash_advance_percent ?? (d as any).cashAdvancePercent ?? 0); break;
                       case 'CPM Adj': fieldValue = Number((d as any).revenue_cpm ?? (d as any).revenueCpm ?? 0) * (Number(d.milesDriven) || 0); break;
-                      case 'Fuel Adj': fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : (Number((d as any).spotter_fuel_saved ?? 0) !== 0 ? Number((d as any).spotter_fuel_saved ?? 0) : Number((d as any).fuel_saved ?? d.fuelSavings ?? 0)); break;
+                     case 'Fuel Adj':
+        fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : (Number((d as any).spotter_fuel_saved ?? 0) !== 0 ? (Number((d as any).spotter_fuel_saved ?? 0) + (Number((d as any).fuel_saved ?? d.fuelSavings ?? 0) - Number((d as any).fuel_saved_2 ?? 0))) : Number((d as any).fuel_saved ?? d.fuelSavings ?? 0));
+        break;
                       case 'Fuel Reb.': fieldValue = (d as any).fuelRebate || 0; break;
                       case 'Wkly Exp.': fieldValue = (d as any).calculatedFixedCost || 0; break;
                       case 'Tolls': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
@@ -4016,14 +4020,15 @@ if (isCategorical) {
     const fuelSavings = initialDrivers.reduce((sum, d) => sum + (d.fuelSavings || 0), 0);
     const driverPay = initialDrivers.reduce((sum, d) => sum + d.netPay, 0);
  const fuel = initialDrivers.reduce((sum, d) => {
-     const ct = d.contractType || '';
-     if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
-         return sum - Math.abs(d.fuelCost || 0);
-     }
-     const spotter = Number((d as any).spotter_fuel_saved ?? 0);
-     const saved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
-     return sum + (spotter !== 0 ? spotter : saved);
-    }, 0);
+    const ct = d.contractType || '';
+    if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
+      return sum - Math.abs(d.fuelCost || 0);
+    }
+    const spotter = Number((d as any).spotter_fuel_saved ?? 0);
+    const saved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
+    const saved2 = Number((d as any).fuel_saved_2 ?? 0);
+    return sum + (spotter !== 0 ? (spotter + (saved - saved2)) : saved);
+  }, 0);
     const fuel_retail_price = initialDrivers.reduce((sum, d) => sum + (Number((d as any).fuel_retail_price) || 0), 0);
     const fuel_retail_price_count = initialDrivers.filter(d => (Number((d as any).fuel_retail_price) || 0) !== 0).length;
     const spotter_retail_price = initialDrivers.reduce((sum, d) => sum + (Number((d as any).spotter_retail_price) || 0), 0);
@@ -4033,14 +4038,15 @@ if (isCategorical) {
     const fuel_quantity = initialDrivers.reduce((sum, d) => sum + (Number((d as any).fuel_quantity) || 0), 0);
     const recordCount = initialDrivers.length;
  const wosFuel = initialDrivers.reduce((sum, d) => {
-     const ct = d.contractType || '';
-     if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
-         return sum;
-     }
-     const spotter = Number((d as any).spotter_fuel_saved ?? 0);
-     const saved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
-     return sum + (spotter !== 0 ? (spotter - saved) : 0);
- }, 0);
+      const ct = d.contractType || '';
+      if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
+        return sum;
+      }
+      const spotter = Number((d as any).spotter_fuel_saved ?? 0);
+      const saved2 = Number((d as any).fuel_saved_2 ?? 0);
+      const diff = spotter !== 0 ? (spotter - saved2) : 0;
+      return sum + (diff > 0 ? -diff : diff);
+    }, 0);
  const maint = initialDrivers.reduce((sum, d) => sum + d.maintenanceCost, 0);
     const faults = initialDrivers.reduce((sum, d) => sum + d.driverFaultExpenses, 0);
     
@@ -4312,7 +4318,8 @@ if (isCategorical) {
     const dMiles = Number((d as any).total_miles ?? d.milesDriven ?? 0);
     const spotter = Number((d as any).spotter_fuel_saved ?? 0);
     const saved = Number((d as any).fuel_saved ?? d.fuelSavings ?? 0);
-    const fSaved = spotter !== 0 ? spotter : saved;
+    const saved2 = Number((d as any).fuel_saved_2 ?? 0);
+    const fSaved = spotter !== 0 ? (spotter + (saved - saved2)) : saved;
     const fSpent = Number((d as any).fuel_spent ?? (d as any).fuelCost ?? 0);
 
         const revWithoutFuelVal = Number((d as any).rev_without_fuel ?? (d as any).revWithoutFuel ?? 0);
