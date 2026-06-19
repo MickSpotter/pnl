@@ -756,6 +756,7 @@ const App: React.FC = () => {
         
         const { data: enrollData, error: enrollError } = await supabase.auth.mfa.enroll({ 
           factorType: 'totp',
+          issuer: 'PnL Portal',
           friendlyName: `Authenticator-${Date.now()}`
         });
         

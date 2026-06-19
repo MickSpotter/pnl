@@ -711,7 +711,7 @@ const Simulator: React.FC<SimulatorProps> = ({
       }
       let currentRevenue = driver.companyPay || 0;
       if (driver.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits') {
-          currentRevenue = activeOldDollars; // Postavljamo da prikazuje stvarni PnL (Revenue - Expenses) umesto samo Revenue-a
+          currentRevenue = activeOldDollars; 
       }
       const potentialRevenue = currentRevenue + activePnlImpact;
       
