@@ -15,6 +15,7 @@ import {
     EyeOff
   } from 'lucide-react';
   import { Turnstile } from '@marsidev/react-turnstile';
+import { QRCodeSVG } from 'qrcode.react';
 import DriverTable from './components/DriverTable';
 import DispatcherTable from './components/DispatcherTable';
 import FranchiseTable from './components/FranchiseTable';
@@ -709,6 +710,11 @@ const App: React.FC = () => {
   const [curtainActive, setCurtainActive] = useState(false);
   const [activeTip, setActiveTip] = useState(() => Math.floor(Math.random() * LOADING_TIPS.length));
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const [requiresMFA, setRequiresMFA] = useState(false);
+  const [mfaCode, setMfaCode] = useState('');
+  const [factorId, setFactorId] = useState('');
+  const [mfaQrCode, setMfaQrCode] = useState<string | null>(null);
+  const [captchaKey, setCaptchaKey] = useState(0);
   useEffect(() => {
     if (session) return;
     const interval = setInterval(() => {
@@ -718,20 +724,93 @@ const App: React.FC = () => {
   }, [session]);
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setAuthChecking(false);
-    });
+    const checkAndEnforceMFA = async (currentSession: any) => {
+      if (!currentSession) {
+        setCurtainActive(false);
+        setLoading(false);
+        setSession(null);
+        setRequiresMFA(false);
+        setAuthChecking(false);
+        return;
+      }
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
+      const { data: factors } = await supabase.auth.mfa.listFactors();
+      
+      let totpList = [];
+      if (Array.isArray(factors)) {
+         totpList = factors.filter(f => f.factorType === 'totp' || f.factor_type === 'totp');
+      } else if (factors && factors.totp) {
+         totpList = factors.totp;
+      }
+
+      const totpFactor = totpList.find(f => f.status === 'verified');
+      const unverifiedFactors = totpList.filter(f => f.status === 'unverified');
+      const { data: mfaData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+      if (!totpFactor) {
+        if (unverifiedFactors.length > 0) {
+          for (const uf of unverifiedFactors) {
+            await supabase.auth.mfa.unenroll({ factorId: uf.id });
+          }
+        }
+        
+        const { data: enrollData, error: enrollError } = await supabase.auth.mfa.enroll({ 
+          factorType: 'totp',
+          friendlyName: `Authenticator-${Date.now()}`
+        });
+        
+        if (enrollError) {
+          setLoginError(`MFA Error: ${enrollError.message}`);
+          setCaptchaToken(null);
+          setCaptchaKey(prev => prev + 1);
+          setCurtainActive(false);
+          setLoading(false);
+          setSession(null);
+          await supabase.auth.signOut();
+          return;
+        }
+
+        if (enrollData) {
+          setFactorId(enrollData.id);
+          setMfaQrCode(enrollData.totp.uri);
+          setRequiresMFA(true);
+        }
+        setCurtainActive(false);
+        setLoading(false);
+        setSession(null);
+      } else if (mfaData && mfaData.currentLevel === 'aal1') {
+        setFactorId(totpFactor.id);
+        setRequiresMFA(true);
         setCurtainActive(false);
         setLoading(false);
         setSession(null);
       } else {
+        setRequiresMFA(false);
+        setSession(currentSession);
         setTimeout(() => {
-          setSession(session);
+          setCurtainActive(false);
+          setLoading(false);
         }, 800);
+      }
+      setAuthChecking(false);
+    };
+
+    const initAuth = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      await checkAndEnforceMFA(session);
+    };
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (_event === 'SIGNED_IN') {
+        await checkAndEnforceMFA(session);
+      } else if (_event === 'SIGNED_OUT' || !session) {
+        setCurtainActive(false);
+        setLoading(false);
+        setSession(null);
+        setRequiresMFA(false);
+        setMfaQrCode(null);
+        setMfaCode('');
       }
     });
 
@@ -739,30 +818,67 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setLoginError('');
+
+    if (!captchaToken) {
+      setLoginError('Please wait for the security check (CAPTCHA).');
+      setLoading(false);
+      return;
+    }
+
+    const { error } = await supabase.auth.signInWithPassword({ 
+      email, 
+      password,
+      options: {
+        captchaToken: captchaToken
+      }
+    });
+
+    if (error) {
+      setLoginError(error.message);
+      setCaptchaToken(null);
+      setCaptchaKey(prev => prev + 1);
+      setLoading(false);
+    }
+  };
+
+const handleVerifyMFA = async (e: React.FormEvent) => {
   e.preventDefault();
   setLoading(true);
   setLoginError('');
+  setCurtainActive(true);
 
-  if (!captchaToken) {
-    setLoginError('Please wait for the security check (CAPTCHA).');
+  const challenge = await supabase.auth.mfa.challenge({ factorId });
+
+  if (challenge.error) {
+    setLoginError(challenge.error.message);
+    setCurtainActive(false);
     setLoading(false);
     return;
   }
 
-  setCurtainActive(true);
-  
-  const { error } = await supabase.auth.signInWithPassword({ 
-    email, 
-    password,
-    options: {
-      captchaToken: captchaToken
-    }
+  const verify = await supabase.auth.mfa.verify({
+    factorId,
+    challengeId: challenge.data.id,
+    code: mfaCode,
   });
 
-  if (error) {
-    setLoginError(error.message);
+  if (verify.error) {
+    setLoginError('Invalid code. Try again.');
     setCurtainActive(false);
     setLoading(false);
+  } else {
+    setRequiresMFA(false);
+    setMfaQrCode(null);
+    setMfaCode('');
+    const { data: { session } } = await supabase.auth.getSession();
+    setSession(session);
+    setTimeout(() => {
+      setCurtainActive(false);
+      setLoading(false);
+    }, 800);
   }
 };
 
@@ -770,7 +886,7 @@ const App: React.FC = () => {
     return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-zinc-300">Loading...</div>;
   }
 
-  if (!session) {
+  if (!session || requiresMFA) {
     const tips = LOADING_TIPS;
 
     return (
@@ -783,36 +899,63 @@ const App: React.FC = () => {
               <p className="text-sm text-zinc-500">Sign in to your secure administrative environment.</p>
             </div>
             
-            <form onSubmit={handleLogin} className="space-y-6">
-              {loginError && (
-                <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-600 text-xs font-bold text-center">
-                  {loginError}
+            {!requiresMFA ? (
+              <form onSubmit={handleLogin} className="space-y-6">
+                {loginError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-600 text-xs font-bold text-center">
+                    {loginError}
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-bold text-[#334155] mb-2 uppercase tracking-wide">Email Address</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-white border border-zinc-200 text-sm text-[#0f172a] rounded-lg px-4 py-3 focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 outline-none transition-all placeholder:text-zinc-400 shadow-sm" placeholder="admin@pnl.com" required disabled={curtainActive} />
                 </div>
-              )}
-              <div>
-                <label className="block text-xs font-bold text-[#334155] mb-2 uppercase tracking-wide">Email Address</label>
-                <input type="email" value={email} onChange={e => setEmail(e.target.value)} className="w-full bg-white border border-zinc-200 text-sm text-[#0f172a] rounded-lg px-4 py-3 focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 outline-none transition-all placeholder:text-zinc-400 shadow-sm" placeholder="admin@pnl.com" required disabled={curtainActive} />
-              </div>
-              <div>
-                <label className="block text-xs font-bold text-[#334155] mb-2 uppercase tracking-wide">Password</label>
-                <div className="relative">
-                  <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white border border-zinc-200 text-sm text-[#0f172a] rounded-lg px-4 py-3 pr-10 focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 outline-none transition-all placeholder:text-zinc-400 shadow-sm" placeholder="••••••••" required disabled={curtainActive} />
-                  <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors flex items-center justify-center">
-                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-                  </button>
+                <div>
+                  <label className="block text-xs font-bold text-[#334155] mb-2 uppercase tracking-wide">Password</label>
+                  <div className="relative">
+                    <input type={showPassword ? "text" : "password"} value={password} onChange={e => setPassword(e.target.value)} className="w-full bg-white border border-zinc-200 text-sm text-[#0f172a] rounded-lg px-4 py-3 pr-10 focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 outline-none transition-all placeholder:text-zinc-400 shadow-sm" placeholder="••••••••" required disabled={curtainActive} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-zinc-400 hover:text-zinc-600 transition-colors flex items-center justify-center">
+                      {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
                 </div>
-              </div>
-              <div className="flex justify-center mt-4">
-                <Turnstile
-                  siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
-                  onSuccess={(token) => setCaptchaToken(token)}
-                />
-              </div>
-              <button type="submit" disabled={loading || curtainActive || !captchaToken} className="w-full bg-[#111827] hover:bg-zinc-800 text-white text-sm font-semibold py-3.5 rounded-lg transition-all mt-6 shadow-md disabled:opacity-50 flex justify-center items-center gap-3">
-                {loading ? 'Authenticating...' : 'Secure Sign In'}
-                {!loading && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>}
-              </button>
-            </form>
+                <div className="flex justify-center mt-4">
+                  <Turnstile
+                    key={captchaKey}
+                    siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+                    onSuccess={(token) => setCaptchaToken(token)}
+                  />
+                </div>
+                <button type="submit" disabled={loading || curtainActive || !captchaToken} className="w-full bg-[#111827] hover:bg-zinc-800 text-white text-sm font-semibold py-3.5 rounded-lg transition-all mt-6 shadow-md disabled:opacity-50 flex justify-center items-center gap-3">
+                  {loading ? 'Authenticating...' : 'Secure Sign In'}
+                  {!loading && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>}
+                </button>
+              </form>
+            ) : (
+              <form onSubmit={handleVerifyMFA} className="space-y-6">
+                {loginError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 rounded-lg text-rose-600 text-xs font-bold text-center">
+                    {loginError}
+                  </div>
+                )}
+                {mfaQrCode && (
+                  <div className="flex flex-col items-center justify-center p-4 bg-zinc-50 border border-zinc-200 rounded-xl mb-4">
+                    <p className="text-xs font-bold text-[#334155] text-center mb-4 uppercase tracking-wide">Scan QR Code to Setup 2FA</p>
+                    <QRCodeSVG value={mfaQrCode} size={160} />
+                  </div>
+                )}
+                <div>
+                  <label className="block text-xs font-bold text-[#334155] mb-2 uppercase tracking-wide">Authenticator Code</label>
+                  <input type="text" value={mfaCode} onChange={e => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))} className="w-full bg-white border border-zinc-200 text-2xl tracking-[0.5em] font-mono text-[#0f172a] rounded-lg px-4 py-3 text-center focus:border-zinc-400 focus:ring-1 focus:ring-zinc-400 outline-none transition-all shadow-sm" placeholder="000000" required disabled={curtainActive} maxLength={6} />
+                </div>
+                <button type="submit" disabled={loading || curtainActive || mfaCode.length !== 6} className="w-full bg-[#111827] hover:bg-zinc-800 text-white text-sm font-semibold py-3.5 rounded-lg transition-all mt-6 shadow-md disabled:opacity-50 flex justify-center items-center gap-3">
+                  {loading ? 'Verifying...' : 'Verify Code'}
+                </button>
+                <button type="button" onClick={() => { setRequiresMFA(false); setMfaCode(''); setMfaQrCode(null); supabase.auth.signOut(); }} disabled={loading || curtainActive} className="w-full text-[#334155] hover:text-[#0f172a] text-xs font-bold py-2 transition-colors">
+                  Cancel
+                </button>
+              </form>
+            )}
           </div>
 
           <div className="text-[10px] text-zinc-400 font-medium tracking-wide relative z-10">
