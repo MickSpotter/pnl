@@ -140,7 +140,7 @@ const LoadingScreen = ({ progress }: { progress: number }) => {
         <div className="absolute inset-0 border-[2px] border-emerald-500/10 border-t-emerald-500/80 border-b-emerald-500/80 rounded-[2rem] animate-[spin_10s_linear_infinite]" style={{ animationDelay: animDelays.d10 }}></div>
         <div className="absolute inset-3 border-[2px] border-blue-500/10 border-l-blue-500/80 border-r-blue-500/80 rounded-3xl animate-[spin_14s_linear_infinite_reverse]" style={{ animationDelay: animDelays.d14 }}></div>
         <div className="absolute inset-6 border-[2px] border-indigo-500/10 border-t-indigo-500/80 border-b-indigo-500/80 rounded-2xl animate-[spin_18s_linear_infinite]" style={{ animationDelay: animDelays.d18 }}></div>
-        <img src="https://i.postimg.cc/ryjhgvGq/Default-Make-a-logo-for-Profit-and-Loss-application-portal-It-2-a128667d-b54d-44ca-bb4d-32ac1ddb5c95.png" alt="PnL Logo" className="w-48 h-48 object-contain drop-shadow-[0_0_30px_rgba(16,185,129,0.4)] z-10" referrerPolicy="no-referrer" />
+        <img src="/logo.png" alt="PnL Logo" className="w-48 h-48 object-contain drop-shadow-[0_0_30px_rgba(16,185,129,0.4)] z-10" referrerPolicy="no-referrer" />
       </div>
       
       <div className="w-[500px] z-10 mb-12">
@@ -537,7 +537,7 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
               <div className="absolute inset-[1px] border-[1px] border-emerald-500/20 border-t-emerald-500/80 border-b-emerald-500/80 rounded-xl animate-[spin_10s_linear_infinite]"></div>
               <div className="absolute inset-[2px] border-[1px] border-blue-500/20 border-l-blue-500/80 border-r-blue-500/80 rounded-lg animate-[spin_14s_linear_infinite_reverse]"></div>
               <div className="absolute inset-[3px] border-[1px] border-indigo-500/20 border-t-indigo-500/80 border-b-indigo-500/80 rounded-md animate-[spin_18s_linear_infinite]"></div>
-              <img src="https://i.postimg.cc/ryjhgvGq/Default-Make-a-logo-for-Profit-and-Loss-application-portal-It-2-a128667d-b54d-44ca-bb4d-32ac1ddb5c95.png" alt="PnL Logo" className={`${isSidebarCollapsed ? 'w-14 h-14' : 'w-20 h-20'} absolute object-contain drop-shadow-lg z-10`} referrerPolicy="no-referrer" />
+              <img src="/logo.png" alt="PnL Logo" className={`${isSidebarCollapsed ? 'w-14 h-14' : 'w-20 h-20'} absolute object-contain drop-shadow-lg z-10`} referrerPolicy="no-referrer" />
             </div>
             
             <button 
@@ -834,7 +834,7 @@ const App: React.FC = () => {
              <div className="absolute inset-0 border-[2px] border-emerald-500/10 border-t-emerald-500/80 border-b-emerald-500/80 rounded-[2rem] animate-[spin_10s_linear_infinite]" style={{ animationDelay: animDelays.d10 }}></div>
              <div className="absolute inset-3 border-[2px] border-blue-500/10 border-l-blue-500/80 border-r-blue-500/80 rounded-3xl animate-[spin_14s_linear_infinite_reverse]" style={{ animationDelay: animDelays.d14 }}></div>
              <div className="absolute inset-6 border-[2px] border-indigo-500/10 border-t-indigo-500/80 border-b-indigo-500/80 rounded-2xl animate-[spin_18s_linear_infinite]" style={{ animationDelay: animDelays.d18 }}></div>
-             <img src="https://i.postimg.cc/ryjhgvGq/Default-Make-a-logo-for-Profit-and-Loss-application-portal-It-2-a128667d-b54d-44ca-bb4d-32ac1ddb5c95.png" alt="PnL Logo" className="w-48 h-48 object-contain drop-shadow-[0_0_30px_rgba(16,185,129,0.4)] z-10" referrerPolicy="no-referrer" />
+             <img src="/logo.png" alt="PnL Logo" className="w-48 h-48 object-contain drop-shadow-[0_0_30px_rgba(16,185,129,0.4)] z-10" referrerPolicy="no-referrer" />
           </div>
 
           <div className={`flex flex-col items-center relative z-10 mb-4 ${curtainActive ? 'hidden' : ''}`}>
