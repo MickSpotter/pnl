@@ -725,80 +725,104 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const checkAndEnforceMFA = async (currentSession: any) => {
-      if (!currentSession) {
-        setCurtainActive(false);
-        setLoading(false);
-        setSession(null);
-        setRequiresMFA(false);
-        setAuthChecking(false);
-        return;
-      }
-
-      const { data: factors } = await supabase.auth.mfa.listFactors();
-      
-      let totpList = [];
-      if (Array.isArray(factors)) {
-         totpList = factors.filter(f => f.factorType === 'totp' || f.factor_type === 'totp');
-      } else if (factors && factors.totp) {
-         totpList = factors.totp;
-      }
-
-      const totpFactor = totpList.find(f => f.status === 'verified');
-      const unverifiedFactors = totpList.filter(f => f.status === 'unverified');
-      const { data: mfaData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
-
-      if (!totpFactor) {
-        if (unverifiedFactors.length > 0) {
-          for (const uf of unverifiedFactors) {
-            await supabase.auth.mfa.unenroll({ factorId: uf.id });
-          }
-        }
-        
-        const { data: enrollData, error: enrollError } = await supabase.auth.mfa.enroll({ 
-          factorType: 'totp',
-          friendlyName: `Authenticator-${Date.now()}`
-        });
-        
-        if (enrollError) {
-          setLoginError(`MFA Error: ${enrollError.message}`);
-          setCaptchaToken(null);
-          setCaptchaKey(prev => prev + 1);
+      try {
+        if (!currentSession) {
           setCurtainActive(false);
           setLoading(false);
           setSession(null);
-          await supabase.auth.signOut();
+          setRequiresMFA(false);
+          setAuthChecking(false);
           return;
         }
 
-        if (enrollData) {
-          setFactorId(enrollData.id);
-          setMfaQrCode(enrollData.totp.uri);
-          setRequiresMFA(true);
+        const { data: factors } = await supabase.auth.mfa.listFactors();
+        
+        let totpList = [];
+        if (Array.isArray(factors)) {
+           totpList = factors.filter(f => f.factorType === 'totp' || f.factor_type === 'totp');
+        } else if (factors && factors.totp) {
+           totpList = factors.totp;
         }
-        setCurtainActive(false);
-        setLoading(false);
-        setSession(null);
-      } else if (mfaData && mfaData.currentLevel === 'aal1') {
-        setFactorId(totpFactor.id);
-        setRequiresMFA(true);
-        setCurtainActive(false);
-        setLoading(false);
-        setSession(null);
-      } else {
-        setRequiresMFA(false);
-        setSession(currentSession);
-        setTimeout(() => {
+
+        const totpFactor = totpList.find(f => f.status === 'verified');
+        const unverifiedFactors = totpList.filter(f => f.status === 'unverified');
+        const { data: mfaData } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+
+        if (!totpFactor) {
+          if (unverifiedFactors.length > 0) {
+            for (const uf of unverifiedFactors) {
+              await supabase.auth.mfa.unenroll({ factorId: uf.id });
+            }
+          }
+          
+          const { data: enrollData, error: enrollError } = await supabase.auth.mfa.enroll({ 
+            factorType: 'totp',
+            issuer: 'PnL Portal',
+            friendlyName: `Authenticator-${Date.now()}`
+          });
+          
+          if (enrollError) {
+            setLoginError(`MFA Error: ${enrollError.message}`);
+            setCaptchaToken(null);
+            setCaptchaKey(prev => prev + 1);
+            setCurtainActive(false);
+            setLoading(false);
+            setSession(null);
+            await supabase.auth.signOut();
+            return;
+          }
+
+          if (enrollData) {
+            setFactorId(enrollData.id);
+            setMfaQrCode(enrollData.totp.uri);
+            setRequiresMFA(true);
+          }
           setCurtainActive(false);
           setLoading(false);
-        }, 800);
+          setSession(null);
+        } else if (mfaData && mfaData.currentLevel === 'aal1') {
+          setFactorId(totpFactor.id);
+          setRequiresMFA(true);
+          setCurtainActive(false);
+          setLoading(false);
+          setSession(null);
+        } else {
+          setRequiresMFA(false);
+          setSession(currentSession);
+          setTimeout(() => {
+            setCurtainActive(false);
+            setLoading(false);
+          }, 800);
+        }
+      } catch (err) {
+        setRequiresMFA(false);
+        setSession(null);
+      } finally {
+        setAuthChecking(false);
       }
-      setAuthChecking(false);
     };
 
     const initAuth = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      await checkAndEnforceMFA(session);
+      let isResolved = false;
+      
+      const timeout = setTimeout(() => {
+        if (!isResolved) {
+          setAuthChecking(false);
+        }
+      }, 3000);
+
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        isResolved = true;
+        clearTimeout(timeout);
+        await checkAndEnforceMFA(session);
+      } catch (err) {
+        isResolved = true;
+        clearTimeout(timeout);
+        setAuthChecking(false);
+      }
     };
+
     initAuth();
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
