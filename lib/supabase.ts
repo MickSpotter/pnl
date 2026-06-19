@@ -1,18 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { ExpenseItem } from '../types';
 
-// Credentials provided by user
-const PROVIDED_URL = 'https://riusfiabohejenwumxqi.supabase.co';
-const PROVIDED_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJpdXNmaWFib2hlamVud3VteHFpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0Njg5NDcsImV4cCI6MjA4MTA0NDk0N30.lTYHn6xrvzio-72GVurMXap34mDbjP8e45wHFoB10_g';
-
-// Fallback logic simplified to be robust across environments
-let supabaseUrl = PROVIDED_URL;
-let supabaseAnonKey = PROVIDED_KEY;
-
-if (typeof process !== 'undefined' && process.env) {
-  if (process.env.VITE_SUPABASE_URL) supabaseUrl = process.env.VITE_SUPABASE_URL;
-  if (process.env.VITE_SUPABASE_ANON_KEY) supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
-}
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
