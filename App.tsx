@@ -808,14 +808,15 @@ const App: React.FC = () => {
       const timeout = setTimeout(() => {
         if (!isResolved) {
           setAuthChecking(false);
+          setSession(null);
         }
       }, 3000);
 
       try {
         const { data: { session } } = await supabase.auth.getSession();
+        await checkAndEnforceMFA(session);
         isResolved = true;
         clearTimeout(timeout);
-        await checkAndEnforceMFA(session);
       } catch (err) {
         isResolved = true;
         clearTimeout(timeout);
@@ -907,7 +908,17 @@ const handleVerifyMFA = async (e: React.FormEvent) => {
 };
 
   if (authChecking) {
-    return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-zinc-300">Loading...</div>;
+    return (
+      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-zinc-300">
+        <div className="mb-6 animate-pulse">Loading...</div>
+        <button 
+          onClick={() => { localStorage.clear(); window.location.reload(); }}
+          className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-500 hover:text-white transition-colors"
+        >
+          Force Reset Session
+        </button>
+      </div>
+    );
   }
 
   if (!session || requiresMFA) {
