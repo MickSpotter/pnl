@@ -12,8 +12,8 @@ import { getActiveAmount, getWeeklyAmountFromExp } from './WklyExpCalc';
 const metricsCache = new Map<string, any>();
 let lastConfigsHash = '';
 
-export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: Map<string, any>, pnlConfigs: any[] = []) => {
-  const hash = `${fixedExpenses.length}_${pnlConfigs.length}`;
+export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: Map<string, any>, pnlConfigs: any[] = [], poRules: any[] = []) => {
+  const hash = `${fixedExpenses.length}_${pnlConfigs.length}_${poRules.length}`;
   if (hash !== lastConfigsHash) {
     metricsCache.clear();
     lastConfigsHash = hash;
@@ -107,18 +107,6 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
       }
   }
 
-  if (ct === 'MCLOO') {
-      let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === r.companyId && targetDateStr >= (e.valid_from || '2000-01-01') && targetDateStr <= (e.valid_to || '2099-12-31')).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
-      if (!liabRuleForDisp) {
-          liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && targetDateStr >= (e.valid_from || '2000-01-01') && targetDateStr <= (e.valid_to || '2099-12-31')).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
-      }
-      if (liabRuleForDisp) {
-          if (liabRuleForDisp.disp_mcloo_pay !== undefined && liabRuleForDisp.disp_mcloo_pay !== null && String(liabRuleForDisp.disp_mcloo_pay).trim() !== '') {
-              dispSharedVal = Number(liabRuleForDisp.disp_mcloo_pay);
-          }
-      }
-  }
-
   const driver_gross = r.grossRevenue || r.driver_gross || 0;
   const margin_amt = r.marginAmount || 0;
   const actualDispMclooPayAmount = dispSharedVal * (r.effectiveNonTeams || 0);
@@ -197,9 +185,13 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
         const dTollsFinal = r.pnlTolls !== undefined ? Number(r.pnlTolls) : (enriched ? Number(enriched.calculatedTolls ?? enriched.tolls ?? enriched.tollCost ?? 0) : Number(r.calculatedTolls ?? r.tolls ?? r.tollCost ?? r.tolls_amount ?? r.tollsAmount ?? 0));
 
         const isGarland = r.name === 'Garland Jermaine Norris';
+  const spotter = Number(r.spotter_fuel_saved ?? 0);
+  const saved2 = Number(r.fuel_saved_2 ?? 0);
   let fuel = 0;
-  if (!isGarland) {
-      fuel = ['MCLOO', 'OO', 'LOO', 'LPOO', 'MCOO'].includes(ct) ? fSaved : -Math.abs(fSpent);
+  if (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') {
+      fuel = -Math.abs(fSpent);
+  } else {
+      fuel = spotter !== 0 ? (spotter + (fSaved - saved2)) : fSaved;
   }
 
   const fuelRebate = calcFuelRebate;
@@ -238,12 +230,12 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
       drvTollsAdj = ['OO', 'LOO', 'LPOO'].includes(ct) ? dTollsRaw : 0;
       drvCashAdv = dCash;
       drvCpmAdj = dRevCpm * dMiles;
-      drvFuelAdj = isGarland ? 0 : (['MCLOO', 'OO', 'LOO', 'LPOO', 'MCOO'].includes(ct) ? fSaved : -Math.abs(fSpent));
+      drvFuelAdj = isGarland ? 0 : (['MCLOO', 'OO', 'LOO', 'LPOO', 'MCOO'].includes(ct) ? (spotter !== 0 ? (spotter + (fSaved - saved2)) : fSaved) : -Math.abs(fSpent));
   } else {
       drvEscrowAdj = 0;
       drvTollsAdj = Math.abs(dTollsRaw) * 0.3;
       drvCpmAdj = dRevCpm * dMiles;
-      drvFuelAdj = fSaved;
+      drvFuelAdj = (spotter !== 0 ? (spotter + (fSaved - saved2)) : fSaved);
   }
 
   drvRevBase *= mileCapFactor;
@@ -286,13 +278,40 @@ sharedInsBreakdown[comp] = actualSharedIns;
 }
 
   const revCol = drvRevBase + effectiveBalChangeForCompanyPay + drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd + drvZeroMiDrop + drvEscrowAdj + drvTollsAdj + drvCashAdv + drvCpmAdj + drvFuelAdj + actualSharedIns;
-        const po = r.pnlTotalPOCov !== undefined ? Number(r.pnlTotalPOCov) : (enriched && enriched.poCoverage !== undefined ? Number(enriched.poCoverage) : -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0))));
+        let calcPo = 0;
+        let calcFPo = 0;
+        if (enriched && enriched.po_breakdown) {
+            Object.entries(enriched.po_breakdown).forEach(([k, v]: [string, any]) => {
+                let exMain = false; let exFran = false;
+                if (poRules.find(ru => ru.contract_type === 'ALL' && ru.category_name === k && ru.status === 'Exclude')) { exMain = true; exFran = true; }
+                const relRule = poRules.find(ru => ru.contract_type === (r.contractType || 'Unknown') && ru.category_name === k && ru.status === 'Exclude');
+                if (relRule) {
+                    if ((r.contractType || 'Unknown') === 'TPOG') {
+                        const scope = relRule.tpog || 'Only TPOG with franchises';
+                        if (scope === 'ALL TPOG' || (scope === 'Only TPOG with franchises' && r.franchiseId) || (scope === 'Only TPOG without franchises' && !r.franchiseId)) exMain = true;
+                    } else exMain = true;
+                }
+                if (poRules.find(ru => (ru.contract_type === 'TPOG Franchise PnL' || ru.contract_type === 'TPOG (Franchise PnL)') && ru.category_name === k && ru.status === 'Exclude')) exFran = true;
+                if (!exMain) calcPo -= Math.abs(Number(v));
+                if (!exFran && r.contractType === 'TPOG' && r.franchiseId) calcFPo += Math.abs(Number(v));
+            });
+        }
+        const po = r.pnlTotalPOCov !== undefined ? Number(r.pnlTotalPOCov) : (enriched && enriched.po_breakdown ? calcPo : (enriched && enriched.poCoverage !== undefined ? Number(enriched.poCoverage) : -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0)))));
         const dispPay = enriched && enriched.dispatcherCommission !== undefined ? Number(enriched.dispatcherCommission) : calcDispPay;
         const recruiting = enriched && enriched.recruitingCost !== undefined ? Math.abs(Number(enriched.recruitingCost)) : Math.abs(Number(r.recruitingCost ?? r.recruiting_cost ?? 0));
         
         const dispGrossAmt = enriched && enriched.dispGrossAmount !== undefined ? Math.abs(Number(enriched.dispGrossAmount)) : (driver_gross * (dispGrossPerc / 100));
         const dispMarginAmt = enriched && enriched.dispMarginAmount !== undefined ? Math.abs(Number(enriched.dispMarginAmount)) : (margin_amt * (dispMarginPerc / 100));
         const dispFixedAmt = enriched && enriched.dispFixedAmount !== undefined ? Math.abs(Number(enriched.dispFixedAmount)) : Math.abs(dispFixedAmount);
+        
+        let dispSharedAmt = 0;
+        if (enriched) {
+            if (enriched.dispSharedAmount !== undefined) dispSharedAmt = Math.abs(Number(enriched.dispSharedAmount));
+            else if (enriched.dispSharedLiability !== undefined) dispSharedAmt = Math.abs(Number(enriched.dispSharedLiability));
+            else dispSharedAmt = Math.abs(Number(dispSharedVal) || 0);
+        } else {
+            dispSharedAmt = Math.abs(Number(dispSharedVal) || 0);
+        }
 
         let configContract = effContractType;
         const upper = configContract.toUpperCase();
@@ -322,7 +341,7 @@ sharedInsBreakdown[comp] = actualSharedIns;
         if (effContractType === 'TPOG WITH FRANCHISE' || (ct === 'TPOG' && r.franchiseId)) {
             let fRevCol = enriched && enriched.franchise_revenue_collected !== undefined ? Number(enriched.franchise_revenue_collected) : Number(r.franchise_revenue_collected || 0);
             let fWklyExp = enriched && enriched.franchise_fixed_costs_full !== undefined ? Number(enriched.franchise_fixed_costs_full) : Number(r.franchise_fixed_costs_full || 0);
-            let fPo = enriched && enriched.franchise_po !== undefined ? Math.abs(Number(enriched.franchise_po)) : Math.abs(Number(r.franchise_po || 0));
+            let fPo = enriched && enriched.po_breakdown ? calcFPo : (enriched && enriched.franchise_po !== undefined ? Math.abs(Number(enriched.franchise_po)) : Math.abs(Number(r.franchise_po || 0)));
             if (!activeItems.includes('revenue_collected')) fRevCol = 0;
             if (!activeItems.includes('weekly_expenses')) fWklyExp = 0;
             if (!activeItems.includes('po')) fPo = 0;
@@ -340,7 +359,11 @@ sharedInsBreakdown[comp] = actualSharedIns;
             franchisePnlCalculated = ((franchisePnl - fBalChange - fEscrowAdj) / 2) + fBalChange + fEscrowAdj;
         }
 
-        const pnl = pnlRevCol + pnlFuelReb - pnlDisp - pnlWkly - pnlPo - pnlRecruiting - pnlTolls;
+        let pnl = pnlRevCol + pnlFuelReb - pnlDisp - pnlWkly - pnlPo - pnlRecruiting - pnlTolls;
+        if (configContract !== 'TPOG') {
+            let pnlDispVal = ct === 'MCLOO' ? (dispGrossAmt + dispMarginAmt + dispFixedAmt) : Math.max(0, Math.abs(dispPay) - dispSharedAmt);
+            pnl = revCol + fuelRebate - Math.abs(wklyExp) - Math.abs(po) - Math.abs(dTollsFinal) - pnlDispVal - Math.abs(recruiting);
+        }
 
         const result = { 
           wklyExp, insExp, fuel, fuelRebate, revCol, tolls: Math.abs(dTollsFinal), po, dispPay, pnl, recruiting, 
@@ -355,7 +378,19 @@ sharedInsBreakdown[comp] = actualSharedIns;
           cpmAdj: drvCpmAdj,
           fuelAdj: drvFuelAdj,
           fullSharedLiability: actualSharedIns,
-          sharedInsBreakdown
+          sharedInsBreakdown,
+          dispGrossAmt,
+          dispMarginAmt,
+          dispFixedAmt,
+          dispSharedAmt,
+          appliedDispRuleLabel: enriched && enriched.appliedDispRuleLabel ? enriched.appliedDispRuleLabel : (dispRule ? (() => {
+              const dName = dispRule.dispatcher_name || dispRule.dispatcherName || dispRule.dispatcher_id || dispRule.dispatcherId || dispRule.dispatcher || 'Company Default';
+              let parts = [];
+              if (dispGrossPerc > 0) parts.push(`${dispGrossPerc}% Gross`);
+              if (dispMarginPerc > 0) parts.push(`${dispMarginPerc}% Margin`);
+              if (dispFixedAmount > 0) parts.push(`$${dispFixedAmount} Fixed`);
+              return parts.length > 0 ? `${dName} (${parts.join(', ')})` : dName;
+          })() : 'Company Default')
         };
         metricsCache.set(cacheKey, result);
         return result;
@@ -365,10 +400,20 @@ interface DriverTableProps {
   drivers: DriverPerformance[];
 }
 
-const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek, tpogMode, isRevColExpanded, isFuelExpanded, isWklyExpExpanded, isPoExpanded, isMilesExpanded, poColumns, poRules }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean; tpogMode: 'ALL' | 'CALCULATED'; isRevColExpanded: boolean; isFuelExpanded: boolean; isWklyExpExpanded: boolean; isPoExpanded: boolean; isMilesExpanded: boolean; poColumns: string[]; poRules: any[] }) => {
+const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, settings, fixedExpenses, enrichedMap, pnlConfigs, isAvgPerWeek, tpogMode, isRevColExpanded, isFuelExpanded, isMilesExpanded, poColumns, poRules }: { driver: any; isExpanded: boolean; onToggle: (id: string) => void; fleetAverages: any; settings?: any; fixedExpenses: any[]; enrichedMap?: Map<string, any>; pnlConfigs: any[]; isAvgPerWeek: boolean; tpogMode: 'ALL' | 'CALCULATED'; isRevColExpanded: boolean; isFuelExpanded: boolean; isMilesExpanded: boolean; poColumns: string[]; poRules: any[] }) => {
   const [selectedEntity, setSelectedEntity] = useState<string>('TOTAL');
   const [selectedMetrics, setSelectedMetrics] = useState<string[]>(['pnl']);
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
+  const [tooltipTransform, setTooltipTransform] = useState<string>('translateY(-50%)');
+
+  const handleTooltipMouseMove = (e: React.MouseEvent) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const container = e.currentTarget.closest('.overflow-auto');
+    const containerRect = container ? container.getBoundingClientRect() : { top: 0, height: window.innerHeight };
+    const relativeY = (rect.top - containerRect.top) / containerRect.height;
+    const clamped = Math.max(0, Math.min(1, relativeY));
+    setTooltipTransform(`translateY(-${clamped * 100}%)`);
+  };
 
   const selectedContract = selectedEntity.startsWith('CTR:') ? selectedEntity.split(':')[1] : 'ALL';
 
@@ -389,6 +434,20 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     });
   }, [driver.records, selectedEntity]);
 
+  const allFilteredRecords = React.useMemo(() => {
+    const baseRecords = driver.allRecords || driver.records;
+    if (selectedEntity === 'TOTAL') return baseRecords;
+    const [type, val] = selectedEntity.split(':');
+    return baseRecords.filter((r: any) => {
+      if (type === 'CTR') return (r.contractType && r.contractType !== '-' ? r.contractType : 'Unassigned') === val;
+      if (type === 'CMP') return (r.companyId && r.companyId !== '-' ? r.companyId : 'Unassigned') === val;
+      if (type === 'TEAM') return (r.teamId && r.teamId !== '-' ? r.teamId : 'Unassigned') === val;
+      if (type === 'FRA') return (r.franchiseId && r.franchiseId !== '-' ? r.franchiseId : 'Unassigned') === val;
+      if (type === 'DISP') return (r.dispatcherId && r.dispatcherId !== '-' ? r.dispatcherId : 'Unassigned') === val;
+      return true;
+    });
+  }, [driver.allRecords, driver.records, selectedEntity]);
+
   const driverStats = React.useMemo(() => {
     const histories: Record<string, { val: string, start: string, end: string | null }[]> = {
       Contract: [],
@@ -406,8 +465,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     let firstPayDate = '-';
     let lastPayDate = '-';
 
-    if (filteredRecords.length > 0) {
-        const recordsByDate = filteredRecords.reduce((acc: any, r: any) => {
+    if (allFilteredRecords.length > 0) {
+        const recordsByDate = allFilteredRecords.reduce((acc: any, r: any) => {
         if (!acc[r.payDate]) acc[r.payDate] = [];
         acc[r.payDate].push(r);
         return acc;
@@ -457,7 +516,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       firstPayDate,
       lastPayDate
     };
-  }, [filteredRecords]);
+  }, [allFilteredRecords]);
 
   const rowMetrics = React.useMemo(() => {
     
@@ -469,13 +528,48 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     let fcTruck = 0, fcCpm = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0, adjFixed = 0;
     let insLiabAuto = 0, insLiabGen = 0, insCargo = 0, insLeaseGapCoverage = 0, insTrailerInterchange = 0, insLago = 0, insPhdPremium = 0, insPhdTruck = 0, insPhdTrailer = 0;
     let poBreakdown: Record<string, number> = {};
+    let dispBreakdown: Record<string, { gross: number, margin: number, fixed: number, shared: number, total: number }> = {};
     let companyPay = 0, fuelRebate = 0, wklyExp = 0, tollCost = 0, poCoverage = 0;
     let dispatcherPay = 0, recruitingCost = 0, totalPnL = 0;
     let revBase = 0, balChange = 0, prorated = 0, zeroMiDrop = 0, escrowAdj = 0, tollsAdj = 0, cashAdv = 0, cpmAdj = 0, fuelAdj = 0, fullSharedLiability = 0;
     let sharedInsBreakdown: Record<string, number> = {};
 
+    const latestDatesByDriver = new Map<string, string>();
     filteredRecords.forEach((r: any) => {
-      const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+      if ((r.effectiveDrivers || 0) === 0) return;
+      const name = r.name || 'Unknown';
+      const dDate = r.payDate || r.week_ending || '';
+      if (!latestDatesByDriver.has(name) || dDate > (latestDatesByDriver.get(name) || '')) {
+        latestDatesByDriver.set(name, dDate);
+      }
+    });
+    filteredRecords.forEach((r: any) => {
+      const name = r.name || 'Unknown';
+      if (!latestDatesByDriver.has(name)) {
+        latestDatesByDriver.set(name, r.payDate || r.week_ending || '');
+      }
+    });
+
+    filteredRecords.forEach((r: any) => {
+      const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+      const isLatest = (r.payDate || r.week_ending || '') === latestDatesByDriver.get(r.name || 'Unknown');
+      
+      let finalBalChange = isLatest ? (m.balChange || 0) : 0;
+      let finalEscrowAdj = isLatest ? (m.escrowAdj || 0) : 0;
+      let finalRevCol = m.revCol;
+      let finalFranchiseRevCol = m.franchiseRevCol;
+      let finalPnl = m.pnl;
+      let finalFranchisePnlCalculated = m.franchisePnlCalculated;
+
+      if (!isLatest) {
+          finalRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          finalFranchiseRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          finalPnl -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          if (finalFranchisePnlCalculated) {
+              finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          }
+      }
+
       const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
       totalGross += (r.grossRevenue || r.driver_gross || 0);
       marginAmount += (r.marginAmount || 0);
@@ -488,8 +582,9 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       
       const ct = r.contractType || '';
       const spotter = Number(r.spotter_fuel_saved ?? 0);
-      const saved = Number(r.fuel_saved ?? r.fuelSavings ?? 0);
-      wosFuel += (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') ? 0 : (spotter !== 0 ? (spotter - saved) : 0);
+      const saved2 = Number(r.fuel_saved_2 ?? 0);
+      const diff = spotter !== 0 ? (spotter - saved2) : 0;
+      wosFuel += (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') ? 0 : (diff > 0 ? -diff : diff);
       
       const frp = Number(r.fuel_retail_price || 0);
       if (frp !== 0) { fuelRetailPrice += frp; fuelRetailCount++; }
@@ -499,7 +594,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       if (fdp !== 0) { fuelDiscountPrice += fdp; fuelDiscountCount++; }
       fuelQuantity += Number(r.fuel_quantity ?? r.fuelUsed ?? r.fuel_gallons ?? 0);
 
-      companyPay += m.revCol - (tpogCalc * m.franchiseRevCol / 2);
+      companyPay += finalRevCol - (tpogCalc * finalFranchiseRevCol / 2);
       fuelRebate += m.fuelRebate - (tpogCalc * m.franchiseFuelReb / 2);
       wklyExp += m.wklyExp - (tpogCalc * m.franchiseWklyExp / 2);
       tollCost += -m.tolls + (tpogCalc * m.franchiseTolls / 2);
@@ -508,10 +603,10 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       recruitingCost += m.recruiting - (tpogCalc * m.franchiseRecruiting / 2);
       
       revBase += m.revBase || 0;
-      balChange += m.balChange || 0;
+      balChange += finalBalChange;
       prorated += m.prorated || 0;
       zeroMiDrop += m.zeroMiDrop || 0;
-      escrowAdj += m.escrowAdj || 0;
+      escrowAdj += finalEscrowAdj;
       tollsAdj += m.tollsAdj || 0;
       cashAdv += m.cashAdv || 0;
       cpmAdj += m.cpmAdj || 0;
@@ -573,11 +668,19 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
           });
       }
 
-      let finalPnl = m.pnl;
-      if (m.franchisePnlCalculated) {
-          finalPnl = finalPnl - m.franchisePnlCalculated;
+      const dLabel = m.appliedDispRuleLabel || 'Company Default';
+      if (!dispBreakdown[dLabel]) dispBreakdown[dLabel] = { gross: 0, margin: 0, fixed: 0, shared: 0, total: 0 };
+      dispBreakdown[dLabel].gross += m.dispGrossAmt || 0;
+      dispBreakdown[dLabel].margin += m.dispMarginAmt || 0;
+      dispBreakdown[dLabel].fixed += m.dispFixedAmt || 0;
+      dispBreakdown[dLabel].shared += m.dispSharedAmt || 0;
+      dispBreakdown[dLabel].total += m.dispPay || 0;
+
+      let pnlToAdd = finalPnl;
+      if (finalFranchisePnlCalculated) {
+          pnlToAdd = pnlToAdd - finalFranchisePnlCalculated;
       }
-      totalPnL += finalPnl;
+      totalPnL += pnlToAdd;
     });
 
     const effNonTeamsCount = filteredRecords.reduce((s: number, r: any) => s + (r.effectiveNonTeams || 0), 0);
@@ -600,6 +703,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       cashAdv: cashAdv / div, cpmAdj: cpmAdj / div, fuelAdj: fuelAdj / div, fullSharedLiability: fullSharedLiability / div,
       sharedInsBreakdown: Object.fromEntries(Object.entries(sharedInsBreakdown).map(([k, v]) => [k, Number(v) / div])),
       poBreakdown: Object.fromEntries(Object.entries(poBreakdown).map(([k, v]) => [k, Number(v) / div])),
+      dispBreakdown: Object.fromEntries(Object.entries(dispBreakdown).map(([k, v]) => [k, { gross: v.gross / div, margin: v.margin / div, fixed: v.fixed / div, shared: v.shared / div, total: v.total / div }])),
       fcTruck: fcTruck / div, fcCpm: fcCpm / div, fcTrailer: fcTrailer / div, fcPlates: fcPlates / div, fcTelematics: fcTelematics / div, fcPhone: fcPhone / div, fcOffice: fcOffice / div, fcRent: fcRent / div, fcBackupMc: fcBackupMc / div, fcBoReg: fcBoReg / div, fcBoTech: fcBoTech / div, fcFactoring: fcFactoring / div, adjFixed: adjFixed / div,
       insLiabAuto: insLiabAuto / div, insLiabGen: insLiabGen / div, insCargo: insCargo / div, insLeaseGapCoverage: insLeaseGapCoverage / div, insTrailerInterchange: insTrailerInterchange / div, insLago: insLago / div, insPhdPremium: insPhdPremium / div, insPhdTruck: insPhdTruck / div, insPhdTrailer: insPhdTrailer / div
     };
@@ -610,33 +714,96 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     let revBase = 0, balChange = 0, prorated = 0, zeroMiDrop = 0, escrowAdj = 0, tollsAdj = 0, cashAdv = 0, cpmAdj = 0, fuelAdj = 0, fullSharedLiability = 0;
     let fcTruck = 0, fcCpm = 0, fcTrailer = 0, fcPlates = 0, fcTelematics = 0, fcPhone = 0, fcOffice = 0, fcRent = 0, fcBackupMc = 0, fcBoReg = 0, fcBoTech = 0, fcFactoring = 0;
     let insLiabAuto = 0, insLiabGen = 0, insCargo = 0, insLeaseGapCoverage = 0, insTrailerInterchange = 0, insLago = 0, insPhdPremium = 0, insPhdTruck = 0, insPhdTrailer = 0;
+    let totalGross = 0, marginAmount = 0, totalMiles = 0, loadedMiles = 0, dh = 0, netPay = 0, insuranceExp = 0, totalFuel = 0;
+    let wosFuel = 0, fuelRetailPrice = 0, fuelRetailCount = 0, spotterRetailPrice = 0, spotterRetailCount = 0, fuelDiscountPrice = 0, fuelDiscountCount = 0, fuelQuantity = 0;
     let poBreakdown: Record<string, number> = {};
+    let dispBreakdown: Record<string, { gross: number, margin: number, fixed: number, shared: number, total: number }> = {};
     let hasFranchise = false;
+
+    const latestDatesByDriver = new Map<string, string>();
+    filteredRecords.forEach((r: any) => {
+      if ((r.effectiveDrivers || 0) === 0) return;
+      const name = r.name || 'Unknown';
+      const dDate = r.payDate || r.week_ending || '';
+      if (!latestDatesByDriver.has(name) || dDate > (latestDatesByDriver.get(name) || '')) {
+        latestDatesByDriver.set(name, dDate);
+      }
+    });
+    filteredRecords.forEach((r: any) => {
+      const name = r.name || 'Unknown';
+      if (!latestDatesByDriver.has(name)) {
+        latestDatesByDriver.set(name, r.payDate || r.week_ending || '');
+      }
+    });
 
     filteredRecords.forEach((r: any) => {
       const ct = r.contractType || '';
       if (ct === 'TPOG' && r.franchiseId) {
         hasFranchise = true;
-        const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
-        companyPay += m.franchiseRevCol;
+        const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+        const isLatest = (r.payDate || r.week_ending || '') === latestDatesByDriver.get(r.name || 'Unknown');
+        
+        let finalBalChange = isLatest ? (m.balChange || 0) : 0;
+        let finalEscrowAdj = isLatest ? (m.escrowAdj || 0) : 0;
+        let finalFranchiseRevCol = m.franchiseRevCol;
+        let finalFranchisePnlCalculated = m.franchisePnlCalculated;
+
+        if (!isLatest) {
+            finalFranchiseRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
+            if (finalFranchisePnlCalculated) {
+                finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
+            }
+        }
+        
+        totalGross += (r.grossRevenue || r.driver_gross || 0);
+        marginAmount += (r.marginAmount || 0);
+        totalMiles += (Number(r.milesDriven) || 0);
+        loadedMiles += (Number(r.loaded_miles) || 0);
+        dh += (Number(r.dh) || 0);
+        netPay += (r.netPay || 0);
+        insuranceExp += m.insExp;
+        totalFuel += m.fuel;
+        
+        const spotter = Number(r.spotter_fuel_saved ?? 0);
+        const saved2 = Number(r.fuel_saved_2 ?? 0);
+        const diff = spotter !== 0 ? (spotter - saved2) : 0;
+        wosFuel += (ct.includes('TPOG') || ct === 'POG' || ct === 'CPM') ? 0 : (diff > 0 ? -diff : diff);
+        
+        const frp = Number(r.fuel_retail_price || 0);
+        if (frp !== 0) { fuelRetailPrice += frp; fuelRetailCount++; }
+        const srp = Number(r.spotter_retail_price || 0);
+        if (srp !== 0) { spotterRetailPrice += srp; spotterRetailCount++; }
+        const fdp = Number(r.fuel_discount_price || 0);
+        if (fdp !== 0) { fuelDiscountPrice += fdp; fuelDiscountCount++; }
+        fuelQuantity += Number(r.fuel_quantity ?? r.fuelUsed ?? r.fuel_gallons ?? 0);
+
+        companyPay += finalFranchiseRevCol;
         fuelRebate += m.franchiseFuelReb;
         wklyExp += m.franchiseWklyExp;
         tollCost += -m.franchiseTolls;
         poCoverage += -m.franchisePo;
         dispatcherPay += m.franchiseDispPay;
         recruitingCost += m.franchiseRecruiting;
-        totalPnL += m.franchisePnlCalculated;
+        totalPnL += finalFranchisePnlCalculated;
 
         revBase += m.revBase || 0;
-        balChange += m.balChange || 0;
+        balChange += finalBalChange;
         prorated += m.prorated || 0;
         zeroMiDrop += m.zeroMiDrop || 0;
-        escrowAdj += m.escrowAdj || 0;
+        escrowAdj += finalEscrowAdj;
         tollsAdj += m.tollsAdj || 0;
         cashAdv += m.cashAdv || 0;
         cpmAdj += m.cpmAdj || 0;
         fuelAdj += m.fuelAdj || 0;
         fullSharedLiability += m.fullSharedLiability || 0;
+
+        const dLabel = m.appliedDispRuleLabel || 'Company Default';
+        if (!dispBreakdown[dLabel]) dispBreakdown[dLabel] = { gross: 0, margin: 0, fixed: 0, shared: 0, total: 0 };
+        dispBreakdown[dLabel].gross += m.dispGrossAmt || 0;
+        dispBreakdown[dLabel].margin += m.dispMarginAmt || 0;
+        dispBreakdown[dLabel].fixed += m.dispFixedAmt || 0;
+        dispBreakdown[dLabel].shared += m.dispSharedAmt || 0;
+        dispBreakdown[dLabel].total += m.franchiseDispPay || 0;
 
         const enrichedR = enrichedMap ? enrichedMap.get(`${r.name}_${r.payDate || r.week_ending}_${r.contractType}_${r.companyId}`) : (window as any).__ENRICHED_DRIVERS__?.find((ed: any) => ed.name === r.name && ed.payDate === (r.payDate || r.week_ending) && ed.contractType === r.contractType && ed.companyId === r.companyId);
         if (enrichedR) {
@@ -687,6 +854,10 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
     return {
       hasFranchise,
+      totalGross: totalGross / div, marginAmount: marginAmount / div,
+      totalMiles: totalMiles / div, loadedMiles: loadedMiles / div, dh: dh / div,
+      netPay: netPay / div, insuranceExp: insuranceExp / div, totalFuel: totalFuel / div,
+      wosFuel: wosFuel / div, fuelRetailPrice: fuelRetailCount > 0 ? fuelRetailPrice / fuelRetailCount : 0, spotterRetailPrice: spotterRetailCount > 0 ? spotterRetailPrice / spotterRetailCount : 0, fuelDiscountPrice: fuelDiscountCount > 0 ? fuelDiscountPrice / fuelDiscountCount : 0, fuelQuantity: fuelQuantity / div,
       companyPay: companyPay / div, fuelRebate: fuelRebate / div, wklyExp: wklyExp / div,
       tollCost: tollCost / div, poCoverage: poCoverage / div, dispatcherPay: dispatcherPay / div,
       recruitingCost: recruitingCost / div, totalPnL: totalPnL / div,
@@ -694,6 +865,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       zeroMiDrop: zeroMiDrop / div, escrowAdj: escrowAdj / div, tollsAdj: tollsAdj / div,
       cashAdv: cashAdv / div, cpmAdj: cpmAdj / div, fuelAdj: fuelAdj / div, fullSharedLiability: fullSharedLiability / div,
       poBreakdown: Object.fromEntries(Object.entries(poBreakdown).map(([k, v]) => [k, v / div])),
+      dispBreakdown: Object.fromEntries(Object.entries(dispBreakdown).map(([k, v]) => [k, { gross: v.gross / div, margin: v.margin / div, fixed: v.fixed / div, shared: v.shared / div, total: v.total / div }])),
       fcTruck: fcTruck / div, fcCpm: fcCpm / div, fcTrailer: fcTrailer / div, fcPlates: fcPlates / div, fcTelematics: fcTelematics / div, fcPhone: fcPhone / div, fcOffice: fcOffice / div, fcRent: fcRent / div, fcBackupMc: fcBackupMc / div, fcBoReg: fcBoReg / div, fcBoTech: fcBoTech / div, fcFactoring: fcFactoring / div,
       insLiabAuto: insLiabAuto / div, insLiabGen: insLiabGen / div, insCargo: insCargo / div, insLeaseGapCoverage: insLeaseGapCoverage / div, insTrailerInterchange: insTrailerInterchange / div, insLago: insLago / div, insPhdPremium: insPhdPremium / div, insPhdTruck: insPhdTruck / div, insPhdTrailer: insPhdTrailer / div
     };
@@ -729,8 +901,39 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       if (fleetAverages[primaryContract]) targetAvg = fleetAverages[primaryContract];
     }
 
-    const { sGross, sMargin, sNetPay, sDispPay, sInsExp, sMiles, sFuel, sRevCol, sFuelReb, sWklyExp, sTolls, sPO, sRecruiting, sPnL } = filteredRecords.reduce((sums: any, r: any) => {
-        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+    const latestDatesByDriver = new Map<string, string>();
+    filteredRecords.forEach((r: any) => {
+      if ((r.effectiveDrivers || 0) === 0) return;
+      const name = r.name || 'Unknown';
+      const dDate = r.payDate || r.week_ending || '';
+      if (!latestDatesByDriver.has(name) || dDate > (latestDatesByDriver.get(name) || '')) {
+        latestDatesByDriver.set(name, dDate);
+      }
+    });
+    filteredRecords.forEach((r: any) => {
+      const name = r.name || 'Unknown';
+      if (!latestDatesByDriver.has(name)) {
+        latestDatesByDriver.set(name, r.payDate || r.week_ending || '');
+      }
+    });
+
+    const { sGross, sMargin, sNetPay, sDispPay, sInsExp, sMiles, sFuel, sRevCol, sFuelReb, sWklyExp, sTolls, sPO, sRecruiting, sPnL, sBalChange, sEscrowAdj } = filteredRecords.reduce((sums: any, r: any) => {
+        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+        const isLatest = (r.payDate || r.week_ending || '') === latestDatesByDriver.get(r.name || 'Unknown');
+        let finalRevCol = rm.revCol;
+        let finalPnl = rm.pnl;
+        let finalFranchisePnlCalculated = rm.franchisePnlCalculated;
+        let finalBalChange = isLatest ? (rm.balChange || 0) : 0;
+        let finalEscrowAdj = isLatest ? (rm.escrowAdj || 0) : 0;
+
+        if (!isLatest) {
+            finalRevCol -= ((rm.balChange || 0) + (rm.escrowAdj || 0));
+            finalPnl -= ((rm.balChange || 0) + (rm.escrowAdj || 0));
+            if (finalFranchisePnlCalculated) {
+                finalFranchisePnlCalculated -= ((rm.balChange || 0) + (rm.escrowAdj || 0));
+            }
+        }
+
         sums.sGross += (r.grossRevenue || r.driver_gross || 0);
         sums.sMargin += (r.marginAmount || 0);
         sums.sNetPay += (r.netPay || 0);
@@ -738,19 +941,21 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         sums.sInsExp += rm.insExp;
         sums.sMiles += (r.milesDriven || 0);
         sums.sFuel += rm.fuel;
-        sums.sRevCol += rm.revCol;
+        sums.sRevCol += finalRevCol;
         sums.sFuelReb += rm.fuelRebate;
         sums.sWklyExp += rm.wklyExp;
         sums.sTolls += rm.tolls;
         sums.sPO += rm.po;
         sums.sRecruiting += rm.recruiting;
-        let finalPnl = rm.pnl;
-        if (rm.franchisePnlCalculated) {
-            finalPnl = finalPnl - rm.franchisePnlCalculated;
+        sums.sBalChange += finalBalChange;
+        sums.sEscrowAdj += finalEscrowAdj;
+        let pnlToAdd = finalPnl;
+        if (finalFranchisePnlCalculated) {
+            pnlToAdd = pnlToAdd - finalFranchisePnlCalculated;
         }
-        sums.sPnL += finalPnl;
+        sums.sPnL += pnlToAdd;
         return sums;
-    }, { sGross: 0, sMargin: 0, sNetPay: 0, sDispPay: 0, sInsExp: 0, sMiles: 0, sFuel: 0, sRevCol: 0, sFuelReb: 0, sWklyExp: 0, sTolls: 0, sPO: 0, sRecruiting: 0, sPnL: 0 });
+    }, { sGross: 0, sMargin: 0, sNetPay: 0, sDispPay: 0, sInsExp: 0, sMiles: 0, sFuel: 0, sRevCol: 0, sFuelReb: 0, sWklyExp: 0, sTolls: 0, sPO: 0, sRecruiting: 0, sPnL: 0, sBalChange: 0, sEscrowAdj: 0 });
 
     if (filteredRecords.length === 0 || sMiles === 0) {
       if (sMiles === 0 && filteredRecords.length > 0) {
@@ -863,7 +1068,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     Array.from(groupedAllRecords.entries()).forEach(([date, records]) => {
       let dateCount = 0;
       records.forEach((r: any) => {
-        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
         if ((r.effectiveDrivers || 0) >= 1) dateCount += 1;
         let finalPnl = rm.pnl;
         if (rm.franchisePnlCalculated) {
@@ -908,7 +1113,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       let fPnl = 0, fGross = 0, fMargin = 0, fNetPay = 0, fInsExp = 0, fFuel = 0, fRevCol = 0, fFuelReb = 0, fWklyExp = 0, fTolls = 0, fPo = 0, fDispPay = 0, fRecruiting = 0, fMiles = 0;
 
       records.forEach((r: any) => {
-        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+        const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
         let finalPnl = rm.pnl;
         if (rm.franchisePnlCalculated) {
             finalPnl = finalPnl - rm.franchisePnlCalculated;
@@ -973,7 +1178,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
   return (
     <React.Fragment>
-      <tr onClick={() => onToggle(driver.id)} className={`group cursor-pointer transition-colors ${isExpanded ? 'bg-zinc-800 z-20 relative [&>td]:border-t-2 [&>td]:border-emerald-500/50 [&>td:first-child]:border-l-2 [&>td:first-child]:border-emerald-500/50 [&>td:last-child]:border-r-2 [&>td:last-child]:border-emerald-500/50' : 'hover:bg-zinc-800/30'}`}>
+      <tr onClick={() => onToggle(driver.id)} className={`group cursor-pointer transition-colors ${isExpanded ? 'bg-zinc-800 z-[60] relative [&>td]:border-t-2 [&>td]:border-emerald-500/50' : 'hover:bg-zinc-800/30 hover:relative hover:z-[60]'}`}>
         <td className={`px-2 py-1 text-zinc-500 sticky left-0 z-10 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'}`}>{isExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}</td>
         <td className={`px-2 py-1 font-sans sticky left-[32px] z-10 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'}`}>
           <div className="flex items-center gap-2">
@@ -983,6 +1188,14 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
             {mainDiagnosis === 'warning' && <AlertTriangle size={10} className="text-amber-500 ml-1" />}
           </div>
         </td>
+        <td className="px-2 py-1 text-zinc-400 truncate max-w-[100px]">{driver.companyId || '-'}</td>
+        <td className="px-2 py-1 text-zinc-400 truncate max-w-[80px]">{driver.teamId || '-'}</td>
+        <td className="px-2 py-1 text-zinc-400 truncate max-w-[80px]">{driver.franchiseId || '-'}</td>
+        <td className="px-2 py-1 text-zinc-400 truncate max-w-[80px]">{driver.dispatcherId || '-'}</td>
+        <td className="px-2 py-1 text-zinc-400 truncate max-w-[80px]">{driver.contractType || '-'}</td>
+        <td className="px-2 py-1 text-right text-emerald-400">{Number((driver.effectiveDrivers || 0).toFixed(2))}</td>
+        <td className="px-2 py-1 text-right text-emerald-400">{Number((driver.effectiveNonTeams || 0).toFixed(2))}</td>
+        <td className="px-2 py-1 text-right text-emerald-400">{Number((driver.effectiveTrailers || 0).toFixed(2))}</td>
         <td className="px-2 py-1 text-right text-yellow-400">{formatCurrency(rowMetrics.totalGross)}</td>
         <td className="px-2 py-1 text-right text-yellow-400 font-medium">{formatCurrency(rowMetrics.marginAmount)}</td>
         <td className="px-2 py-1 text-right text-yellow-400 font-medium">{Math.round(rowMetrics.totalMiles).toLocaleString()}</td>
@@ -994,10 +1207,10 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         )}
         <td className="px-2 py-1 text-right text-purple-400">{formatCurrency(rowMetrics.netPay)}</td>
         <td className="px-2 py-1 text-right text-purple-400">-{formatCurrency(Math.abs(rowMetrics.insuranceExp))}</td>
-        <td className="px-2 py-1 text-right text-purple-400">{rowMetrics.totalFuel < 0 ? `-$${Math.abs(rowMetrics.totalFuel).toFixed(0)}` : `$${rowMetrics.totalFuel.toFixed(0)}`}</td>
+        <td className="px-2 py-1 text-right text-purple-400">{rowMetrics.totalFuel < 0 ? `-${formatCurrency(Math.abs(rowMetrics.totalFuel))}` : formatCurrency(rowMetrics.totalFuel)}</td>
         {isFuelExpanded && (
           <>
-            <td className="px-2 py-1 text-right text-purple-400 opacity-70">{rowMetrics.wosFuel < 0 ? `-$${Math.abs(rowMetrics.wosFuel).toFixed(0)}` : `$${rowMetrics.wosFuel.toFixed(0)}`}</td>
+            <td className="px-2 py-1 text-right text-purple-400 opacity-70">{rowMetrics.wosFuel < 0 ? `-${formatCurrency(Math.abs(rowMetrics.wosFuel))}` : formatCurrency(rowMetrics.wosFuel)}</td>
             <td className="px-2 py-1 text-right text-purple-400 opacity-70">{formatCurrency(rowMetrics.fuelRetailPrice, 2)}</td>
             <td className="px-2 py-1 text-right text-purple-400 opacity-70">{formatCurrency(rowMetrics.spotterRetailPrice, 2)}</td>
             <td className="px-2 py-1 text-right text-purple-400 opacity-70">{formatCurrency(rowMetrics.fuelDiscountPrice, 2)}</td>
@@ -1033,76 +1246,135 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
           </>
         )}
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.fuelRebate)}</td>
-        <td className="px-2 py-1 text-right text-blue-400">-{formatCurrency(Math.abs(rowMetrics.wklyExp))}</td>
-        {isWklyExpExpanded && (
-          <>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insLiabAuto < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLiabAuto))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insLiabGen < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLiabGen))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insCargo < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insCargo))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insLeaseGapCoverage < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLeaseGapCoverage))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insTrailerInterchange < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insTrailerInterchange))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insLago < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLago))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insPhdPremium < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdPremium))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insPhdTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdTruck))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.insPhdTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdTrailer))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTruck))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcCpm < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcCpm))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTrailer))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcPlates < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcPlates))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcTelematics < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTelematics))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcPhone < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcPhone))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcOffice < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcOffice))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcRent < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcRent))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcBackupMc < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBackupMc))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcBoReg < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBoReg))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcBoTech < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBoTech))}</td>
-            <td className="px-2 py-1 text-right text-blue-400 opacity-70">{rowMetrics.fcFactoring < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcFactoring))}</td>
-          </>
-        )}
+        <td className="group/wklyexp relative hover:z-[99999] px-2 py-1 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove}>
+          -{formatCurrency(Math.abs(rowMetrics.wklyExp))}
+          <div className="absolute hidden group-hover/wklyexp:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 top-1/2 right-full mr-2" style={{ transform: tooltipTransform }}>
+            <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Wkly Exp Breakdown:</div>
+            {rowMetrics.insLiabAuto !== 0 && <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono text-zinc-300">{rowMetrics.insLiabAuto < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLiabAuto))}</span></div>}
+            {rowMetrics.insLiabGen !== 0 && <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono text-zinc-300">{rowMetrics.insLiabGen < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLiabGen))}</span></div>}
+            {rowMetrics.insCargo !== 0 && <div className="flex justify-between gap-4"><span>Cargo:</span><span className="font-mono text-zinc-300">{rowMetrics.insCargo < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insCargo))}</span></div>}
+            {rowMetrics.insLeaseGapCoverage !== 0 && <div className="flex justify-between gap-4"><span>Lease Gap:</span><span className="font-mono text-zinc-300">{rowMetrics.insLeaseGapCoverage < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLeaseGapCoverage))}</span></div>}
+            {rowMetrics.insTrailerInterchange !== 0 && <div className="flex justify-between gap-4"><span>Trailer Int.:</span><span className="font-mono text-zinc-300">{rowMetrics.insTrailerInterchange < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insTrailerInterchange))}</span></div>}
+            {rowMetrics.insLago !== 0 && <div className="flex justify-between gap-4"><span>LAGO:</span><span className="font-mono text-zinc-300">{rowMetrics.insLago < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLago))}</span></div>}
+            {rowMetrics.insPhdPremium !== 0 && <div className="flex justify-between gap-4"><span>PhD Prem.:</span><span className="font-mono text-zinc-300">{rowMetrics.insPhdPremium < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdPremium))}</span></div>}
+            {rowMetrics.insPhdTruck !== 0 && <div className="flex justify-between gap-4"><span>PhD Truck:</span><span className="font-mono text-zinc-300">{rowMetrics.insPhdTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdTruck))}</span></div>}
+            {rowMetrics.insPhdTrailer !== 0 && <div className="flex justify-between gap-4"><span>PhD Trailer:</span><span className="font-mono text-zinc-300">{rowMetrics.insPhdTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insPhdTrailer))}</span></div>}
+            {rowMetrics.fcTruck !== 0 && <div className="flex justify-between gap-4"><span>Truck Price:</span><span className="font-mono text-zinc-300">{rowMetrics.fcTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTruck))}</span></div>}
+            {rowMetrics.fcCpm !== 0 && <div className="flex justify-between gap-4"><span>CPM:</span><span className="font-mono text-zinc-300">{rowMetrics.fcCpm < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcCpm))}</span></div>}
+            {rowMetrics.fcTrailer !== 0 && <div className="flex justify-between gap-4"><span>Trailer Price:</span><span className="font-mono text-zinc-300">{rowMetrics.fcTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTrailer))}</span></div>}
+            {rowMetrics.fcPlates !== 0 && <div className="flex justify-between gap-4"><span>Plates:</span><span className="font-mono text-zinc-300">{rowMetrics.fcPlates < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcPlates))}</span></div>}
+            {rowMetrics.fcTelematics !== 0 && <div className="flex justify-between gap-4"><span>Telematics:</span><span className="font-mono text-zinc-300">{rowMetrics.fcTelematics < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcTelematics))}</span></div>}
+            {rowMetrics.fcPhone !== 0 && <div className="flex justify-between gap-4"><span>Phone & Int.:</span><span className="font-mono text-zinc-300">{rowMetrics.fcPhone < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcPhone))}</span></div>}
+            {rowMetrics.fcOffice !== 0 && <div className="flex justify-between gap-4"><span>Office Supp.:</span><span className="font-mono text-zinc-300">{rowMetrics.fcOffice < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcOffice))}</span></div>}
+            {rowMetrics.fcRent !== 0 && <div className="flex justify-between gap-4"><span>Rent & Pkg.:</span><span className="font-mono text-zinc-300">{rowMetrics.fcRent < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcRent))}</span></div>}
+            {rowMetrics.fcBackupMc !== 0 && <div className="flex justify-between gap-4"><span>Backup MC:</span><span className="font-mono text-zinc-300">{rowMetrics.fcBackupMc < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBackupMc))}</span></div>}
+            {rowMetrics.fcBoReg !== 0 && <div className="flex justify-between gap-4"><span>Back Office Pay:</span><span className="font-mono text-zinc-300">{rowMetrics.fcBoReg < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBoReg))}</span></div>}
+            {rowMetrics.fcBoTech !== 0 && <div className="flex justify-between gap-4"><span>Tech Pay:</span><span className="font-mono text-zinc-300">{rowMetrics.fcBoTech < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcBoTech))}</span></div>}
+            {rowMetrics.fcFactoring !== 0 && <div className="flex justify-between gap-4"><span>Factoring:</span><span className="font-mono text-zinc-300">{rowMetrics.fcFactoring < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcFactoring))}</span></div>}
+          </div>
+        </td>
         <td className="px-2 py-1 text-right text-blue-400">{rowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(rowMetrics.tollCost))}`}</td>
-        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.poCoverage)}</td>
-        {isPoExpanded && (
-          <>
-            {poColumns.map((reason) => {
+        <td className="group/po relative hover:z-[99999] px-2 py-1 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove}>
+          {formatCurrency(rowMetrics.poCoverage)}
+          {rowMetrics.poBreakdown && Object.keys(rowMetrics.poBreakdown).length > 0 && (
+            <div className="absolute hidden group-hover/po:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 top-1/2 right-full mr-2" style={{ transform: tooltipTransform }}>
+              <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">PO Breakdown:</div>
+              {poColumns.map(reason => {
                 const poVal = rowMetrics.poBreakdown?.[reason] || 0;
+                if (poVal === 0) return null;
                 return (
-                    <td key={reason} className="px-2 py-1 text-right text-blue-400 opacity-70">
-                        {poVal === 0 ? '-' : `${poVal < 0 ? '-' : ''}${formatCurrency(Math.abs(poVal))}`}
-                    </td>
-                )
-            })}
-          </>
-        )}
-        <td className="px-2 py-1 text-right text-blue-400"><span>{rowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(rowMetrics.dispatcherPay)}</span></td>
+                  <div key={reason} className="flex justify-between gap-4">
+                    <span>{reason}:</span>
+                    <span className="font-mono text-zinc-300">{poVal < 0 ? '-' : ''}{formatCurrency(Math.abs(poVal))}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </td>
+        <td className="group/disp relative hover:z-[99999] px-2 py-1 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove}>
+          {rowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(rowMetrics.dispatcherPay)}
+          {rowMetrics.dispBreakdown && Object.keys(rowMetrics.dispBreakdown).length > 0 && (
+            <div className="absolute hidden group-hover/disp:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[340px] max-w-[400px] pointer-events-none flex-col gap-1.5 top-1/2 right-full mr-2 whitespace-normal" style={{ transform: tooltipTransform }}>
+              <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
+              <div className="mb-2 w-full text-[10px]">
+                <div className="grid grid-cols-[1fr_45px_45px_45px_50px] gap-x-2 border-b border-zinc-700 pb-1 mb-1 font-bold text-zinc-400">
+                  <div>Name</div>
+                  <div className="text-right">Gross</div>
+                  <div className="text-right">Margin</div>
+                  <div className="text-right">Fixed</div>
+                  <div className="text-right text-zinc-300">Total</div>
+                </div>
+                {Object.keys(rowMetrics.dispBreakdown).sort((a, b) => (a.startsWith('ALL') === b.startsWith('ALL')) ? a.localeCompare(b) : (a.startsWith('ALL') ? -1 : 1)).map((name) => {
+                    const vals = rowMetrics.dispBreakdown[name];
+                    const rowSubtotal = vals.gross + vals.margin + vals.fixed;
+                    return (
+                      <div key={name} className="grid grid-cols-[1fr_45px_45px_45px_50px] gap-x-2 py-0.5 items-center">
+                        <div className="text-sky-400 truncate" title={name}>{name}</div>
+                        <div className="text-right font-mono text-zinc-300">
+                          -{formatCurrency(Math.abs(vals.gross))}
+                        </div>
+                        <div className="text-right font-mono text-zinc-300">
+                          -{formatCurrency(Math.abs(vals.margin))}
+                        </div>
+                        <div className="text-right font-mono text-zinc-300">
+                          -{formatCurrency(Math.abs(vals.fixed))}
+                        </div>
+                        <div className="text-right font-mono font-bold text-zinc-200">
+                          -{formatCurrency(Math.abs(rowSubtotal))}
+                        </div>
+                      </div>
+                    )
+                  })}
+              </div>
+              <div className="flex justify-between items-center gap-4 pt-1 border-t border-zinc-700 text-[10px]">
+                <span className="font-bold">Shared Liability (Auto):</span>
+                <span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(Object.values(rowMetrics.dispBreakdown).reduce((sum, v) => sum + (Number(v.shared) || 0), 0)))}</span>
+              </div>
+              <div className="text-[9px] text-zinc-400 mt-1 italic leading-tight">
+                * Note: Shared liability is included in this total<br />
+                but excluded from Total PnL as it is already in Revenue Collected.
+              </div>
+            </div>
+          )}
+        </td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.recruitingCost)}</td>
         <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${rowMetrics.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(rowMetrics.totalPnL)}</td>
         <td className={`px-2 py-1 text-right font-bold sticky right-0 w-[56px] min-w-[56px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.totalMiles === 0 ? 'text-zinc-500' : driver.ranking >= 80 ? 'text-emerald-400' : driver.ranking >= 50 ? 'text-yellow-400' : driver.ranking >= 20 ? 'text-amber-500' : 'text-rose-400'}`}>{driver.totalMiles === 0 ? 'N/A' : `${driver.ranking.toFixed(2)}%`}</td>
       </tr>
       {tpogMode === 'ALL' && franchiseRowMetrics.hasFranchise && (
-        <tr className="bg-zinc-950/40">
+        <tr className="bg-zinc-950/40 hover:relative hover:z-[60]">
           <td className={`px-2 py-1 sticky left-0 z-10 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'}`}></td>
           <td className={`px-2 py-1 font-sans sticky left-[32px] z-10 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'}`}>
             <span className="text-amber-400/90 text-[10px] pl-4">└ TPOG (Franchise PnL)</span>
           </td>
-          <td className="px-2 py-1 text-right text-zinc-600">-</td>
-          <td className="px-2 py-1 text-right text-zinc-600">-</td>
-          <td className="px-2 py-1 text-right text-zinc-600">-</td>
+          <td className="px-2 py-1 text-zinc-500">-</td>
+          <td className="px-2 py-1 text-zinc-500">-</td>
+          <td className="px-2 py-1 text-zinc-500">-</td>
+          <td className="px-2 py-1 text-zinc-500">-</td>
+          <td className="px-2 py-1 text-zinc-500">-</td>
+          <td className="px-2 py-1 text-right text-emerald-400/70">-</td>
+          <td className="px-2 py-1 text-right text-emerald-400/70">-</td>
+          <td className="px-2 py-1 text-right text-emerald-400/70">-</td>
+          <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(franchiseRowMetrics.totalGross)}</td>
+          <td className="px-2 py-1 text-right text-amber-400/70 font-medium">{formatCurrency(franchiseRowMetrics.marginAmount)}</td>
+          <td className="px-2 py-1 text-right text-amber-400/70 font-medium">{Math.round(franchiseRowMetrics.totalMiles).toLocaleString()}</td>
           {isMilesExpanded && (
             <>
-              <td className="px-2 py-1 text-right text-zinc-600">-</td>
-              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+              <td className="px-2 py-1 text-right text-amber-400/50">{Math.round(franchiseRowMetrics.loadedMiles).toLocaleString()}</td>
+              <td className="px-2 py-1 text-right text-amber-400/50">{Math.round(franchiseRowMetrics.dh).toLocaleString()}</td>
             </>
           )}
-          <td className="px-2 py-1 text-right text-zinc-600">-</td>
-          <td className="px-2 py-1 text-right text-zinc-600">-</td>
-          <td className="px-2 py-1 text-right text-zinc-600">-</td>
+          <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(franchiseRowMetrics.netPay)}</td>
+          <td className="px-2 py-1 text-right text-amber-400/70">-{formatCurrency(Math.abs(franchiseRowMetrics.insuranceExp))}</td>
+          <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.totalFuel < 0 ? `-${formatCurrency(Math.abs(franchiseRowMetrics.totalFuel))}` : formatCurrency(franchiseRowMetrics.totalFuel)}</td>
           {isFuelExpanded && (
             <>
-              <td className="px-2 py-1 text-right text-zinc-600">-</td>
-              <td className="px-2 py-1 text-right text-zinc-600">-</td>
-              <td className="px-2 py-1 text-right text-zinc-600">-</td>
-              <td className="px-2 py-1 text-right text-zinc-600">-</td>
-              <td className="px-2 py-1 text-right text-zinc-600">-</td>
+              <td className="px-2 py-1 text-right text-amber-400/50">{franchiseRowMetrics.wosFuel < 0 ? `-${formatCurrency(Math.abs(franchiseRowMetrics.wosFuel))}` : formatCurrency(franchiseRowMetrics.wosFuel)}</td>
+              <td className="px-2 py-1 text-right text-amber-400/50">{formatCurrency(franchiseRowMetrics.fuelRetailPrice, 2)}</td>
+              <td className="px-2 py-1 text-right text-amber-400/50">{formatCurrency(franchiseRowMetrics.spotterRetailPrice, 2)}</td>
+              <td className="px-2 py-1 text-right text-amber-400/50">{formatCurrency(franchiseRowMetrics.fuelDiscountPrice, 2)}</td>
+              <td className="px-2 py-1 text-right text-amber-400/50">{Math.round(franchiseRowMetrics.fuelQuantity)}</td>
             </>
           )}
           <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.companyPay)}</td>
@@ -1121,59 +1393,110 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
             </>
           )}
           <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.fuelRebate)}</td>
-          <td className="px-2 py-1 text-right text-amber-400/90">-{formatCurrency(Math.abs(franchiseRowMetrics.wklyExp))}</td>
-         {isWklyExpExpanded && (
-            <>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insLiabAuto < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLiabAuto))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insLiabGen < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLiabGen))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insCargo < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insCargo))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insLeaseGapCoverage < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLeaseGapCoverage))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insTrailerInterchange < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insTrailerInterchange))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insLago < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLago))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insPhdPremium < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdPremium))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insPhdTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdTruck))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.insPhdTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdTrailer))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTruck))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcCpm < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcCpm))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTrailer))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcPlates < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcPlates))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcTelematics < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTelematics))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcPhone < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcPhone))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcOffice < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcOffice))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcRent < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcRent))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcBackupMc < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBackupMc))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcBoReg < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBoReg))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcBoTech < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBoTech))}</td>
-              <td className="px-2 py-1 text-right text-amber-400/70">{franchiseRowMetrics.fcFactoring < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcFactoring))}</td>
-            </>
-          )}
+          <td className="group/franwklyexp relative hover:z-[99999] px-2 py-1 text-right text-amber-400/90 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove}>
+            -{formatCurrency(Math.abs(franchiseRowMetrics.wklyExp))}
+            <div className="absolute hidden group-hover/franwklyexp:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 top-1/2 right-full mr-2" style={{ transform: tooltipTransform }}>
+              <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Franchise Wkly Exp Breakdown:</div>
+              {franchiseRowMetrics.insLiabAuto !== 0 && <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insLiabAuto < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLiabAuto))}</span></div>}
+              {franchiseRowMetrics.insLiabGen !== 0 && <div className="flex justify-between gap-4"><span>Liability (Gen):</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insLiabGen < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLiabGen))}</span></div>}
+              {franchiseRowMetrics.insCargo !== 0 && <div className="flex justify-between gap-4"><span>Cargo:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insCargo < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insCargo))}</span></div>}
+              {franchiseRowMetrics.insLeaseGapCoverage !== 0 && <div className="flex justify-between gap-4"><span>Lease Gap:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insLeaseGapCoverage < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLeaseGapCoverage))}</span></div>}
+              {franchiseRowMetrics.insTrailerInterchange !== 0 && <div className="flex justify-between gap-4"><span>Trailer Int.:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insTrailerInterchange < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insTrailerInterchange))}</span></div>}
+              {franchiseRowMetrics.insLago !== 0 && <div className="flex justify-between gap-4"><span>LAGO:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insLago < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLago))}</span></div>}
+              {franchiseRowMetrics.insPhdPremium !== 0 && <div className="flex justify-between gap-4"><span>PhD Prem.:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insPhdPremium < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdPremium))}</span></div>}
+              {franchiseRowMetrics.insPhdTruck !== 0 && <div className="flex justify-between gap-4"><span>PhD Truck:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insPhdTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdTruck))}</span></div>}
+              {franchiseRowMetrics.insPhdTrailer !== 0 && <div className="flex justify-between gap-4"><span>PhD Trailer:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insPhdTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insPhdTrailer))}</span></div>}
+              {franchiseRowMetrics.fcTruck !== 0 && <div className="flex justify-between gap-4"><span>Truck Price:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcTruck < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTruck))}</span></div>}
+              {franchiseRowMetrics.fcCpm !== 0 && <div className="flex justify-between gap-4"><span>CPM:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcCpm < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcCpm))}</span></div>}
+              {franchiseRowMetrics.fcTrailer !== 0 && <div className="flex justify-between gap-4"><span>Trailer Price:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcTrailer < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTrailer))}</span></div>}
+              {franchiseRowMetrics.fcPlates !== 0 && <div className="flex justify-between gap-4"><span>Plates:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcPlates < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcPlates))}</span></div>}
+              {franchiseRowMetrics.fcTelematics !== 0 && <div className="flex justify-between gap-4"><span>Telematics:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcTelematics < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcTelematics))}</span></div>}
+              {franchiseRowMetrics.fcPhone !== 0 && <div className="flex justify-between gap-4"><span>Phone & Int.:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcPhone < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcPhone))}</span></div>}
+              {franchiseRowMetrics.fcOffice !== 0 && <div className="flex justify-between gap-4"><span>Office Supp.:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcOffice < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcOffice))}</span></div>}
+              {franchiseRowMetrics.fcRent !== 0 && <div className="flex justify-between gap-4"><span>Rent & Pkg.:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcRent < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcRent))}</span></div>}
+              {franchiseRowMetrics.fcBackupMc !== 0 && <div className="flex justify-between gap-4"><span>Backup MC:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcBackupMc < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBackupMc))}</span></div>}
+              {franchiseRowMetrics.fcBoReg !== 0 && <div className="flex justify-between gap-4"><span>Back Office Pay:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcBoReg < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBoReg))}</span></div>}
+              {franchiseRowMetrics.fcBoTech !== 0 && <div className="flex justify-between gap-4"><span>Tech Pay:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcBoTech < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcBoTech))}</span></div>}
+              {franchiseRowMetrics.fcFactoring !== 0 && <div className="flex justify-between gap-4"><span>Factoring:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcFactoring < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcFactoring))}</span></div>}
+            </div>
+          </td>
           <td className="px-2 py-1 text-right text-amber-400/90">{franchiseRowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(franchiseRowMetrics.tollCost))}`}</td>
-          <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.poCoverage)}</td>
-          {isPoExpanded && (
-            <>
-              {poColumns.map((reason) => {
-                const poVal = franchiseRowMetrics.poBreakdown?.[reason] || 0;
-                return (
-                  <td key={`fran-po-${reason}`} className="px-2 py-1 text-right text-amber-400/70">
-                    {poVal === 0 ? '-' : `${poVal < 0 ? '-' : ''}${formatCurrency(Math.abs(poVal))}`}
-                  </td>
-                );
-              })}
-            </>
-          )}
-          <td className="px-2 py-1 text-right text-amber-400/90">{franchiseRowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(franchiseRowMetrics.dispatcherPay)}</td>
+          <td className="group/franpo relative hover:z-[99999] px-2 py-1 text-right text-amber-400/90 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove}>
+            {formatCurrency(franchiseRowMetrics.poCoverage)}
+            {franchiseRowMetrics.poBreakdown && Object.keys(franchiseRowMetrics.poBreakdown).length > 0 && (
+              <div className="absolute hidden group-hover/franpo:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 top-1/2 right-full mr-2" style={{ transform: tooltipTransform }}>
+                <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Franchise PO Breakdown:</div>
+                {poColumns.map(reason => {
+                  const poVal = franchiseRowMetrics.poBreakdown?.[reason] || 0;
+                  if (poVal === 0) return null;
+                  return (
+                    <div key={`fran-po-${reason}`} className="flex justify-between gap-4">
+                      <span>{reason}:</span>
+                      <span className="font-mono text-zinc-300">{poVal < 0 ? '-' : ''}{formatCurrency(Math.abs(poVal))}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </td>
+          <td className="group/frandisp relative hover:z-[99999] px-2 py-1 text-right text-amber-400/90 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove}>
+            {franchiseRowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(franchiseRowMetrics.dispatcherPay)}
+            {franchiseRowMetrics.dispBreakdown && Object.keys(franchiseRowMetrics.dispBreakdown).length > 0 && (
+              <div className="absolute hidden group-hover/frandisp:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[340px] max-w-[400px] pointer-events-none flex-col gap-1.5 top-1/2 right-full mr-2 whitespace-normal" style={{ transform: tooltipTransform }}>
+                <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Franchise Dispatcher Pay Breakdown:</div>
+                <div className="mb-2 w-full text-[10px]">
+                  <div className="grid grid-cols-[1fr_45px_45px_45px_50px] gap-x-2 border-b border-zinc-700 pb-1 mb-1 font-bold text-zinc-400">
+                    <div>Name</div>
+                    <div className="text-right">Gross</div>
+                    <div className="text-right">Margin</div>
+                    <div className="text-right">Fixed</div>
+                    <div className="text-right text-zinc-300">Total</div>
+                  </div>
+                  {Object.keys(franchiseRowMetrics.dispBreakdown).sort((a, b) => (a.startsWith('ALL') === b.startsWith('ALL')) ? a.localeCompare(b) : (a.startsWith('ALL') ? -1 : 1)).map((name) => {
+                    const vals = franchiseRowMetrics.dispBreakdown[name];
+                    const rowSubtotal = vals.gross + vals.margin + vals.fixed;
+                    return (
+                      <div key={name} className="grid grid-cols-[1fr_45px_45px_45px_50px] gap-x-2 py-0.5 items-center">
+                        <div className="text-sky-400 truncate" title={name}>{name}</div>
+                        <div className="text-right font-mono text-zinc-300">
+                          -{formatCurrency(Math.abs(vals.gross))}
+                        </div>
+                        <div className="text-right font-mono text-zinc-300">
+                          -{formatCurrency(Math.abs(vals.margin))}
+                        </div>
+                        <div className="text-right font-mono text-zinc-300">
+                          -{formatCurrency(Math.abs(vals.fixed))}
+                        </div>
+                        <div className="text-right font-mono font-bold text-zinc-200">
+                          -{formatCurrency(Math.abs(rowSubtotal))}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="flex justify-between items-center gap-4 pt-1 border-t border-zinc-700 text-[10px]">
+                  <span className="font-bold">Shared Liability (Auto):</span>
+                  <span className="font-mono text-emerald-400">+{formatCurrency(Math.abs(Object.values(franchiseRowMetrics.dispBreakdown).reduce((sum, v) => sum + (Number(v.shared) || 0), 0)))}</span>
+                </div>
+                <div className="text-[9px] text-zinc-400 mt-1 italic leading-tight">
+                  * Note: Shared liability is included in this total<br />
+                  but excluded from Total PnL as it is already in Revenue Collected.
+                </div>
+              </div>
+            )}
+          </td>
           <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.recruitingCost)}</td>
           <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'} ${franchiseRowMetrics.totalPnL >= 0 ? 'text-emerald-400/90' : 'text-rose-400/90'}`}>{formatCurrency(franchiseRowMetrics.totalPnL)}</td>
           <td className={`px-2 py-1 text-right text-zinc-600 sticky right-0 w-[56px] min-w-[56px] z-20 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'}`}>-</td>
         </tr>
       )}
       {isExpanded && (
-        <tr className="bg-zinc-950/50 relative z-50 [&>td]:border-b-2 [&>td]:border-l-2 [&>td]:border-r-2 [&>td]:border-emerald-500/50">
-          <td colSpan={(isRevColExpanded ? 10 : 0) + (isMilesExpanded ? 2 : 0) + (isFuelExpanded ? 5 : 0) + (isWklyExpExpanded ? 21 : 0) + (isPoExpanded ? poColumns.length : 0) + 16} className="p-0 border-b border-zinc-800 relative z-50 overflow-visible">
-           <div className="sticky left-0 p-4 z-50 overflow-visible" style={{ width: 'var(--visible-width, calc(100vw - 262px))' }}>
+        <tr className="bg-zinc-950/50 relative z-50 [&>td]:border-b-2 [&>td]:border-emerald-500/50">
+          <td colSpan={(isRevColExpanded ? 10 : 0) + (isMilesExpanded ? 2 : 0) + (isFuelExpanded ? 5 : 0) + 24} className="p-0 border-b border-zinc-800 relative z-50 overflow-visible">
+           <div className="sticky left-0 p-4 z-50 overflow-visible" style={{ width: 'var(--visible-width, calc(100vw - 40px))' }}>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4 min-h-[260px] items-stretch">
-                <div className="md:col-span-2 flex gap-4 h-full">
-                  <div className="w-[220px] flex-shrink-0 bg-zinc-900/40 border border-zinc-800 p-3 rounded flex flex-col gap-4">
+                        <div className="md:col-span-2 flex gap-4 h-full">
+                          <div className="w-[220px] flex-shrink-0 bg-zinc-900/40 border border-zinc-800 p-3 rounded flex flex-col gap-4">
                     <div className="flex flex-col gap-2">
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-zinc-500 uppercase font-bold">Status</span>
@@ -1420,10 +1743,10 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
   const [isRevColExpanded, setIsRevColExpanded] = useState(false);
   const [isMilesExpanded, setIsMilesExpanded] = useState(false);
   const [isFuelExpanded, setIsFuelExpanded] = useState(false);
-  const [isWklyExpExpanded, setIsWklyExpExpanded] = useState(false);
-  const [isPoExpanded, setIsPoExpanded] = useState(false);
+  
   const [tpogMode, setTpogMode] = useState<'ALL' | 'CALCULATED'>('ALL');
   const [search, setSearch] = useState('');
+  const [selectedPayDate, setSelectedPayDate] = useState<string>('ALL');
   const [tableFilters, setTableFilters] = useState<FilterRule[]>([{ field: 'Contract', operator: 'status is', value: ['ACTIVE'] }]);
   const [showSettings, setShowSettings] = useState(false);
   const [driverSettings, setDriverSettings] = useState<any>({});
@@ -1527,7 +1850,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
                   let maxCount = 0;
                   
                   records.forEach(r => {
-                      const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+                      const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
                       totalGross += (r.grossRevenue || r.driver_gross || 0);
                       totalMargin += (r.marginAmount || 0);
                       totalNetPay += (r.netPay ?? 0);
@@ -1567,7 +1890,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           }
 
           return validDrivers.filter(d => {
-              const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
+              const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
               return tableFilters.every(rule => {
                   if (!rule.field || !rule.operator) return true;
                   const conf = driverSettings?.[`CTR:${d.contractType}`] || driverSettings?.[`CMP:${d.companyId}`] || driverSettings?.['GLOBAL'] || {};
@@ -1713,6 +2036,30 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     const map = new Map<string, any>();
     const filteredDriverNames = new Set(filteredTableDrivers.map(d => d.name));
 
+    const latestDatesByDriver = new Map<string, string>();
+    const globalStatusByDriver = new Map<string, string>();
+    const globalRecordsByDriver = new Map<string, any[]>();
+
+    validDrivers.forEach(d => {
+        if (!allowedDates.has(d.payDate)) return;
+        
+        const name = d.name || 'Unknown';
+        if (!globalRecordsByDriver.has(name)) globalRecordsByDriver.set(name, []);
+        globalRecordsByDriver.get(name)!.push(d);
+
+        const dDate = d.payDate || d.week_ending || '';
+        const currGlobal = globalStatusByDriver.get(name + '_date') || '';
+        if (!currGlobal || dDate > currGlobal || (dDate === currGlobal && String(d.status).toUpperCase() === 'TERMINATED')) {
+            globalStatusByDriver.set(name + '_date', dDate);
+            globalStatusByDriver.set(name, d.status);
+        }
+
+        if (selectedPayDate !== 'ALL' && d.payDate !== selectedPayDate) return;
+        if (!latestDatesByDriver.has(name) || dDate > (latestDatesByDriver.get(name) || '')) {
+            latestDatesByDriver.set(name, dDate);
+        }
+    });
+
     const catFilters = tableFilters.filter(f => ['Company', 'Dispatcher', 'Contract', 'Team', 'Franchise'].includes(f.field));
     const isRecordMatch = (d: any) => {
       if (catFilters.length === 0) return true;
@@ -1739,13 +2086,24 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       const compLower = (d.companyId || '').toLowerCase();
       if (nameLower.includes('unassigned') || nameLower.includes('unreconciled') || compLower.includes('unassigned') || compLower.includes('unreconciled')) return;
       if (!isRecordMatch(d)) return;
+      if (selectedPayDate !== 'ALL' && d.payDate !== selectedPayDate) return;
 
       if (!rankMap.has(d.name)) rankMap.set(d.name, { totalPnL: 0, records: [] });
       const rData = rankMap.get(d.name)!;
-      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
+      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+      
+      const isLatest = (d.payDate || d.week_ending || '') === latestDatesByDriver.get(d.name || 'Unknown');
       let finalPnl = m.pnl;
-      if (m.franchisePnlCalculated) {
-          finalPnl -= m.franchisePnlCalculated;
+      let finalFranchisePnlCalculated = m.franchisePnlCalculated;
+      if (!isLatest) {
+          finalPnl -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          if (finalFranchisePnlCalculated) {
+              finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          }
+      }
+      
+      if (finalFranchisePnlCalculated) {
+          finalPnl -= finalFranchisePnlCalculated;
       }
       rData.totalPnL += finalPnl;
       rData.records.push(d);
@@ -1773,13 +2131,22 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       if (!isRecordMatch(d)) return;
       
       if (search && !nameLower.startsWith(search.toLowerCase())) return;
+      if (selectedPayDate !== 'ALL' && d.payDate !== selectedPayDate) return;
 
       if (!map.has(d.name)) {
         map.set(d.name, {
           id: d.name,
           name: d.name,
-          status: d.status,
+          status: globalStatusByDriver.get(d.name) || d.status,
+          allRecords: globalRecordsByDriver.get(d.name) || [],
           franchiseId: d.franchiseId,
+          companyId: d.companyId,
+          teamId: d.teamId,
+          dispatcherId: d.dispatcherId,
+          contractType: d.contractType,
+          effectiveDrivers: 0,
+          effectiveNonTeams: 0,
+          effectiveTrailers: 0,
           totalGross: 0,
           companyPay: 0,
           totalPnL: 0,
@@ -1817,16 +2184,36 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       }
       const agg = map.get(d.name);
       
-      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
+      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+      const isLatest = (d.payDate || d.week_ending || '') === latestDatesByDriver.get(d.name || 'Unknown');
+      
+      let finalBalChange = isLatest ? (m.balChange || 0) : 0;
+      let finalEscrowAdj = isLatest ? (m.escrowAdj || 0) : 0;
+      let finalRevCol = m.revCol;
+      let finalFranchiseRevCol = m.franchiseRevCol;
+      let finalPnl = m.pnl;
+      let finalFranchisePnlCalculated = m.franchisePnlCalculated;
+
+      if (!isLatest) {
+          finalRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          finalFranchiseRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          finalPnl -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          if (finalFranchisePnlCalculated) {
+              finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
+          }
+      }
 
       const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
+      agg.effectiveDrivers += (d.effectiveDrivers || 0);
+      agg.effectiveNonTeams += (d.effectiveNonTeams || 0);
+      agg.effectiveTrailers += ((d as any).effectiveTrailers || 0);
       agg.totalGross += (d.grossRevenue || d.driver_gross || 0);
-      agg.companyPay += m.revCol - (tpogCalc * m.franchiseRevCol / 2);
-      let finalPnl = m.pnl;
-      if (m.franchisePnlCalculated) {
-          finalPnl = finalPnl - m.franchisePnlCalculated;
+      agg.companyPay += finalRevCol - (tpogCalc * finalFranchiseRevCol / 2);
+      let pnlToAdd = finalPnl;
+      if (finalFranchisePnlCalculated) {
+          pnlToAdd = pnlToAdd - finalFranchisePnlCalculated;
       }
-      agg.totalPnL += finalPnl;
+      agg.totalPnL += pnlToAdd;
       agg.totalMiles += (Number(d.milesDriven) || 0);
       agg.marginAmount += (d.marginAmount || 0);
       agg.poCoverage += m.po + (tpogCalc * m.franchisePo / 2);
@@ -1844,10 +2231,10 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       agg.recruitingCost += m.recruiting - (tpogCalc * m.franchiseRecruiting / 2);
       
       agg.revBase += m.revBase || 0;
-      agg.balChange += m.balChange || 0;
+      agg.balChange += finalBalChange;
       agg.prorated += m.prorated || 0;
       agg.zeroMiDrop += m.zeroMiDrop || 0;
-      agg.escrowAdj += m.escrowAdj || 0;
+      agg.escrowAdj += finalEscrowAdj;
       agg.tollsAdj += m.tollsAdj || 0;
       agg.cashAdv += m.cashAdv || 0;
       agg.cpmAdj += m.cpmAdj || 0;
@@ -1869,8 +2256,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
         const aggDate = agg.latestDate ? new Date(agg.latestDate).getTime() : 0;
         if (!agg.latestDate || dDate > aggDate || (dDate === aggDate && String(d.status).toUpperCase() === 'TERMINATED')) {
           agg.latestDate = d.payDate;
-          agg.status = d.status;
           agg.franchiseId = d.franchiseId;
+          agg.companyId = d.companyId;
+          agg.teamId = d.teamId;
+          agg.dispatcherId = d.dispatcherId;
+          agg.contractType = d.contractType;
         }
       }
     });
@@ -1884,6 +2274,9 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       if (isAvgPerWeek) {
         return {
           ...agg,
+          effectiveDrivers: agg.effectiveDrivers / count,
+          effectiveNonTeams: agg.effectiveNonTeams / count,
+          effectiveTrailers: agg.effectiveTrailers / count,
           totalGross: agg.totalGross / count,
           totalMiles: agg.totalMiles / count,
           marginAmount: agg.marginAmount / count,
@@ -1936,7 +2329,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       if (sortConfig.direction === 'asc') return aVal > bVal ? 1 : -1;
       return aVal < bVal ? 1 : -1;
     });
-  }, [validDrivers, filteredTableDrivers, isAvgPerWeek, sortConfig, search, fixedExpenses, tableFilters, enrichedMap, tpogMode]);
+  }, [validDrivers, filteredTableDrivers, isAvgPerWeek, sortConfig, search, selectedPayDate, fixedExpenses, tableFilters, enrichedMap, tpogMode]);
 
   const poColumns = React.useMemo(() => {
     const cols = new Set<string>();
@@ -1954,6 +2347,17 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
   const fleetAverages = React.useMemo(() => {
     const contractAvgs: Record<string, any> = {};
     
+    const latestDatesByDriver = new Map<string, string>();
+    aggregatedDrivers.forEach(d => {
+      d.records.forEach((r: any) => {
+        const name = r.name || 'Unknown';
+        const dDate = r.payDate || r.week_ending || '';
+        if (!latestDatesByDriver.has(name) || dDate > (latestDatesByDriver.get(name) || '')) {
+          latestDatesByDriver.set(name, dDate);
+        }
+      });
+    });
+
     aggregatedDrivers.forEach(d => {
       const fullWeeks = d.records.filter((r: any) => (r.effectiveDrivers || 0) >= 1);
       fullWeeks.forEach((r: any) => {
@@ -1966,9 +2370,22 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             };
          }
          
-         const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs);
+         const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+         const isLatest = (r.payDate || r.week_ending || '') === latestDatesByDriver.get(r.name || 'Unknown');
+         let finalRevCol = m.revCol;
+         let finalPnl = m.pnl;
+         let finalFranchisePnlCalculated = m.franchisePnlCalculated;
+
+         if (!isLatest) {
+             finalRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
+             finalPnl -= ((m.balChange || 0) + (m.escrowAdj || 0));
+             if (finalFranchisePnlCalculated) {
+                 finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
+             }
+         }
+
          const poCov = m.po;
-         const revCol = m.revCol;
+         const revCol = finalRevCol;
          const fuelVal = m.fuel;
          const fuelReb = m.fuelRebate;
          const dispPay = m.dispPay;
@@ -1976,7 +2393,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
          const wklyExp = m.wklyExp;
          const dTollsRaw = m.tolls;
          const recruit = m.recruiting;
-         const pnl = m.pnl;
+         const pnl = finalPnl;
 
          if (r.grossRevenue || r.driver_gross) { contractAvgs[cType].grossSum += (r.grossRevenue || r.driver_gross); contractAvgs[cType].grossCount++; }
          contractAvgs[cType].revSum += revCol; contractAvgs[cType].revCount++;
@@ -1990,11 +2407,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
          if (wklyExp) { contractAvgs[cType].wklyExpSum += wklyExp; }
          if (dTollsRaw) { contractAvgs[cType].tollsSum += Math.abs(dTollsRaw); }
          if (recruit) { contractAvgs[cType].recruitingSum += recruit; }
-         let finalPnl = pnl;
-         if (m.franchisePnlCalculated) {
-             finalPnl = finalPnl - m.franchisePnlCalculated;
+         let pnlToAdd = pnl;
+         if (finalFranchisePnlCalculated) {
+             pnlToAdd = pnlToAdd - finalFranchisePnlCalculated;
          }
-         contractAvgs[cType].pnlSum += finalPnl;
+         contractAvgs[cType].pnlSum += pnlToAdd;
          contractAvgs[cType].pnlCount++;
       });
     });
@@ -2043,11 +2460,11 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
 
   const [expandedDriverId, setExpandedDriverId] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
-  const itemsPerPage = 30;
+  const [itemsPerPage, setItemsPerPage] = useState<number | 'ALL'>(25);
 
   React.useEffect(() => {
     setCurrentPage(1);
-  }, [search, tableFilters, isAvgPerWeek, sortConfig]);
+  }, [search, selectedPayDate, tableFilters, isAvgPerWeek, sortConfig, itemsPerPage]);
 
   const requestSort = (key: string) => {
     let direction: 'asc' | 'desc' = 'desc';
@@ -2071,17 +2488,27 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
           companies={Array.from(new Set(validDrivers.map(d => d.companyId))).filter(c => c && !['GLOBAL', 'UNASSIGNED', 'UNRECONCILED'].includes(c?.toUpperCase()))}
         />
       )}
-      <div className="flex justify-between items-center px-1 mb-2 relative z-[100]">
+      <div className="flex justify-between items-center px-1 mb-2 relative z-[9999]">
         <div className="flex items-center gap-2">
-          <input 
-            type="text" 
-            placeholder="Search driver..." 
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="bg-zinc-900 border border-zinc-800 text-[11px] px-2 py-1 h-[26px] rounded w-64 text-zinc-300 focus:border-emerald-500 focus:outline-none" 
-          />
-        </div>
-        <div className="flex items-center gap-2 relative">
+         <input 
+              type="text" 
+              placeholder="Search driver..." 
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="bg-zinc-900 border border-zinc-800 text-[11px] px-2 py-1 h-[26px] rounded w-64 text-zinc-300 focus:border-emerald-500 focus:outline-none" 
+            />
+            <select
+              value={selectedPayDate}
+              onChange={(e) => setSelectedPayDate(e.target.value)}
+              className="bg-zinc-900 border border-zinc-800 text-[11px] px-2 py-1 h-[26px] rounded text-zinc-300 focus:border-emerald-500 focus:outline-none cursor-pointer"
+            >
+              <option value="ALL">All Dates (Combined)</option>
+              {Array.from(new Set(validDrivers.map((d: any) => d.payDate).filter(Boolean))).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime()).map((date: any) => (
+                <option key={date} value={date}>{date}</option>
+              ))}
+            </select>
+          </div>
+          <div className="flex items-center gap-2 relative">
             <div className="w-[90px] h-[26px] z-[100] relative [&_.absolute]:!right-0 [&_.absolute]:!left-auto [&>*:first-child]:!text-[9px] [&>*:first-child]:!whitespace-nowrap [&>*:first-child]:!tracking-tight [&_button]:!text-[9px] [&_button]:!whitespace-nowrap">
                <TableFilter
                  filters={tableFilters} 
@@ -2092,6 +2519,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
                    'Company': Array.from(new Set(validDrivers.map(d => d.companyId && d.companyId !== '-' ? d.companyId : 'Unassigned'))).filter(Boolean) as string[],
                    'Franchise': Array.from(new Set(validDrivers.map(d => d.franchiseId && d.franchiseId !== '-' ? d.franchiseId : 'Unassigned'))).filter(Boolean) as string[],
                    'Dispatcher': Array.from(new Set(validDrivers.map(d => d.dispatcherId && d.dispatcherId !== '-' ? d.dispatcherId : 'Unassigned'))).filter(Boolean) as string[],
+                   'Team': Array.from(new Set(validDrivers.map(d => d.teamId && d.teamId !== '-' ? d.teamId : 'Unassigned'))).filter(Boolean) as string[],
                    'Gross': ['good', 'neutral', 'warning', 'critical'],
                    'Margin': ['good', 'neutral', 'warning', 'critical'],
                    'Net Pay': ['good', 'neutral', 'warning', 'critical'],
@@ -2105,7 +2533,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             </div>
             <button 
               onClick={() => setIsAvgPerWeek(!isAvgPerWeek)}
-              className={`rounded text-[10px] font-bold border transition-colors cursor-pointer flex items-center justify-center px-3 h-[26px] gap-1.5 ${isAvgPerWeek ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
+              className={`rounded text-[10px] font-bold border transition-colors cursor-pointer flex items-center justify-center px-3 h-[26px] gap-1.5 w-[90px] ${isAvgPerWeek ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:text-white'}`}
             >
               <Eye size={10} /> {isAvgPerWeek ? 'TOTAL' : 'AVERAGE'}
             </button>
@@ -2144,10 +2572,18 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       <div className="flex flex-col flex-[7] min-h-0 mb-1">
       <div ref={tableContainerRef} className="overflow-auto border border-zinc-800 rounded-t-lg bg-zinc-900 flex-1 min-h-0">
         <table className="w-full text-left text-[11px] whitespace-nowrap relative">
-          <thead className="bg-zinc-800/50 text-zinc-400 font-medium uppercase tracking-wider sticky top-0 z-10">
+          <thead className="bg-zinc-800/50 text-zinc-400 font-medium uppercase tracking-wider sticky top-0 z-[100]">
             <tr>
               <th className="px-2 py-1.5 w-[32px] min-w-[32px] max-w-[32px] bg-zinc-900 border-b border-zinc-800 sticky top-0 left-0 z-30"></th>
               <th onClick={() => requestSort('name')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left sticky top-0 left-[32px] z-30">Driver</th>
+              <th onClick={() => requestSort('companyId')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left sticky top-0 z-20">Company</th>
+              <th onClick={() => requestSort('teamId')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left sticky top-0 z-20">Team</th>
+              <th onClick={() => requestSort('franchiseId')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left sticky top-0 z-20">Franchise</th>
+              <th onClick={() => requestSort('dispatcherId')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left sticky top-0 z-20">Dispatcher</th>
+              <th onClick={() => requestSort('contractType')} className="px-2 py-1.5 bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none text-left sticky top-0 z-20">Contract</th>
+              <th onClick={() => requestSort('effectiveDrivers')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none sticky top-0 z-20">Eff Drv</th>
+              <th onClick={() => requestSort('effectiveNonTeams')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none sticky top-0 z-20">Eff NonTm</th>
+              <th onClick={() => requestSort('effectiveTrailers')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] cursor-pointer hover:text-white select-none sticky top-0 z-20">Eff Trls</th>
               <th onClick={() => requestSort('totalGross')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Drv. Gross{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('marginAmount')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Margin{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('totalMiles')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-yellow-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">
@@ -2206,55 +2642,9 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
                 </>
               )}
               <th onClick={() => requestSort('fuelRebate')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Fuel Reb.{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('wklyExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">
-                <div className="flex items-center justify-end gap-1">
-                  Wkly Exp.{isAvgPerWeek ? ' / wk' : ''}
-                  <button onClick={(e) => { e.stopPropagation(); setIsWklyExpExpanded(!isWklyExpExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1 cursor-pointer">
-                    <ChevronRight size={10} className={`transition-transform ${isWklyExpExpanded ? 'rotate-180' : ''}`} />
-                  </button>
-                </div>
-              </th>
-              {isWklyExpExpanded && (
-                <>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Liability (Auto)</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Liability (Gen)</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Cargo</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Lease Gap</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Trailer Int.</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">LAGO</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">PhD Prem.</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">PhD Truck</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">PhD Trailer</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Truck Price</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">CPM</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Trailer Price</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Plates</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Telematics</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Phone & Int.</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Office Supp.</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Rent & Pkg.</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Backup MC</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Back Office Pay</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Tech Pay</th>
-                  <th className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">Factoring</th>
-                </>
-              )}
+              <th onClick={() => requestSort('wklyExp')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Wkly Exp.{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('tollCost')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Tolls{isAvgPerWeek ? ' / wk' : ''}</th>
-              <th onClick={() => requestSort('poCoverage')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">
-                <div className="flex items-center justify-end gap-1">
-                  PO{isAvgPerWeek ? ' / wk' : ''}
-                  <button onClick={(e) => { e.stopPropagation(); setIsPoExpanded(!isPoExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1 cursor-pointer">
-                    <ChevronRight size={10} className={`transition-transform ${isPoExpanded ? 'rotate-180' : ''}`} />
-                  </button>
-                </div>
-              </th>
-              {isPoExpanded && (
-                <>
-                  {poColumns.map((col) => (
-                    <th key={`th-po-${col}`} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 opacity-70 sticky top-0 z-20 whitespace-nowrap">{col}</th>
-                  ))}
-                </>
-              )}
+              <th onClick={() => requestSort('poCoverage')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">PO{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('dispatcherPay')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Disp. Pay{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('recruitingCost')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] text-blue-400 cursor-pointer hover:text-white select-none sticky top-0 z-20">Recruiting{isAvgPerWeek ? ' / wk' : ''}</th>
               <th onClick={() => requestSort('totalPnL')} className="px-2 py-1.5 text-right bg-zinc-900 border-b border-zinc-800 text-[10px] font-bold text-white cursor-pointer hover:text-emerald-400 select-none sticky top-0 right-[56px] z-40 w-[80px] min-w-[80px]">Total PnL{isAvgPerWeek ? ' / wk' : ''}</th>
@@ -2262,7 +2652,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
             </tr>
           </thead>
         <tbody className="divide-y divide-zinc-800 font-mono">
-          {aggregatedDrivers.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage).map((driver) => (
+          {aggregatedDrivers.slice((currentPage - 1) * (itemsPerPage === 'ALL' ? aggregatedDrivers.length : itemsPerPage), currentPage * (itemsPerPage === 'ALL' ? aggregatedDrivers.length : itemsPerPage)).map((driver) => (
             <DriverRow 
               key={driver.id}
               driver={driver} 
@@ -2277,8 +2667,6 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
               tpogMode={tpogMode}
               isRevColExpanded={isRevColExpanded}
               isFuelExpanded={isFuelExpanded}
-              isWklyExpExpanded={isWklyExpExpanded}
-              isPoExpanded={isPoExpanded}
               isMilesExpanded={isMilesExpanded}
               poColumns={poColumns}
               poRules={poRules}
@@ -2289,33 +2677,44 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     </div>
     <div className="flex items-center justify-between px-4 py-2 border border-t-0 border-zinc-800 rounded-b-lg bg-zinc-900/50 flex-shrink-0">
       <span className="text-[10px] text-zinc-500">
-        Showing {Math.min((currentPage - 1) * itemsPerPage + 1, aggregatedDrivers.length)} to {Math.min(currentPage * itemsPerPage, aggregatedDrivers.length)} of {aggregatedDrivers.length} entries
+        Showing {aggregatedDrivers.length === 0 ? 0 : (currentPage - 1) * (itemsPerPage === 'ALL' ? aggregatedDrivers.length : itemsPerPage) + 1} to {itemsPerPage === 'ALL' ? aggregatedDrivers.length : Math.min(currentPage * itemsPerPage, aggregatedDrivers.length)} of {aggregatedDrivers.length} entries
       </span>
-      <div className="flex gap-1">
-        <button 
-          onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
-          disabled={currentPage === 1} 
-          className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-[10px] disabled:opacity-50 hover:bg-zinc-700 transition-colors cursor-pointer"
+      <div className="flex items-center gap-3">
+        <select
+          value={itemsPerPage}
+          onChange={(e) => {
+            const val = e.target.value;
+            setItemsPerPage(val === 'ALL' ? 'ALL' : Number(val));
+          }}
+          className="bg-zinc-800 border border-zinc-700 text-zinc-300 rounded px-2 py-0.5 text-[10px] outline-none cursor-pointer focus:border-emerald-500 h-[24px]"
         >
-          Prev
-        </button>
-       <button 
-            onClick={() => setCurrentPage(p => Math.min(Math.ceil(aggregatedDrivers.length / itemsPerPage), p + 1))} 
-            disabled={currentPage === Math.ceil(aggregatedDrivers.length / itemsPerPage) || aggregatedDrivers.length === 0} 
+          <option value={25}>25</option>
+          <option value={50}>50</option>
+          <option value={75}>75</option>
+          <option value={100}>100</option>
+          <option value="ALL">ALL</option>
+        </select>
+        <div className="flex gap-1">
+          <button 
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))} 
+            disabled={currentPage === 1} 
+            className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-[10px] disabled:opacity-50 hover:bg-zinc-700 transition-colors cursor-pointer"
+          >
+            Prev
+          </button>
+          <button 
+            onClick={() => setCurrentPage(p => p + 1)} 
+            disabled={itemsPerPage === 'ALL' || currentPage >= Math.ceil(aggregatedDrivers.length / itemsPerPage) || aggregatedDrivers.length === 0} 
             className="px-3 py-1 bg-zinc-800 text-zinc-300 rounded text-[10px] disabled:opacity-50 hover:bg-zinc-700 transition-colors cursor-pointer"
           >
             Next
           </button>
         </div>
       </div>
-      </div>
-      <div className="w-full relative z-50 mt-1 mb-2 flex-[3] min-h-[260px] flex flex-col">
-        <DriverStats 
-          drivers={aggregatedDrivers}
-        />
-      </div>
-      </div>
-    );
+    </div>
+    </div>
+    </div>
+  );
   };
 
   export default DriverTable;

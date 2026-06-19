@@ -364,7 +364,7 @@ const MasterTable: React.FC<{
                   <span className="relative group/disableditem flex items-center justify-end gap-0.5 cursor-help w-full" onMouseMove={handleTooltipMove}>
                       <span>{content}</span>
                       <span className="text-rose-500 font-bold text-[14px] shrink-0 leading-none pb-[1px]">!</span>
-                      <div className="fixed hidden group-hover/disableditem:block z-[100000] bg-zinc-800 border border-zinc-500 text-rose-300 px-2 py-1.5 rounded shadow-xl text-[10px] whitespace-normal w-max max-w-[200px] text-left pointer-events-none font-bold opacity-100 dynamic-tooltip">
+                      <div className="fixed hidden group-hover/disableditem:block z-[100000] bg-zinc-800 border border-zinc-500 text-rose-300 px-2 py-1.5 rounded shadow-xl text-[10px] whitespace-normal w-max max-w-[200px] text-left pointer-events-none font-normal opacity-100 dynamic-tooltip">
                           Excluded from PnL Calculation for {Array.from(excludedContracts).join(', ')}: {formatCurrency(Math.abs(val(excludedAmount, currentDiv)))}
                       </div>
                   </span>
@@ -378,7 +378,7 @@ const MasterTable: React.FC<{
       return (
           <span className="relative group/disableditem inline-block line-through decoration-rose-500 opacity-100 cursor-help" onMouseMove={handleTooltipMove}>
               {content}
-              <div className="fixed hidden group-hover/disableditem:block z-[100000] bg-zinc-800 border border-zinc-500 text-rose-300 px-2 py-1.5 rounded shadow-xl text-[10px] whitespace-nowrap pointer-events-none font-bold opacity-100 dynamic-tooltip">
+              <div className="fixed hidden group-hover/disableditem:block z-[100000] bg-zinc-800 border border-zinc-500 text-rose-300 px-2 py-1.5 rounded shadow-xl text-[10px] whitespace-nowrap pointer-events-none font-normal opacity-100 dynamic-tooltip">
                   Excluded from PnL Calculation
               </div>
           </span>
@@ -411,8 +411,8 @@ const MasterTable: React.FC<{
   };
   const uniqueContracts = Array.from(new Set(drivers.map(d => d.contractType || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueCompanies = Array.from(new Set(drivers.map(d => (d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const uniqueFranchises = Array.from(new Set(drivers.map(d => d.franchiseId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const uniqueTeams = Array.from(new Set(drivers.map(d => d.teamId || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueFranchises = Array.from(new Set(drivers.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueTeams = Array.from(new Set(drivers.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueDrivers = Array.from(new Set(drivers.map(d => (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned') ? 'Unassigned' : d.name))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
  const driverRows = [...drivers].map(d => {
       const isUnassigned = (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned');
@@ -632,12 +632,11 @@ const MasterTable: React.FC<{
                  const map = new Map<string, DriverPerformance[]>();
                  drivers.forEach(d => {
                     const isUnassigned = (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned');
-                    let key = groupBy === 'Contract' ? d.contractType :
-                                groupBy === 'Company' ? d.companyId :
-                                groupBy === 'Franchise' ? d.franchiseId :
-                                groupBy === 'Team' ? d.teamId : 
+                    let key = groupBy === 'Contract' ? (d.contractType || 'Unassigned') :
+                                groupBy === 'Company' ? ((d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId) :
+                                groupBy === 'Franchise' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')) :
+                                groupBy === 'Team' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')) : 
                                 (isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`);
-                    if (groupBy === 'Company' && (key === 'UNRECONCILED' || !key)) key = 'Unassigned';
                     if (groupBy === 'Driver' && isUnassigned) key = 'Unassigned';
                     const safeKey = key || 'Unassigned';
         if (!map.has(safeKey)) map.set(safeKey, []);
@@ -922,7 +921,7 @@ const MasterTable: React.FC<{
                         <>
                             {rowDrivers.some(d => d.contractType === 'MCLOO') && (
                                 <span className="text-[9px] text-amber-400 italic leading-tight">
-                                    * Note: MCLOO contract amounts are multiplied by 0.3.
+                                    * Note: Values for MCLOO drivers are multiplied by 0.3.
                                 </span>
                             )}
                             {rowDrivers.some(d => d.contractType === 'TPOG' && !!d.franchiseId) && (
@@ -1094,7 +1093,7 @@ const MasterTable: React.FC<{
               })}
             {rowDrivers.some(d => d.contractType === 'MCLOO') && (
               <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1 leading-tight">
-                * Note: Shown values are 100%. The total column figure is obtained by multiplying these by 0.3.
+                * Note: Tooltip displays 100% values. Column calculates 30% for MCLOO.
               </div>
             )}
             
@@ -1152,11 +1151,13 @@ const MasterTable: React.FC<{
       <td className={`px-1 py-0.5 text-right font-medium sticky z-10 hover:z-[100] bg-zinc-950 group-hover:bg-zinc-900 shadow-[-6px_0_12px_-4px_rgba(0,0,0,0.5)] w-[80px] min-w-[80px] max-w-[80px] right-0 ${val(metrics.netIncome, div) >= 0 ? 'text-emerald-500' : 'text-rose-500'} ${metrics.isAdjusted ? 'group/tpogpnl relative cursor-help !overflow-visible' : ''}`} onMouseMove={metrics.isAdjusted ? handleTooltipMove : undefined}>
         {formatCurrency(val(metrics.netIncome, div))}
         {metrics.isAdjusted && (
-          <div className="fixed hidden group-hover/tpogpnl:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-            <span className="font-bold text-emerald-400">TPOG PnL Explanation:</span>
-            The columns in this row display the full amount (100%) including the franchise share. However, the Total PnL represents the net PnL for TPOG, calculated as TPOG - TPOG(Franchise PnL)/2. 
-            <br/><br/>
-            <span className="text-amber-400 italic">Note: Balance Change, Escrow Collected, and configured PO amounts are paid in full by the franchise and are not divided by 2.</span>
+          <div className="fixed hidden group-hover/tpogpnl:block z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[250px] pointer-events-none flex flex-col gap-2 whitespace-normal break-words dynamic-tooltip">
+            {['Company', 'Team', 'Franchise'].includes(groupBy) && (
+              <div className="font-bold text-rose-400 border-b border-zinc-600 pb-1">Warning: This {groupBy} has drivers with TPOG contracts.</div>
+            )}
+            <div className="font-bold text-emerald-400">TPOG PnL Explanation:</div>
+            <div>The columns in this row display the full amount (100%) including the franchise share. However, the Total PnL represents the net PnL for TPOG, calculated as TPOG - TPOG(Franchise PnL)/2.</div>
+            <div className="text-amber-400 italic">Note: Balance Change, Escrow Collected, and configured PO amounts are paid in full by the franchise and are not divided by 2.</div>
           </div>
         )}
       </td>
@@ -1517,14 +1518,14 @@ const MasterTable: React.FC<{
                
               </div>
            </th>
-                 <th onClick={() => requestSort('fuel')} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300">
+                 <th onClick={() => requestSort('fuel')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-purple-400 text-[10px] cursor-pointer hover:text-purple-300 !overflow-visible">
                <div className="flex items-center justify-end gap-1">
                  Fuel {sortConfig?.key === 'fuel' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                  <button onClick={(e) => { e.stopPropagation(); setIsFuelExpanded(!isFuelExpanded); }} className="p-0.5 hover:bg-zinc-800 rounded transition-colors ml-1">
                    <ChevronRight size={10} className={`transition-transform ${isFuelExpanded ? 'rotate-180' : ''}`} />
                  </button>
                </div>
-               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left mt-6 w-[320px] pointer-events-none transform -translate-x-[80%] flex flex-col gap-1.5 whitespace-normal break-words">
+               <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[320px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                  <div className="font-bold text-white mb-0.5">Fuel Calculation:</div>
                  <ul className="list-disc pl-4 flex flex-col gap-1">
                    <li><span className="font-semibold text-emerald-400">Positive Values (Fuel Saved):</span> For MCLOO, OO, LOO, LPOO, MCOO contracts. <br/>Calculation: <span className="font-mono text-[9px]">(Retail Price - Discounted Price) * Quantity</span></li>
@@ -1685,15 +1686,13 @@ const MasterTable: React.FC<{
                     </th>
                    <th onClick={() => requestSort('totalPOCov')} onMouseMove={handleTooltipMove} className="group px-1 py-1 border-b border-zinc-800 bg-zinc-950 text-right text-blue-400 text-[10px] cursor-pointer hover:text-blue-300 !overflow-visible">
                    PO {sortConfig?.key === 'totalPOCov' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
-                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[450px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
-                     <div className="font-bold text-white text-[11px] border-b border-zinc-600 pb-1">PO Company Coverage (PO Co Cov) Calculation:</div>
-                     <div className="text-zinc-300">This column shows the total Purchase Order amount covered by the company. Note: Execution priority goes from top to bottom.</div>
-                     <div className="font-semibold text-white mt-1">Calculation Rules:</div>
-                     <ul className="list-none flex flex-col gap-1.5">
-                       <li className="pl-2 border-l-2 border-rose-500"><span className="font-semibold text-rose-300">1. TPOG Contracts:</span><br/>Company Share: If expense reason includes 'Hotel' or 'Flights/Car' &rarr; <span className="text-emerald-400 font-mono text-[9px]">Result = 0</span><br/>Franchise Share &rarr; <span className="text-emerald-400 font-mono text-[9px]">Result = PO Amount - Deduction Amount</span></li>
-                       <li className="pl-2 border-l-2 border-purple-500"><span className="font-semibold text-purple-300">2. MCLOO Contract:</span><br/><span className="text-emerald-400 font-mono text-[9px]">Result = (PO Amount - Deduction Amount) * 0.3</span></li>
-                       <li className="pl-2 border-l-2 border-blue-500"><span className="font-semibold text-blue-300">3. 'Company Pay' &amp; Fuel Charges:</span><br/>If charge category is 'Company Pay', 'Deduction to MC', or Fuel costs ('CADV', 'SCLE'):<br/><span className="text-emerald-400 font-mono text-[9px]">Result = Full PO Amount</span></li>
-                       <li className="pl-2 border-l-2 border-zinc-500"><span className="font-semibold text-zinc-300">4. Standard Calculation (All Others):</span><br/><span className="text-emerald-400 font-mono text-[9px]">Result = PO Amount - Deduction Amount</span></li>
+                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[320px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
+                     <div className="font-bold text-white text-[11px] border-b border-zinc-600 pb-1">Purchase Orders (Company Coverage)</div>
+                     <div className="text-zinc-300">This column displays the calculated PO company coverage. Where a deduction exists, it is applied to determine the final amount covered by the company.</div>
+                     <ul className="list-disc pl-4 flex flex-col gap-1 mt-1 text-zinc-300">
+                       <li><span className="font-semibold text-white">MCLOO Drivers:</span> The company covers 30% of the calculated PO amount.</li>
+                       <li><span className="font-semibold text-white">TPOG Contracts:</span> Displays the portion paid by the Franchise.</li>
+                       <li><span className="font-semibold text-white">Exclusions:</span> Certain items are excluded from company coverage based on the contract type. You can manage these exclusions in <span className="text-emerald-400 font-semibold">Structural Settings &rarr; PO Rules</span>.</li>
                      </ul>
                    </div>
                  </th>
@@ -1709,7 +1708,7 @@ const MasterTable: React.FC<{
                    Recruiting {sortConfig?.key === 'totalRecruiting' ? (sortConfig.direction === 'asc' ? '↑' : '↓') : ''}
                   <div className="fixed hidden group-hover:block z-[9999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] font-normal normal-case text-left w-[300px] pointer-events-none flex flex-col gap-1.5 whitespace-normal break-words dynamic-tooltip">
                      <div className="font-bold text-white mb-0.5">Recruiting Cost Calculation:</div>
-                     <div>Total recruiting cost from financial import for the specific contract type (CPM, MCLOO, OO, POG) divided by total effective non-teams for that contract, then multiplied by the individual driver's effective non-teams count.</div>
+                     <div>Total recruiting cost from financial import for the specific contract type divided by total effective non-teams for that contract, then multiplied by the individual driver's effective non-teams count.</div>
                     
                    </div>
                  </th>
@@ -1835,7 +1834,7 @@ const MasterTable: React.FC<{
          {groupBy === 'Franchise' && sortedData.map(dataItem => {
              const franchiseName = dataItem.original;
              if (isAverageView && franchiseName === 'Unassigned') return null;
-             const displayLabel = (!franchiseName || franchiseName === 'Unassigned') ? 'No Franchise' : franchiseName;
+             const displayLabel = franchiseName;
              const franDrivers = dataItem.drvs;
              const metrics = dataItem.metrics;
              const w4 = dataItem.w4;
@@ -1872,7 +1871,7 @@ const MasterTable: React.FC<{
          {groupBy === 'Team' && sortedData.map(dataItem => {
             const teamName = dataItem.original;
             if (isAverageView && teamName === 'Unassigned') return null;
-            const displayLabel = (!teamName || teamName === 'Unassigned') ? 'No Team' : teamName;
+            const displayLabel = teamName;
             const teamDrivers = dataItem.drvs;
             const metrics = dataItem.metrics;
             const w4 = dataItem.w4;
@@ -3659,7 +3658,7 @@ const PnLView: React.FC<PnLViewProps> = ({
 
       orphanComps.forEach(compId => {
           const getOrphExp = (n: string) => {
-              const exps = fixedExpenses.filter(e => e.name.toLowerCase().includes(n.toLowerCase()) && e.companyId === compId && (!e.valid_from || new Date(e.valid_from).getTime() <= currTimeOrph) && (!e.valid_to || new Date(e.valid_to).getTime() >= currTimeOrph));
+              const exps = fixedExpenses.filter(e => e.name === n && e.companyId === compId && (!e.valid_from || new Date(e.valid_from).getTime() <= currTimeOrph) && (!e.valid_to || new Date(e.valid_to).getTime() >= currTimeOrph));
               if (!exps.length) return 0;
               return getWeeklyAmountFromExp(exps[0].amount || 0, exps[0]);
           };
@@ -3849,8 +3848,8 @@ if (isCategorical) {
   }, [displayedDrivers, tableFilters]);
 
 
-  const uniqueTeams = useMemo(() => Array.from(new Set(displayedDrivers.map(d => d.teamId))).filter(Boolean).sort(), [displayedDrivers]);
-  const uniqueFranchises = useMemo(() => Array.from(new Set(displayedDrivers.map(d => d.franchiseId))).filter(Boolean).sort(), [displayedDrivers]);
+  const uniqueTeams = useMemo(() => Array.from(new Set(displayedDrivers.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')))).sort(), [displayedDrivers]);
+  const uniqueFranchises = useMemo(() => Array.from(new Set(displayedDrivers.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')))).sort(), [displayedDrivers]);
   const uniqueContracts = useMemo(() => Array.from(new Set(displayedDrivers.map(d => d.contractType))).filter(Boolean).sort(), [displayedDrivers]);
   const uniqueCompanies = useMemo(() => {
     const companies = Array.from(new Set(displayedDrivers.map(d => (d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId)));
@@ -3885,6 +3884,22 @@ if (isCategorical) {
  
 
   const calculateMetrics = useCallback((initialDrivers: DriverPerformance[], isDriverView: boolean = false) => {
+    const latestDatesByDriver = new Map<string, string>();
+    initialDrivers.forEach(d => {
+      if ((d.effectiveDrivers || 0) === 0) return;
+      const name = d.name || 'Unknown';
+      const dDate = d.payDate || (d as any).week_ending || '';
+      if (!latestDatesByDriver.has(name) || dDate > (latestDatesByDriver.get(name) || '')) {
+        latestDatesByDriver.set(name, dDate);
+      }
+    });
+    initialDrivers.forEach(d => {
+      const name = d.name || 'Unknown';
+      if (!latestDatesByDriver.has(name)) {
+        latestDatesByDriver.set(name, d.payDate || (d as any).week_ending || '');
+      }
+    });
+
     let rawEffCount = 0;
     let rawEffNonTeams = 0;
     let rawEffTrailers = 0;
@@ -4436,6 +4451,16 @@ if (isCategorical) {
                 drvCpmAdj = dRevCpm * dMiles;
                 drvFuelAdj = fSaved;
             }
+        }
+
+        const isLatest = (d.payDate || (d as any).week_ending || '') === latestDatesByDriver.get(d.name || 'Unknown');
+        if (!isLatest) {
+            drvBalanceChange = 0;
+            drvEscrowAdj = 0;
+            drvPoDeductions = 0;
+            drvPoSettle = 0;
+            drvNegNetPay = 0;
+            drvBalanceSettle = 0;
         }
 
         drvRevBase *= mileCapFactor;

@@ -92,6 +92,9 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
                  netIncome -= fNet;
              }
              
+             const unassignedDrivers = dateDrivers.filter((d: any) => d.companyId === 'UNRECONCILED' || !d.companyId || d.companyId === 'Unassigned' || d.contractType === 'Unassigned');
+             const unassignedMetrics = unassignedDrivers.length > 0 ? calculateMetrics(unassignedDrivers, false) : null;
+
              return {
                  netIncome,
                  revCollected: rawMetrics.pnlCompanyPay !== undefined ? rawMetrics.pnlCompanyPay : rawMetrics.companyPay,
@@ -101,7 +104,9 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
                  po: rawMetrics.pnlTotalPOCov !== undefined ? rawMetrics.pnlTotalPOCov : rawMetrics.totalPOCov,
                  tolls: rawMetrics.pnlTolls !== undefined ? rawMetrics.pnlTolls : rawMetrics.tolls,
                  dispatcherPay: rawMetrics.dispatcherPay,
-                 recruiting: rawMetrics.pnlTotalRecruiting !== undefined ? rawMetrics.pnlTotalRecruiting : rawMetrics.totalRecruiting
+                 recruiting: rawMetrics.pnlTotalRecruiting !== undefined ? rawMetrics.pnlTotalRecruiting : rawMetrics.totalRecruiting,
+                 unassignedPo: unassignedMetrics ? (unassignedMetrics.pnlTotalPOCov !== undefined ? unassignedMetrics.pnlTotalPOCov : unassignedMetrics.totalPOCov) : 0,
+                 unassignedTolls: unassignedMetrics ? (unassignedMetrics.pnlTolls !== undefined ? unassignedMetrics.pnlTolls : unassignedMetrics.tolls) : 0
              };
         };
 
@@ -130,16 +135,17 @@ const WeekOverWeekCard = ({ enrichedDrivers, calculateMetrics, selectedDate, tab
         { key: 'po', label: 'PO', isExpense: true, icon: ClipboardList },
         { key: 'tolls', label: 'Tolls', isExpense: true, icon: Ticket },
         { key: 'dispatcherPay', label: 'Dispatcher Pay', isExpense: true, icon: Headset },
-        { key: 'recruiting', label: 'Recruiting', isExpense: true, icon: UserPlus }
+        { key: 'recruiting', label: 'Recruiting', isExpense: true, icon: UserPlus },
+        { key: 'unassignedPo', label: 'Unassigned PO', isExpense: true, icon: ClipboardList },
+        { key: 'unassignedTolls', label: 'Unassigned Tolls', isExpense: true, icon: Ticket }
     ];
 
     return (
         <div className="w-full xl:w-[220px] bg-zinc-900 border border-zinc-800 rounded-lg px-2 pb-2 flex flex-col gap-2 overflow-y-auto min-h-0 flex-shrink-0">
            <div className="flex items-center justify-between mb-1 sticky top-0 bg-zinc-900 z-10 pt-2 pb-1 border-b border-zinc-800/50">
-               <div className="flex items-center gap-1 text-[9px] font-bold text-zinc-100 uppercase tracking-wider">
-                   <TrendingUp size={12} className="text-amber-500" />
-                   Week-over-Week
-               </div>
+               <h4 className="text-[10px] font-bold text-zinc-500 uppercase flex items-center gap-1">
+                   <TrendingUp size={12} className="text-emerald-500" /> Week-over-Week
+               </h4>
                <div className="group/wowinfo relative flex items-center cursor-help">
                    <Info size={12} className="text-zinc-500 hover:text-zinc-300 transition-colors" />
                    <div className="absolute hidden group-hover/wowinfo:block z-[99999] bg-zinc-800 border border-zinc-500 text-zinc-200 p-2 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[200px] pointer-events-none top-full right-0 mt-1 whitespace-normal break-words font-normal">

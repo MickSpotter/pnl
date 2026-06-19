@@ -59,6 +59,14 @@ const DropdownMultiSelect = ({ options, selected, onChange, placeholder }: any) 
             />
           </div>
           <div className="overflow-y-auto flex flex-col gap-0.5">
+            {selected.length > 0 && (
+              <div 
+                onClick={() => onChange([])}
+                className="px-2 py-1.5 hover:bg-zinc-800 rounded cursor-pointer text-[10px] text-rose-400 font-bold shrink-0 border-b border-zinc-800/50 mb-0.5"
+              >
+                Clear all
+              </div>
+            )}
             {filteredOptions.map((opt: string) => (
               <label key={opt} className="flex items-center gap-2 px-2 py-1.5 hover:bg-zinc-800 rounded cursor-pointer text-[10px] text-zinc-300 shrink-0">
                 <input 
@@ -118,6 +126,14 @@ const DropdownSingleSelect = ({ options, selected, onChange, placeholder }: any)
             />
           </div>
           <div className="overflow-y-auto flex flex-col gap-0.5">
+            {selected.length > 0 && placeholder !== 'Select field...' && (
+              <div 
+                onClick={() => { onChange([]); setIsOpen(false); setSearch(''); }}
+                className="px-2 py-1.5 hover:bg-zinc-800 rounded cursor-pointer text-[10px] text-rose-400 font-bold shrink-0 border-b border-zinc-800/50 mb-0.5"
+              >
+                Clear all
+              </div>
+            )}
             {filteredOptions.map((opt: string) => (
               <div
                 key={opt}
