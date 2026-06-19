@@ -14,6 +14,7 @@ import {
     Eye,
     EyeOff
   } from 'lucide-react';
+  import { Turnstile } from '@marsidev/react-turnstile';
 import DriverTable from './components/DriverTable';
 import DispatcherTable from './components/DispatcherTable';
 import FranchiseTable from './components/FranchiseTable';
@@ -707,7 +708,7 @@ const App: React.FC = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [curtainActive, setCurtainActive] = useState(false);
   const [activeTip, setActiveTip] = useState(() => Math.floor(Math.random() * LOADING_TIPS.length));
-
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
   useEffect(() => {
     if (session) return;
     const interval = setInterval(() => {
@@ -738,18 +739,32 @@ const App: React.FC = () => {
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
-    setLoginError('');
-    setCurtainActive(true);
-    
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) {
-      setLoginError(error.message);
-      setCurtainActive(false);
-      setLoading(false);
+  e.preventDefault();
+  setLoading(true);
+  setLoginError('');
+
+  if (!captchaToken) {
+    setLoginError('Please wait for the security check (CAPTCHA).');
+    setLoading(false);
+    return;
+  }
+
+  setCurtainActive(true);
+  
+  const { error } = await supabase.auth.signInWithPassword({ 
+    email, 
+    password,
+    options: {
+      captchaToken: captchaToken
     }
-  };
+  });
+
+  if (error) {
+    setLoginError(error.message);
+    setCurtainActive(false);
+    setLoading(false);
+  }
+};
 
   if (authChecking) {
     return <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-zinc-300">Loading...</div>;
@@ -787,7 +802,13 @@ const App: React.FC = () => {
                   </button>
                 </div>
               </div>
-              <button type="submit" disabled={loading || curtainActive} className="w-full bg-[#111827] hover:bg-zinc-800 text-white text-sm font-semibold py-3.5 rounded-lg transition-all mt-6 shadow-md disabled:opacity-50 flex justify-center items-center gap-3">
+              <div className="flex justify-center mt-4">
+                <Turnstile
+                  siteKey={import.meta.env.VITE_TURNSTILE_SITE_KEY}
+                  onSuccess={(token) => setCaptchaToken(token)}
+                />
+              </div>
+              <button type="submit" disabled={loading || curtainActive || !captchaToken} className="w-full bg-[#111827] hover:bg-zinc-800 text-white text-sm font-semibold py-3.5 rounded-lg transition-all mt-6 shadow-md disabled:opacity-50 flex justify-center items-center gap-3">
                 {loading ? 'Authenticating...' : 'Secure Sign In'}
                 {!loading && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>}
               </button>
