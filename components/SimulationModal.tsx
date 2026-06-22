@@ -44,8 +44,25 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   drivers
 }) => {
   const [localSimConfig, setLocalSimConfig] = React.useState<SimulationConfig>(simulationConfig);
-  const [localFixedExpenses, setLocalFixedExpenses] = React.useState<ExpenseItem[]>(fixedExpenses);
-  const [localConfigContracts, setLocalConfigContracts] = React.useState<ConfigContract[]>(configContracts || []);
+  
+  const getInitialFixedExpenses = () => [...fixedExpenses].filter(e => e.contract_type !== 'TPOG WITH FRANCHISE' && (e as any).contractType !== 'TPOG WITH FRANCHISE' && e.contract_type !== 'OO WITH FRANCHISE' && (e as any).contractType !== 'OO WITH FRANCHISE').map(e => {
+      const mapped: any = { ...e, original_valid_from: e.valid_from };
+      if (mapped.name === 'Liability Insurance') mapped.name = 'Liability Insurance (Auto)';
+      if (mapped.contract_type) mapped.contractType = mapped.contract_type;
+      if (Number(mapped.amount || 0) === 0 && (mapped.truck_reduction || mapped.trailer_reduction)) mapped.is_dummy = true;
+      return mapped;
+  }).sort((a, b) => {
+      if (a.companyId === 'ALL' && b.companyId !== 'ALL') return -1;
+      if (a.companyId !== 'ALL' && b.companyId === 'ALL') return 1;
+      const dateA = a.valid_from ? new Date(a.valid_from).getTime() : 0;
+      const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0;
+      return dateB - dateA;
+  });
+
+  const getInitialContracts = () => (configContracts || []).filter(c => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE');
+
+  const [localFixedExpenses, setLocalFixedExpenses] = React.useState<ExpenseItem[]>(getInitialFixedExpenses);
+  const [localConfigContracts, setLocalConfigContracts] = React.useState<ConfigContract[]>(getInitialContracts);
   const [localRevenues, setLocalRevenues] = React.useState<FixedRevenueItem[]>([]);
   const [localPoRules, setLocalPoRules] = React.useState<PORule[]>([]);
   const [isSaving, setIsSaving] = React.useState(false);

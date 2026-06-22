@@ -185,6 +185,12 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
   // Unified Filter State: "ALL" | "CMP:id" | "FR:id" | "TM:id"
   const [globalFilter, setGlobalFilter] = useState<any>({ contracts: [], franchises: [], companies: [], teams: [], drivers: [] });
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+
+  const handleConfirmLogout = async () => {
+    await supabase.auth.signOut();
+    window.location.reload();
+  };
   
   // -- STATE MANAGEMENT --
   
@@ -625,7 +631,7 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
             )}
             
             <button 
-              onClick={() => supabase.auth.signOut()} 
+              onClick={() => setShowLogoutConfirm(true)} 
               className={`flex items-center text-zinc-500 hover:text-rose-400 transition-colors w-full ${isSidebarCollapsed ? 'justify-center py-2' : 'gap-2 text-[10px] py-1'}`}
             >
               <LogOut size={14} />
@@ -690,6 +696,30 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
           </div>
         </div>
       </main>
+
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-lg shadow-2xl max-w-sm w-full mx-4">
+            <h3 className="text-lg font-bold text-white mb-2">Sign Out</h3>
+            <p className="text-zinc-400 text-sm mb-6">Are you sure you want to sign out of the portal?</p>
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => setShowLogoutConfirm(false)}
+                className="px-4 py-2 rounded text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmLogout}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-bold transition-colors shadow-lg shadow-rose-900/20"
+              >
+                Yes, Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
     </>
   );
@@ -802,44 +832,37 @@ const App: React.FC = () => {
       }
     };
 
-    const initAuth = async () => {
-      let isResolved = false;
-      
-      const timeout = setTimeout(() => {
-        if (!isResolved) {
-          setAuthChecking(false);
-          setSession(null);
-        }
-      }, 3000);
+    let authSubscription: any = null;
 
+    const setupAuth = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         await checkAndEnforceMFA(session);
-        isResolved = true;
-        clearTimeout(timeout);
       } catch (err) {
-        isResolved = true;
-        clearTimeout(timeout);
         setAuthChecking(false);
       }
+
+      const { data } = supabase.auth.onAuthStateChange(async (_event, session) => {
+        if (_event === 'SIGNED_IN') {
+          await checkAndEnforceMFA(session);
+        } else if (_event === 'SIGNED_OUT' || !session) {
+          setCurtainActive(false);
+          setLoading(false);
+          setSession(null);
+          setRequiresMFA(false);
+          setMfaQrCode(null);
+          setMfaCode('');
+          setAuthChecking(false);
+        }
+      });
+      authSubscription = data.subscription;
     };
 
-    initAuth();
+    setupAuth();
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
-      if (_event === 'SIGNED_IN') {
-        await checkAndEnforceMFA(session);
-      } else if (_event === 'SIGNED_OUT' || !session) {
-        setCurtainActive(false);
-        setLoading(false);
-        setSession(null);
-        setRequiresMFA(false);
-        setMfaQrCode(null);
-        setMfaCode('');
-      }
-    });
-
-    return () => subscription.unsubscribe();
+    return () => {
+      if (authSubscription) authSubscription.unsubscribe();
+    };
   }, []);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -908,17 +931,7 @@ const handleVerifyMFA = async (e: React.FormEvent) => {
 };
 
   if (authChecking) {
-    return (
-      <div className="min-h-screen bg-zinc-950 flex flex-col items-center justify-center text-zinc-300">
-        <div className="mb-6 animate-pulse">Loading...</div>
-        <button 
-          onClick={() => { localStorage.clear(); window.location.reload(); }}
-          className="px-4 py-2 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-500 hover:text-white transition-colors"
-        >
-          Force Reset Session
-        </button>
-      </div>
-    );
+    return <LoadingScreen progress={0} />;
   }
 
   if (!session || requiresMFA) {

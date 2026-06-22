@@ -75,7 +75,7 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                     className="w-full md:w-48 px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 focus:border-emerald-500 outline-none"
                 >
                     {contracts.map(c => (
-                        <option key={c} value={c}>{c}</option>
+                        <option key={c} value={c} className="bg-zinc-900 text-zinc-200">{c}</option>
                     ))}
                 </select>
                 <div className="group relative cursor-help text-zinc-500 hover:text-orange-500 transition-colors ml-auto">
@@ -117,9 +117,9 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                                                 onChange={(e) => handleTpogChange(category, e.target.value)}
                                                 className="px-2 py-1 text-[10px] w-max border rounded shadow-sm outline-none font-semibold bg-zinc-900 border-zinc-700 text-zinc-300 focus:border-emerald-500"
                                             >
-                                                <option value="Only TPOG with franchises">Only TPOG with franchises</option>
-                                                <option value="Only TPOG without franchises">Only TPOG without franchises</option>
-                                                <option value="ALL TPOG">ALL TPOG</option>
+                                                <option value="Only TPOG with franchises" className="bg-zinc-900 text-zinc-300">Only TPOG with franchises</option>
+                                                <option value="Only TPOG without franchises" className="bg-zinc-900 text-zinc-300">Only TPOG without franchises</option>
+                                                <option value="ALL TPOG" className="bg-zinc-900 text-zinc-300">ALL TPOG</option>
                                             </select>
                                         )}
                                     </div>
@@ -132,8 +132,8 @@ export const PORules: React.FC<PORulesProps> = ({ availableCategories, poRules, 
                                             status === 'Include' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-rose-500/10 text-rose-500 border-rose-500/30'
                                         }`}
                                     >
-                                        <option value="Include">Included</option>
-                                        <option value="Exclude">Excluded</option>
+                                        <option value="Include" className="bg-zinc-900 text-emerald-500">Included</option>
+                                        <option value="Exclude" className="bg-zinc-900 text-rose-500">Excluded</option>
                                     </select>
                                 </div>
                             </div>

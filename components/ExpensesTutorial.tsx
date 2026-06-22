@@ -60,6 +60,11 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
   const [fixRevDropdownOpen, setFixRevDropdownOpen] = React.useState(false);
   const [fixRevTargetOpen, setFixRevTargetOpen] = React.useState(false);
 
+  const [poSearch, setPoSearch] = React.useState('');
+  const [poContract, setPoContract] = React.useState('MCLOO');
+  const [poStatus, setPoStatus] = React.useState('Include');
+  const [poTpogScope, setPoTpogScope] = React.useState('ALL TPOG');
+
       const contractSteps = [
       { title: 'Tutorial Overview', text: "Let's learn how to configure Contract Rules step by step.", focus: null, x: 50, y: 35, setup: () => { setConExpanded(false); setConNewRule(false); setConGross(''); setConMargin(''); setConValidFrom(''); setConValidTo(''); setConTypeOpen(false); } },
       { title: 'Step 1: Expand Contract', text: "First, open the contract type so you can see its rule history and formula rows.", focus: 'conChevron', x: 45, y: 45, setup: () => { setConExpanded(false); setConNewRule(false); setConGross(''); setConMargin(''); setConValidFrom(''); setConValidTo(''); setConTypeOpen(false); } },
@@ -177,7 +182,17 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
            { title: 'Done!', text: "You now understand how truck and trailer price reductions work.", focus: null, x: 50, y: 50, setup: () => { setExpExpanded(true); setReductionModalOpen(false); } }
   ];
 
-  const steps = localTab === 'contracts' ? contractSteps : (localTab === 'dispatcher' ? dispatcherSteps : (localTab === 'fixed_revenue' ? fixedRevenueSteps : (localTab === 'cpm' ? cpmSteps : (localTab === 'pnl' ? pnlSteps : (localTab === 'fuel_rebate' ? fuelRebateSteps : fixedSteps)))));
+  const poRulesSteps = [
+      { title: 'Tutorial Overview', text: "Let's learn how to configure PO Rules step by step.", focus: null, x: 50, y: 50, setup: () => { setPoContract('MCLOO'); setPoSearch(''); setPoStatus('Include'); setPoTpogScope('ALL TPOG'); } },
+      { title: 'Step 1: Select Contract', text: "Choose the contract type you want to configure rules for. Let's select TPOG.", focus: 'poContractSelect', x: 65, y: 60, setup: () => { setPoContract('TPOG'); setPoSearch(''); setPoStatus('Include'); setPoTpogScope('ALL TPOG'); } },
+      { title: 'Step 2: Search Categories', text: "You can search for specific PO categories using this search bar.", focus: 'poSearchInput', x: 65, y: 60, setup: () => { setPoContract('TPOG'); setPoSearch('RECRUITING'); setPoStatus('Include'); setPoTpogScope('ALL TPOG'); } },
+      { title: 'Step 3: Toggle Status', text: "Change the status to Exclude to remove this category from the PNL calculation for this contract.", focus: 'poStatusSelect', x: 35, y: 65, setup: () => { setPoContract('TPOG'); setPoSearch('RECRUITING'); setPoStatus('Exclude'); setPoTpogScope('ALL TPOG'); } },
+      { title: 'Step 4: TPOG Scope', text: "When excluding a category for TPOG, you can specify if this exclusion applies to all TPOG, or just franchises.", focus: 'poTpogScope', x: 35, y: 65, setup: () => { setPoContract('TPOG'); setPoSearch('RECRUITING'); setPoStatus('Exclude'); setPoTpogScope('Only TPOG with franchises'); } },
+      { title: 'Step 5: Save Changes', text: "Click Save and Close to apply the PO Rules configuration.", focus: 'saveBtn', x: 45, y: 45, setup: () => { setPoContract('TPOG'); setPoSearch('RECRUITING'); setPoStatus('Exclude'); setPoTpogScope('Only TPOG with franchises'); } },
+      { title: 'Done!', text: "You now know how to configure PO Rules.", focus: null, x: 50, y: 50, setup: () => { setPoContract('TPOG'); setPoSearch('RECRUITING'); setPoStatus('Exclude'); setPoTpogScope('Only TPOG with franchises'); } }
+  ];
+
+  const steps = localTab === 'contracts' ? contractSteps : (localTab === 'dispatcher' ? dispatcherSteps : (localTab === 'fixed_revenue' ? fixedRevenueSteps : (localTab === 'cpm' ? cpmSteps : (localTab === 'pnl' ? pnlSteps : (localTab === 'fuel_rebate' ? fuelRebateSteps : (localTab === 'po_rules' ? poRulesSteps : fixedSteps))))));
 
   React.useEffect(() => {
     if (!isOpen) {
@@ -223,6 +238,10 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
       setFixRevDropdownOpen(false);
       setFixRevTargetOpen(false);
       setReductionModalOpen(false);
+      setPoSearch('');
+      setPoContract('MCLOO');
+      setPoStatus('Include');
+      setPoTpogScope('ALL TPOG');
       setMessage({ title: '', text: '', visible: false, x: 50, y: 50 });
       return;
     }
@@ -252,7 +271,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
         {focusArea && !reductionModalOpen && <div className="absolute inset-0 z-[9998] bg-black/20 pointer-events-none transition-all duration-300"></div>}
         
         
-                              {(localTab === 'fixed' || localTab === 'contracts' || localTab === 'dispatcher' || localTab === 'fixed_revenue' || localTab === 'cpm' || localTab === 'pnl' || localTab === 'fuel_rebate') && (
+                              {(localTab === 'fixed' || localTab === 'contracts' || localTab === 'dispatcher' || localTab === 'fixed_revenue' || localTab === 'cpm' || localTab === 'pnl' || localTab === 'fuel_rebate' || localTab === 'po_rules') && (
           <div
             className="absolute z-[10000] transition-all duration-500 ease-in-out bg-zinc-900 border border-emerald-500 shadow-[0_10px_40px_rgba(16,185,129,0.4)] p-4 rounded-lg w-[320px] pointer-events-auto flex flex-col gap-3"
             style={{ left: `${steps[step]?.x || 50}%`, top: `${steps[step]?.y || 50}%`, transform: 'translate(-50%, -50%)' }}
@@ -268,7 +287,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
             </div>
           </div>
         )}
-                {(localTab !== 'fixed' && localTab !== 'contracts' && localTab !== 'dispatcher' && localTab !== 'fixed_revenue' && localTab !== 'cpm' && localTab !== 'pnl' && localTab !== 'fuel_rebate') && (
+                {(localTab !== 'fixed' && localTab !== 'contracts' && localTab !== 'dispatcher' && localTab !== 'fixed_revenue' && localTab !== 'cpm' && localTab !== 'pnl' && localTab !== 'fuel_rebate' && localTab !== 'po_rules') && (
            <div className="absolute z-[10000] transition-all duration-500 ease-out bg-zinc-900 border border-emerald-500 p-4 rounded-lg shadow-[0_10px_40px_rgba(16,185,129,0.4)] min-w-[280px] max-w-sm pointer-events-none" style={{ left: '50%', top: '40%', transform: 'translate(-50%, -50%)' }}>
             <h4 className="text-emerald-500 font-bold text-sm mb-1">{localTab.toUpperCase()}</h4>
             <p className="text-zinc-300 text-xs leading-relaxed">Explore the structure mirroring exactly what you'll see in the live app.</p>
@@ -299,6 +318,7 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'cpm' ? 'border-pink-500 text-pink-500' : 'border-transparent text-zinc-500'}`}>CPM REVENUE</div>
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'pnl' ? 'border-cyan-500 text-cyan-500' : 'border-transparent text-zinc-500'}`}>PNL CALCULATION</div>
             <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'fuel_rebate' ? 'border-rose-500 text-rose-500' : 'border-transparent text-zinc-500'}`}>FUEL REBATE</div>
+            <div className={`px-4 py-2 text-xs font-bold uppercase tracking-wider border-b-2 whitespace-nowrap ${localTab === 'po_rules' ? 'border-orange-500 text-orange-500' : 'border-transparent text-zinc-500'}`}>PO RULES</div>
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 bg-zinc-950/30">
@@ -1172,6 +1192,62 @@ const TutorialModal: React.FC<TutorialModalProps> = ({ isOpen, onClose, activeTa
                         <div className={`px-3 py-2 text-left text-[10px] font-bold text-amber-500 hover:bg-zinc-800 transition-colors ${focusArea === 'frAddCompanyItem' ? 'ring-2 ring-inset ring-emerald-500 bg-zinc-800' : ''}`}>Company</div>
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {localTab === 'po_rules' && (
+              <div className="w-full relative">
+                <div className="bg-zinc-950/50 p-4 rounded-lg border border-zinc-800 text-sm flex flex-col min-h-[400px]">
+                  <div className="flex items-center gap-3 mb-4 shrink-0 relative z-[60]">
+                    <div className={`w-full md:w-48 relative ${focusArea === 'poSearchInput' ? 'z-[9999] ring-2 ring-emerald-500 rounded bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
+                      <input type="text" placeholder="Search..." value={poSearch} readOnly className="w-full px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 outline-none" />
+                    </div>
+                    <div className={`w-full md:w-48 relative ${focusArea === 'poContractSelect' ? 'z-[9999] ring-2 ring-emerald-500 rounded bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
+                      <select value={poContract} readOnly className="w-full px-2 py-1.5 text-xs bg-zinc-900 border border-zinc-700 rounded text-zinc-200 outline-none appearance-none">
+                        <option value={poContract}>{poContract}</option>
+                      </select>
+                      <ChevronDown size={14} className="absolute right-2 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+                    </div>
+                    <div className="group relative cursor-help text-zinc-500 ml-auto">
+                      <Info size={16} />
+                    </div>
+                  </div>
+                  
+                  <div className="flex flex-col relative flex-1">
+                    <div className="sticky top-0 z-50 bg-[#09090b] flex items-center justify-between pb-2 pt-2 border-b border-zinc-800 font-bold text-zinc-500 text-[10px] uppercase tracking-wider">
+                      <div>Category</div>
+                      <div className="flex items-center justify-end gap-6">
+                        {poContract === 'TPOG' && <div className="w-56 text-center">TPOG Scope</div>}
+                        <div className="w-24 text-center">Action</div>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between py-2 border-b border-zinc-800/50">
+                      <div className="text-zinc-300 font-medium text-xs">RECRUITING</div>
+                      <div className="flex items-center justify-end gap-6">
+                        {poContract === 'TPOG' && (
+                          <div className="w-56 flex justify-center">
+                            {poStatus === 'Exclude' && (
+                              <div className={`relative ${focusArea === 'poTpogScope' ? 'z-[9999] ring-2 ring-emerald-500 rounded bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
+                                <select value={poTpogScope} readOnly className="px-2 py-1 text-[10px] w-max border rounded shadow-sm outline-none font-semibold bg-zinc-900 border-zinc-700 text-zinc-300 appearance-none pr-6">
+                                  <option value={poTpogScope}>{poTpogScope}</option>
+                                </select>
+                                <ChevronDown size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-zinc-500 pointer-events-none" />
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="w-24 flex justify-center">
+                          <div className={`w-full relative ${focusArea === 'poStatusSelect' ? 'z-[9999] ring-2 ring-emerald-500 rounded bg-zinc-900 shadow-[0_0_15px_rgba(16,185,129,0.3)]' : ''}`}>
+                            <select value={poStatus} readOnly className={`px-2 py-1 text-[10px] border rounded shadow-sm outline-none font-bold w-full text-center uppercase tracking-wider appearance-none ${poStatus === 'Include' ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : 'bg-rose-500/10 text-rose-500 border-rose-500/30'}`}>
+                              <option value={poStatus}>{poStatus === 'Include' ? 'Included' : 'Excluded'}</option>
+                            </select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
