@@ -341,6 +341,7 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
             franchiseId: row.franchise_name,
             dispatcherId: row.stub_dispatcher,
             teamId: row.stub_team,
+            truck: row.truck || '-',
             status: String(row.status || '').toLowerCase().trim().includes('term') ? DriverStatus.TERMINATED : DriverStatus.ACTIVE,
             weeksActive: 1,
             streakWeeks: 0,

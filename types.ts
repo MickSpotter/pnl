@@ -93,6 +93,7 @@ export interface DriverPerformance {
   franchiseId: string;
   dispatcherId: string;
   teamId: string;
+  truck?: string;
   status: DriverStatus;
   weeksActive: number;
   streakWeeks: number;

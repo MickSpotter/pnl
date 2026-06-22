@@ -110,6 +110,16 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
   const [tutorialState, setTutorialState] = React.useState<{ isOpen: boolean, type: 'rules' | 'reductions' | null }>({ isOpen: false, type: null });
   const [isTopTutorialDropdownOpen, setIsTopTutorialDropdownOpen] = React.useState(false);
   const [isTabTutorialDropdownOpen, setIsTabTutorialDropdownOpen] = React.useState(false);
+  const [prevIsOpen, setPrevIsOpen] = React.useState(isOpen);
+
+  if (isOpen && !prevIsOpen) {
+      setLocalSimConfig(simulationConfig);
+      setLocalFixedExpenses(getInitialFixedExpenses());
+      setLocalConfigContracts(getInitialContracts());
+      setPrevIsOpen(true);
+  } else if (!isOpen && prevIsOpen) {
+      setPrevIsOpen(false);
+  }
 
   const reductionNoteRef = React.useRef<HTMLDivElement>(null);
       const [isBoldActive, setIsBoldActive] = React.useState(false);
@@ -288,26 +298,6 @@ const fixedExpenseNames = Array.from(new Set([
 
  React.useEffect(() => {
         if (isOpen) {
-          setLocalSimConfig(simulationConfig);
-          setLocalFixedExpenses([...fixedExpenses].filter(e => e.contract_type !== 'TPOG WITH FRANCHISE' && (e as any).contractType !== 'TPOG WITH FRANCHISE' && e.contract_type !== 'OO WITH FRANCHISE' && (e as any).contractType !== 'OO WITH FRANCHISE').map(e => {
-              const mapped: any = { ...e, original_valid_from: e.valid_from };
-              if (mapped.name === 'Liability Insurance') mapped.name = 'Liability Insurance (Auto)';
-              if (mapped.contract_type) {
-                  mapped.contractType = mapped.contract_type;
-              }
-              if (Number(mapped.amount || 0) === 0 && (mapped.truck_reduction || mapped.trailer_reduction)) {
-                  mapped.is_dummy = true;
-              }
-              return mapped;
-          }).sort((a, b) => {
-              if (a.companyId === 'ALL' && b.companyId !== 'ALL') return -1;
-              if (a.companyId !== 'ALL' && b.companyId === 'ALL') return 1;
-              const dateA = a.valid_from ? new Date(a.valid_from).getTime() : 0;
-              const dateB = b.valid_from ? new Date(b.valid_from).getTime() : 0;
-              return dateB - dateA;
-          }));
-          setLocalConfigContracts((configContracts || []).filter(c => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE'));
-
           const fetchFinData = async () => {
              const { data: importData } = await supabase.from('finImport').select('*').order('week_ending', { ascending: false });
              const { data: perUnitData } = await supabase.from('fixed_costs').select('*').order('week_ending', { ascending: false });
@@ -340,7 +330,7 @@ const fixedExpenseNames = Array.from(new Set([
           };
           fetchFinData();
     }
-  }, [isOpen, simulationConfig, fixedExpenses, configContracts]);
+  }, [isOpen]);
 
   if (!isOpen) return null;
 

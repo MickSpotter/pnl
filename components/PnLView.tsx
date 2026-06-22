@@ -409,18 +409,47 @@ const MasterTable: React.FC<{
 
     return [...rules].sort((a: any, b: any) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
   };
-  const uniqueContracts = Array.from(new Set(drivers.map(d => d.contractType || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const uniqueCompanies = Array.from(new Set(drivers.map(d => (d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const uniqueFranchises = Array.from(new Set(drivers.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const uniqueTeams = Array.from(new Set(drivers.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const uniqueDrivers = Array.from(new Set(drivers.map(d => (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned') ? 'Unassigned' : d.name))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
- const driverRows = [...drivers].map(d => {
+  const activeDriversForRows = useMemo(() => {
+    if (!selectedDate || selectedDate === 'ALL') return drivers;
+    let targetDate = selectedDate;
+    if (selectedDate === 'LATEST') {
+      const dates = Array.from(new Set(drivers.map(d => d.payDate))).filter(Boolean).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
+      targetDate = dates[0];
+    }
+    if (!targetDate) return drivers;
+    return drivers.filter(d => d.payDate === targetDate);
+  }, [drivers, selectedDate]);
+
+  const uniqueContracts = Array.from(new Set(activeDriversForRows.map(d => d.contractType || 'Unassigned'))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueCompanies = Array.from(new Set(activeDriversForRows.map(d => (d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueFranchises = Array.from(new Set(activeDriversForRows.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueTeams = Array.from(new Set(activeDriversForRows.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const uniqueDrivers = Array.from(new Set(activeDriversForRows.map(d => (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned') ? 'Unassigned' : d.name))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
+  const driverRows = [...activeDriversForRows].map(d => {
       const isUnassigned = (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned');
-      const compositeKey = isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`;
+      const compositeKey = isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`);
       return { ...d, _compositeKey: compositeKey, name: isUnassigned ? 'Unassigned' : d.name };
   }).reduce((acc, d) => {
       if (!acc.some((x: any) => x._compositeKey === d._compositeKey)) {
-          acc.push(d);
+          if (selectedDate === 'ALL' && d.name !== 'Unassigned') {
+              const allDriverRecords = drivers.filter((r: any) => r.name === d.name);
+              allDriverRecords.sort((a: any, b: any) => new Date(b.payDate).getTime() - new Date(a.payDate).getTime());
+              const latestReal = allDriverRecords.find((r: any) => !(r as any).isStub && r.companyId !== 'UNRECONCILED') || allDriverRecords[0];
+              if (latestReal) {
+                  acc.push({
+                      ...d,
+                      companyId: latestReal.companyId,
+                      teamId: latestReal.teamId,
+                      franchiseId: latestReal.franchiseId,
+                      dispatcherId: latestReal.dispatcherId,
+                      contractType: latestReal.contractType
+                  });
+              } else {
+                  acc.push(d);
+              }
+          } else {
+              acc.push(d);
+          }
       }
       return acc;
   }, [] as any[]).sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')).filter((d: any) => !searchQuery || String(d.name || 'Unassigned').toLowerCase().startsWith(searchQuery.toLowerCase()));
@@ -636,14 +665,14 @@ const MasterTable: React.FC<{
                                 groupBy === 'Company' ? ((d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId) :
                                 groupBy === 'Franchise' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')) :
                                 groupBy === 'Team' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')) : 
-                                (isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`);
+                                (isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`));
                     if (groupBy === 'Driver' && isUnassigned) key = 'Unassigned';
                     const safeKey = key || 'Unassigned';
         if (!map.has(safeKey)) map.set(safeKey, []);
         map.get(safeKey)!.push(d);
      });
      return map;
-  }, [drivers, groupBy]);
+  }, [drivers, groupBy, selectedDate]);
 
   const dynamicTotals = (() => {
         let rows: { name: string, drivers: DriverPerformance[] }[] = [];
@@ -703,7 +732,7 @@ const MasterTable: React.FC<{
         let drvs = type === 'Driver' ? (groupedDrivers.get((!item.name || String(item.name).toLowerCase() === 'unassigned' || String(item.name).toLowerCase() === 'unknown driver') ? 'Unassigned' : item._compositeKey) || []) : (groupedDrivers.get(name) || []);
         const metrics = getAdjustedGroupMetrics(drvs);
         const w4 = get4wMetrics(name);
-        const div = metrics.effNonTeamsCount > 0 ? metrics.effNonTeamsCount : metrics.effCount;
+        const div = Math.max(1, new Set(drvs.map((r: any) => r.payDate || r.week_ending)).size);
         return { original: item, name, drvs, metrics, w4, div };
      });
 
@@ -736,7 +765,7 @@ const MasterTable: React.FC<{
      return computedArr;
   }, [groupBy, uniqueCompanies, uniqueContracts, uniqueFranchises, uniqueTeams, driverRows, sortConfig, groupedDrivers, isAverageView, chartData]);
  const renderRowCells = (metrics: any, w4: any, isStub: boolean = false, rowName?: string, rowDrivers: DriverPerformance[] = []) => {
-    const div = metrics.effNonTeamsCount > 0 ? metrics.effNonTeamsCount : metrics.effCount;
+    const div = Math.max(1, new Set(rowDrivers.map((r: any) => r.payDate || r.week_ending)).size);
     const rowBalChange = metrics.pnlBalanceChange;
     return (
     <>
@@ -1208,7 +1237,7 @@ const MasterTable: React.FC<{
       entities.forEach((entity: any) => {
           let drvs = groupedDrivers.get(entity.key || 'Unassigned') || [];
           const m = getAdjustedGroupMetrics(drvs);
-          const div = m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount;
+          const div = Math.max(1, new Set(drvs.map((r: any) => r.payDate || r.week_ending)).size);
           const pb = m.poBreakdown || {};
           Object.keys(pb).forEach(k => allReasons.add(k));
           rowData.push({
@@ -1238,7 +1267,7 @@ const MasterTable: React.FC<{
                       pbDivided[k] = Number(pb[k]);
                       allReasons.add(k);
                   });
-                  const div = fMetrics.effNonTeamsCount > 0 ? fMetrics.effNonTeamsCount : fMetrics.effCount;
+                  const div = Math.max(1, new Set(tpogFranchiseDrivers.map((r: any) => r.payDate || r.week_ending)).size);
               rowData.push({
                   name: 'TPOG (Franchise PnL)',
                   breakdown: pbDivided,
@@ -1276,7 +1305,7 @@ const MasterTable: React.FC<{
         entities.forEach((entity: any) => {
             let drvs = groupedDrivers.get(entity.key || 'Unassigned') || [];
             const m = getAdjustedGroupMetrics(drvs);
-            const div = m.effNonTeamsCount > 0 ? m.effNonTeamsCount : m.effCount;
+            const div = Math.max(1, new Set(drvs.map((r: any) => r.payDate || r.week_ending)).size);
             
             const breakdown: any = {};
             columns.forEach(col => {
@@ -1309,7 +1338,7 @@ const MasterTable: React.FC<{
                 columns.forEach(col => {
                     breakdown[col] = fMetrics[col] || 0;
                 });
-                const div = fMetrics.effNonTeamsCount > 0 ? fMetrics.effNonTeamsCount : fMetrics.effCount;
+                const div = Math.max(1, new Set(tpogFranchiseDrivers.map((r: any) => r.payDate || r.week_ending)).size);
                 const totalExp = columns.reduce((sum, col) => sum + (breakdown[col] || 0), 0);
                 
                 rowData.push({
@@ -1972,8 +2001,8 @@ const MasterTable: React.FC<{
                   </td>
                   <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[100px]">{isMergedUnassigned ? '-' : (d.companyId === 'UNRECONCILED' ? '-' : (d.companyId || '-'))}</td>
                   <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.teamId || '-')}</td>
-                  <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.franchiseId || '-')}</td>
-                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.dispatcherId || '-')}</td>
+                  <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[120px]">{isMergedUnassigned ? '-' : (d.franchiseId || '-')}</td>
+                 <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[140px]">{isMergedUnassigned ? '-' : (d.dispatcherId || '-')}</td>
                   <td className="px-1 py-0.5 text-zinc-500 text-left font-sans truncate max-w-[80px]">{isMergedUnassigned ? '-' : (d.contractType || '-')}</td>
                   {renderRowCells(metrics, w4, isStub, displayLabel, drvRecords)}
                 </tr>
@@ -2015,7 +2044,7 @@ const MasterTable: React.FC<{
         <tfoot className="sticky bottom-0 z-40 hover:z-[70] bg-zinc-950 border-t-2 border-zinc-800 shadow-[0_-1px_0_rgba(255,255,255,0.1)]">
           <tr className="font-bold font-mono">
             {(() => {
-                const div = dynamicTotals.effNonTeamsCount > 0 ? dynamicTotals.effNonTeamsCount : dynamicTotals.effCount;
+                const div = Math.max(1, new Set((drivers || []).map((r: any) => r.payDate || r.week_ending)).size);
                 const footerBalChange = dynamicTotals.pnlBalanceChange;
                 const footerZeroMileDetails = (() => {
                   let count = 0;
@@ -3764,14 +3793,27 @@ const PnLView: React.FC<PnLViewProps> = ({
     const validDates = new Set(uniqueDates);
     if (!selectedDate || selectedDate === 'ALL') return enrichedDrivers.filter(d => validDates.has(d.payDate));
     if (selectedDate === 'LATEST') {
+      if (isAverageView && latestPayDate) {
+        return enrichedDrivers.filter(d => d.payDate <= latestPayDate && validDates.has(d.payDate));
+      }
       return latestPayDate ? enrichedDrivers.filter(d => d.payDate === latestPayDate) : enrichedDrivers.filter(d => validDates.has(d.payDate));
     }
+    if (isAverageView) {
+      return enrichedDrivers.filter(d => d.payDate <= selectedDate && validDates.has(d.payDate));
+    }
     return enrichedDrivers.filter(d => d.payDate === selectedDate);
-  }, [enrichedDrivers, selectedDate, latestPayDate, uniqueDates]);
+  }, [enrichedDrivers, selectedDate, latestPayDate, uniqueDates, isAverageView]);
 
   const filteredTableDrivers = useMemo(() => {
-      if (!tableFilters || tableFilters.length === 0) return displayedDrivers;
-      return displayedDrivers.filter(d => {
+      let baseDrivers = displayedDrivers;
+      if (isAverageView && selectedDate !== 'ALL') {
+          const validDates = new Set(uniqueDates);
+          let targetDate = selectedDate === 'LATEST' ? latestPayDate : selectedDate;
+          baseDrivers = enrichedDrivers.filter(d => d.payDate <= (targetDate || '') && validDates.has(d.payDate));
+      }
+
+      if (!tableFilters || tableFilters.length === 0) return baseDrivers;
+      return baseDrivers.filter(d => {
           return tableFilters.every(rule => {
               if (!rule.field || !rule.operator) return true;
               let fieldValue: any;
@@ -3845,7 +3887,7 @@ if (isCategorical) {
               }
           });
       });
-  }, [displayedDrivers, tableFilters]);
+  }, [displayedDrivers, tableFilters, isAverageView, selectedDate, latestPayDate, enrichedDrivers, uniqueDates]);
 
 
   const uniqueTeams = useMemo(() => Array.from(new Set(displayedDrivers.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')))).sort(), [displayedDrivers]);
@@ -4718,7 +4760,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
             totalNetIncome += drvM.netIncome;
          });
 
-         const div = m.effNonTeamsCount > 0 ? m.effNonTeamsCount : (m.effCount > 0 ? m.effCount : 1);
+         const div = Math.max(1, new Set(subset.map((r: any) => r.payDate || r.week_ending)).size);
          const assign = (k: string, v: number) => { row[`${key}_${k}`] = v; row[`${key}_${k}Avg`] = v / div; };
          
          assign('gross', m.gross);
@@ -4788,7 +4830,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
                   fNetIncome += ((m.netIncome - (m.pnlBalanceChange || 0) - (m.pnlEscrowAdj || 0)) + (m.excludedPoTotal || 0)) / 2 + (m.pnlBalanceChange || 0) + (m.pnlEscrowAdj || 0);
               });
               row['COMPANY_netIncome'] -= fNetIncome;
-              const cDiv = row['COMPANY_effNonTeamsCount'] > 0 ? row['COMPANY_effNonTeamsCount'] : (row['COMPANY_effCount'] > 0 ? row['COMPANY_effCount'] : 1);
+              const cDiv = Math.max(1, new Set(dateDrivers.map((r: any) => r.payDate || r.week_ending)).size);
               row['COMPANY_netIncomeAvg'] = row['COMPANY_netIncome'] / cDiv;
           }
       }
@@ -4879,7 +4921,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
             fEffCt += m.effCount;
           });
           
-          const div = fEffNT > 0 ? fEffNT : (fEffCt > 0 ? fEffCt : 1);
+          const div = Math.max(1, new Set(franDrivers.map((r: any) => r.payDate || r.week_ending)).size);
           const assign = (k: string, v: number) => { row[`TPOG (Franchise PnL)_${k}`] = v; row[`TPOG (Franchise PnL)_${k}Avg`] = v / div; };
           
           assign('gross', fGross); assign('margin', fMargin); assign('driverPay', fDriverPay);
