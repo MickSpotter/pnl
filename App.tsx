@@ -232,9 +232,6 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
   // Save handler passed down to Modal
   const handleSaveExpenses = async (newExpenses: ExpenseItem[]) => {
     setFixedExpenses(newExpenses);
-    if (isSupabaseConfigured()) {
-      await saveFixedExpenses(newExpenses);
-    }
   };
 
   const fetchLock = React.useRef(false);

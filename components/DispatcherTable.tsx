@@ -42,6 +42,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
   const [driverSettings, setDriverSettings] = useState<any>({});
   const [footerAggType, setFooterAggType] = useState<'total' | 'median' | 'average'>('total');
   const [isDispPayExpanded, setIsDispPayExpanded] = useState(false);
+  const [poRules, setPoRules] = useState<any[]>([]);
 
   useEffect(() => {
     const loadPnlConfigs = async () => {
@@ -53,7 +54,14 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
         }
       } catch(e) { }
     };
+    const loadPoRules = async () => {
+      try {
+        const { data } = await supabase.from('po_rules').select('*');
+        if (data) setPoRules(data);
+      } catch(e) { }
+    };
     loadPnlConfigs();
+    loadPoRules();
   }, []);
 
   useEffect(() => {
@@ -148,7 +156,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
     const getChartData = (dispName: string, teamName: string) => {
     const dataMap = new Map();
     validDrivers.forEach(d => {
-      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
+      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
       const tId = d.teamId || d.teamName || d.team_name || d.team || 'Unassigned Team';
       const dId = d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || 'Unassigned Dispatcher';
       
@@ -165,7 +173,11 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
         const cd = dataMap.get(payD);
         cd.gross += (d.grossRevenue || d.driver_gross || 0);
         cd.margin += (d.marginAmount || 0);
-        cd.pnl += m.pnl;
+        let finalPnl = m.pnl;
+        if (m.franchisePnlCalculated) {
+            finalPnl -= m.franchisePnlCalculated;
+        }
+        cd.pnl += finalPnl;
       }
     });
     return Array.from(dataMap.values()).sort((a, b) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime());
@@ -191,7 +203,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
   const getChartData = React.useCallback((dispName: string, teamName: string) => {
     const dataMap = new Map();
     validDrivers.forEach(d => {
-      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
+      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
       const tId = d.teamId || d.teamName || d.team_name || d.team || 'Unassigned Team';
       const dId = d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || 'Unassigned Dispatcher';
       
@@ -218,7 +230,11 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
         const cd = dataMap.get(payD);
         cd.gross += (d.grossRevenue || d.driver_gross || 0);
         cd.margin += (d.marginAmount || 0);
-        cd.pnl += m.pnl;
+        let finalPnl = m.pnl;
+        if (m.franchisePnlCalculated) {
+            finalPnl -= m.franchisePnlCalculated;
+        }
+        cd.pnl += finalPnl;
         cd['disp. pay'] += m.dispPay;
         cd['wkly exp'] += m.wklyExp;
         cd['revenue collected'] += m.revCol;
@@ -245,7 +261,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
        });
        return res;
     });
-  }, [validDrivers, fixedExpenses, enrichedMap, pnlConfigs, chartFilter, selectedMetrics]);
+  }, [validDrivers, fixedExpenses, enrichedMap, pnlConfigs, poRules, chartFilter, selectedMetrics]);
 
   const getSeverityForMetric = (metricId: string, val: number, specificConf: any = driverSettings?.['GLOBAL'] || {}) => {
       const rules = specificConf[metricId] || driverSettings?.['GLOBAL']?.[metricId];
@@ -273,11 +289,15 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       if (!globalDriverStats.has(d.name)) {
           globalDriverStats.set(d.name, { gross: 0, margin: 0, pnl: 0, count: 0, effNonTeams: 0, effDrivers: 0 });
         }
-        const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
+        const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
         const stats = globalDriverStats.get(d.name);
       stats.gross += (d.grossRevenue || d.driver_gross || 0);
       stats.margin += (d.marginAmount || 0);
-      stats.pnl += m.pnl;
+      let finalPnl = m.pnl;
+      if (m.franchisePnlCalculated) {
+          finalPnl -= m.franchisePnlCalculated;
+      }
+      stats.pnl += finalPnl;
       stats.count += 1;
       stats.effNonTeams += (d.effectiveNonTeams || 0);
       stats.effDrivers += (d.effectiveDrivers || 0);
@@ -303,8 +323,8 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
         const compLower = (d.companyId || '').toLowerCase();
         if (nameLower.includes('unassigned') || nameLower.includes('unreconciled') || compLower.includes('unassigned') || compLower.includes('unreconciled')) return;
         
-        const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs);
-        const isStub = (d as any).isStub || ((d.effectiveDrivers || 0) === 0 && (Math.abs(m.totalPOCov || 0) > 0 || Math.abs(m.totalPO || 0) > 0 || Math.abs(d.tolls || d.tollCost || 0) > 0));
+        const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+        const isStub = (d as any).isStub || ((d.effectiveDrivers || 0) === 0 && (Math.abs(m.po || 0) > 0 || Math.abs(d.tolls || d.tollCost || 0) > 0));
         let dispatcherId = isStub ? (d.stub_dispatcher || 'Unassigned Dispatcher') : (d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || 'Unassigned Dispatcher');
         if (!dispatcherId || String(dispatcherId).trim().toLowerCase() === 'unassigned' || String(dispatcherId).trim().toLowerCase() === 'null') dispatcherId = 'Unassigned Dispatcher';
         
@@ -326,8 +346,8 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
               const compLower = (driver.companyId || '').toLowerCase();
               if (nameLower.includes('unassigned') || nameLower.includes('unreconciled') || compLower.includes('unassigned') || compLower.includes('unreconciled')) return;
               
-              const m = getRawMetrics(driver, fixedExpenses, enrichedMap, pnlConfigs);
-              const isStub = (driver as any).isStub || ((driver.effectiveDrivers || 0) === 0 && (Math.abs(m.totalPOCov || 0) > 0 || Math.abs(m.totalPO || 0) > 0 || Math.abs(driver.tolls || driver.tollCost || 0) > 0));
+              const m = getRawMetrics(driver, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+              const isStub = (driver as any).isStub || ((driver.effectiveDrivers || 0) === 0 && (Math.abs(m.po || 0) > 0 || Math.abs(driver.tolls || driver.tollCost || 0) > 0));
 
               let teamId = 'Unassigned Team';
               let dispatcherId = 'Unassigned Dispatcher';
@@ -383,62 +403,25 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
 
               const disp = team.dispatchers.get(dispatcherId);
 
-      const pnl = m.pnl;
+      let finalPnl = m.pnl;
+      if (m.franchisePnlCalculated) {
+          finalPnl -= m.franchisePnlCalculated;
+      }
+      const pnl = finalPnl;
       const gross = driver.grossRevenue || (driver as any).driver_gross || 0;
       const margin = driver.marginAmount || 0;
-      const revColl = m.revCol || m.revenueCollected || m.totalRev || driver.revenueCollected || driver.revenue_collected || 0;
-      const fuelRebate = m.fuelRebate || driver.fuelRebate || 0;
-      const wklyExp = m.wklyExp || m.weeklyExpenses || m.totalFixed || driver.weeklyExpenses || driver.weekly_expenses || 0;
-      const po = driver.pnlTotalPOCov !== undefined ? Number(driver.pnlTotalPOCov) : (m.po || m.totalPO || driver.po || 0);
-      const tolls = driver.pnlTolls !== undefined ? Number(driver.pnlTolls) : (m.tolls || driver.tolls || driver.tollCost || 0);
-      const dispPay = m.dispPay || m.dispatcherPay || driver.dispatcherPay || 0;
-      const recruiting = m.recruiting || m.recruitingCost || driver.recruiting || 0;
+      const revColl = m.revCol;
+      const fuelRebate = m.fuelRebate;
+      const wklyExp = m.wklyExp;
+      const po = m.po;
+      const tolls = m.tolls;
+      const dispPay = m.dispPay;
+      const recruiting = m.recruiting;
 
-      let dispGrossPay = 0;
-      let dispMarginPay = 0;
-      let dispFixedPay = 0;
-      let dispSharedIns = 0;
-      const ct = driver.contractType || 'ALL';
-
-      let r = fixedExpenses.find(e => String(e.name).trim().toLowerCase().includes('dispatcher pay') && (e.dispatcher_name === dispatcherId || e.dispatcherName === dispatcherId || e.dispatcher_id === dispatcherId) && (e.contract_type === ct || e.contractType === ct));
-      if (!r) r = fixedExpenses.find(e => String(e.name).trim().toLowerCase().includes('dispatcher pay') && (e.dispatcher_name === dispatcherId || e.dispatcherName === dispatcherId || e.dispatcher_id === dispatcherId) && (!e.contract_type || e.contract_type === 'ALL' || e.contractType === 'ALL'));
-      if (!r) r = fixedExpenses.find(e => String(e.name).trim().toLowerCase().includes('dispatcher pay') && (!e.dispatcher_name || e.dispatcher_name === 'ALL') && (e.contract_type === ct || e.contractType === ct));
-      if (!r) r = fixedExpenses.find(e => String(e.name).trim().toLowerCase().includes('dispatcher pay') && (!e.dispatcher_name || e.dispatcher_name === 'ALL') && (!e.contract_type || e.contract_type === 'ALL' || e.contractType === 'ALL'));
-      
-      if (r) {
-          dispGrossPay = gross * ((Number(r.disp_gross_perc) || Number(r.dispatcher_gross_percent) || Number(r.dispGrossPerc) || 0) / 100);
-          dispMarginPay = margin * ((Number(r.disp_margin_perc) || Number(r.dispatcher_margin_percent) || Number(r.dispMarginPerc) || 0) / 100);
-          
-          let ruleAmount = Number(r.amount) || 0;
-          const driverWeight = driver.effectiveNonTeams > 0 ? driver.effectiveNonTeams : (driver.effectiveDrivers > 0 ? driver.effectiveDrivers : 1);
-          if (r.unit === '$ total') {
-              let divisor = 1;
-              const isGlobalRule = !r.contract_type || r.contract_type === 'ALL' || r.contractType === 'ALL';
-              if (isGlobalRule) {
-                  divisor = dispatcherTotalCounts.get(`${dispatcherId}_${driver.payDate || 'Unknown'}`) || 1;
-              } else {
-                  divisor = dispatcherContractCounts.get(`${dispatcherId}_${driver.payDate || 'Unknown'}_${ct}`) || 1;
-              }
-              dispFixedPay = (ruleAmount / divisor) * driverWeight;
-          } else {
-              dispFixedPay = ruleAmount * driverWeight;
-          }
-      }
-
-      const edKey = `${driver.name}_${driver.payDate}_${driver.contractType}_${driver.companyId}`;
-      const ed = enrichedMap.get(edKey);
-      if (ed && ed.dispSharedLiability !== undefined) {
-          dispSharedIns = ed.dispSharedLiability;
-      } else if (driver.contractType === 'MCLOO') {
-          const curTime = (driver.payDate ? new Date(driver.payDate.split('T')[0]).getTime() : Date.now()) - (3 * 24 * 60 * 60 * 1000);
-          let liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === driver.companyId && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
-          if (!liabRuleForDisp) {
-              liabRuleForDisp = fixedExpenses.filter(e => (e.name === 'Liability Insurance (Auto)' || e.name === 'Liability Insurance') && e.companyId === 'ALL' && (!e.valid_from || new Date(e.valid_from).getTime() <= curTime) && (!e.valid_to || new Date(e.valid_to).getTime() >= curTime)).sort((a, b) => new Date(b.valid_from || 0).getTime() - new Date(a.valid_from || 0).getTime())[0];
-          }
-          if (liabRuleForDisp && (liabRuleForDisp as any).disp_mcloo_pay !== undefined && (liabRuleForDisp as any).disp_mcloo_pay !== null && String((liabRuleForDisp as any).disp_mcloo_pay).trim() !== '') {
-              dispSharedIns = Math.abs(Number((liabRuleForDisp as any).disp_mcloo_pay) * (driver.effectiveNonTeams || 0));
-          }
-      }
+      const dispGrossPay = m.dispGrossAmt || 0;
+      const dispMarginPay = m.dispMarginAmt || 0;
+      const dispFixedPay = m.dispFixedAmt || 0;
+      const dispSharedIns = m.dispSharedAmt || 0;
 
       team.totalMargin += margin;
       team.totalPnL += pnl;
@@ -685,7 +668,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       }));
       
     return { allDispatchers: allDispatchersResult, driverRanks };
-  }, [validDrivers, fixedExpenses, enrichedMap, pnlConfigs, excludeZeroGross]);
+  }, [validDrivers, fixedExpenses, enrichedMap, pnlConfigs, poRules, excludeZeroGross]);
 
   const filteredDispatchers = allDispatchers.filter(disp => {
     if (searchTerm) {

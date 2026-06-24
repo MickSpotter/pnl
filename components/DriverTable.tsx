@@ -178,7 +178,11 @@ export const getRawMetrics = (r: any, fixedExpenses: any[] = [], enrichedMap?: M
   const effNT = r.effectiveNonTeams || 0;
   const effTr = r.effectiveTrailers || 0;
 
-  const enriched = enrichedMap ? enrichedMap.get(`${r.name}_${r.payDate || r.week_ending}_${r.contractType}_${r.companyId}`) : (window as any).__ENRICHED_DRIVERS__?.find((ed: any) => ed.name === r.name && ed.payDate === (r.payDate || r.week_ending) && ed.contractType === r.contractType && ed.companyId === r.companyId);
+  const enriched = enrichedMap ? enrichedMap.get(`${r.name}_${targetDateStr}_${r.contractType}_${r.companyId}`) : (window as any).__ENRICHED_DRIVERS__?.find((ed: any) => {
+      let dStr = ed.payDate || ed.week_ending || '';
+      if (dStr.includes('T')) dStr = dStr.split('T')[0];
+      return ed.name === r.name && dStr === targetDateStr && (ed.contractType === r.contractType || (r.contractType === 'TPOG' && ed.contractType === 'TPOG WITH FRANCHISE') || (r.contractType === 'OO' && ed.contractType === 'OO WITH FRANCHISE')) && ed.companyId === r.companyId;
+  });
 
         const wklyExp = enriched ? Number(enriched.calculatedFixedCost ?? enriched.fixed_costs ?? 0) : Number(r.calculatedFixedCost ?? r.fixed_costs ?? ((tFloat + tWkly + oIns + dEld + dIfta + mSup + liab + tPhd) * effNT + (dTrl + dTrlPhd) * effTr));
         const insExp = enriched ? Number(enriched.insuranceCost ?? 0) : ((oIns + liab + tPhd) * effNT + (dTrlPhd) * effTr);
@@ -292,8 +296,8 @@ sharedInsBreakdown[comp] = actualSharedIns;
                     } else exMain = true;
                 }
                 if (poRules.find(ru => (ru.contract_type === 'TPOG Franchise PnL' || ru.contract_type === 'TPOG (Franchise PnL)') && ru.category_name === k && ru.status === 'Exclude')) exFran = true;
-                if (!exMain) calcPo -= Math.abs(Number(v));
-                if (!exFran && r.contractType === 'TPOG' && r.franchiseId) calcFPo += Math.abs(Number(v));
+                if (!exMain) calcPo += Number(v);
+                if (!exFran && r.contractType === 'TPOG' && r.franchiseId) calcFPo += Number(v);
             });
         }
         const po = r.pnlTotalPOCov !== undefined ? Number(r.pnlTotalPOCov) : (enriched && enriched.po_breakdown ? calcPo : (enriched && enriched.poCoverage !== undefined ? Number(enriched.poCoverage) : -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0)))));
@@ -339,20 +343,45 @@ sharedInsBreakdown[comp] = actualSharedIns;
         let franchiseRecruiting = 0;
         let franchiseTolls = 0;
         if (effContractType === 'TPOG WITH FRANCHISE' || (ct === 'TPOG' && r.franchiseId)) {
-            let fRevCol = enriched && enriched.franchise_revenue_collected !== undefined ? Number(enriched.franchise_revenue_collected) : Number(r.franchise_revenue_collected || 0);
-            let fWklyExp = enriched && enriched.franchise_fixed_costs_full !== undefined ? Number(enriched.franchise_fixed_costs_full) : Number(r.franchise_fixed_costs_full || 0);
-            let fPo = enriched && enriched.po_breakdown ? calcFPo : (enriched && enriched.franchise_po !== undefined ? Math.abs(Number(enriched.franchise_po)) : Math.abs(Number(r.franchise_po || 0)));
-            if (!activeItems.includes('revenue_collected')) fRevCol = 0;
-            if (!activeItems.includes('weekly_expenses')) fWklyExp = 0;
-            if (!activeItems.includes('po')) fPo = 0;
-            franchiseRevCol = fRevCol;
-            franchiseFuelReb = pnlFuelReb;
-            franchiseDispPay = pnlDisp;
-            franchiseWklyExp = fWklyExp;
-            franchisePo = fPo;
-            franchiseRecruiting = pnlRecruiting;
-            franchiseTolls = pnlTolls;
-            franchisePnl = fRevCol + pnlFuelReb - pnlDisp - fWklyExp - fPo - pnlRecruiting - pnlTolls;
+           let actualFRevCol = revCol + drvBalanceChange;
+            let enrichedFWE = enriched && Number(enriched.franchise_fixed_costs_full) ? Number(enriched.franchise_fixed_costs_full) : undefined;
+            let dbFWE = Number(r.franchise_fixed_costs_full) ? Number(r.franchise_fixed_costs_full) : undefined;
+            let actualFWklyExp = enrichedFWE !== undefined ? enrichedFWE : (dbFWE !== undefined ? dbFWE : wklyExp);
+            
+            let actualFPo = 0;
+            if (enriched && enriched.po_breakdown) {
+                actualFPo = calcFPo;
+            } else if (enriched && enriched.franchise_po !== undefined) {
+                actualFPo = Number(enriched.franchise_po);
+            } else if (r.franchise_po !== undefined) {
+                actualFPo = Number(r.franchise_po);
+                pnlPo = 0;
+            } else {
+                actualFPo = -(Math.abs(Number(r.pnlTotalPOCov ?? r.poCoverage ?? r.poAmount ?? 0)));
+                pnlPo = 0; 
+            }
+            
+            let actualFTolls = Number(r.franchise_tolls) ? Math.abs(Number(r.franchise_tolls)) : Math.abs(dTollsFinal);
+            let actualFRecruiting = Number(r.franchise_recruiting) ? Math.abs(Number(r.franchise_recruiting)) : Math.abs(recruiting);
+            let actualFDisp = Math.abs(dispPay);
+
+            franchiseRevCol = actualFRevCol;
+            franchiseFuelReb = fuelRebate;
+            franchiseDispPay = actualFDisp;
+            franchiseWklyExp = actualFWklyExp;
+            franchisePo = actualFPo;
+            franchiseRecruiting = actualFRecruiting;
+            franchiseTolls = actualFTolls;
+
+            let calcFRevCol = activeItems.includes('revenue_collected') ? actualFRevCol : 0;
+            let calcFFuelReb = activeItems.includes('fuel_rebate') ? fuelRebate : 0;
+            let calcFDisp = activeItems.includes('dispatcher_pay') ? actualFDisp : 0;
+            let calcFWklyExp = activeItems.includes('weekly_expenses') ? actualFWklyExp : 0;
+            let calcFPoToUse = activeItems.includes('po') ? Math.abs(actualFPo) : 0;
+            let calcFRecruiting = activeItems.includes('recruiting') ? actualFRecruiting : 0;
+            let calcFTolls = activeItems.includes('tolls') ? actualFTolls : 0;
+            
+            franchisePnl = calcFRevCol + calcFFuelReb - calcFDisp - calcFWklyExp - calcFPoToUse - calcFRecruiting - calcFTolls;
             
             let fBalChange = activeItems.includes('revenue_collected') ? drvBalanceChange : 0;
             let fEscrowAdj = activeItems.includes('revenue_collected') ? drvEscrowAdj : 0;
@@ -448,16 +477,27 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
   };
 
   const filteredRecords = React.useMemo(() => {
-    if (selectedEntity === 'TOTAL') return driver.records;
-    const [type, val] = selectedEntity.split(':');
-    return driver.records.filter((r: any) => {
-      if (type === 'CTR') return (r.contractType && r.contractType !== '-' ? r.contractType : 'Unassigned') === val;
-      if (type === 'CMP') return (r.companyId && r.companyId !== '-' ? r.companyId : 'Unassigned') === val;
-      if (type === 'TEAM') return (r.teamId && r.teamId !== '-' ? r.teamId : 'Unassigned') === val;
-      if (type === 'FRA') return (r.franchiseId && r.franchiseId !== '-' ? r.franchiseId : 'Unassigned') === val;
-      if (type === 'DISP') return (r.dispatcherId && r.dispatcherId !== '-' ? r.dispatcherId : 'Unassigned') === val;
-      return true;
-    });
+    let base = driver.records;
+    if (selectedEntity !== 'TOTAL') {
+      const [type, val] = selectedEntity.split(':');
+      base = base.filter((r: any) => {
+        if (type === 'CTR') return (r.contractType && r.contractType !== '-' ? r.contractType : 'Unassigned') === val;
+        if (type === 'CMP') return (r.companyId && r.companyId !== '-' ? r.companyId : 'Unassigned') === val;
+        if (type === 'TEAM') return (r.teamId && r.teamId !== '-' ? r.teamId : 'Unassigned') === val;
+        if (type === 'FRA') return (r.franchiseId && r.franchiseId !== '-' ? r.franchiseId : 'Unassigned') === val;
+        if (type === 'DISP') return (r.dispatcherId && r.dispatcherId !== '-' ? r.dispatcherId : 'Unassigned') === val;
+        return true;
+      });
+    }
+    const recordsByKey = base.reduce((acc: any, r: any) => {
+      const key = `${r.payDate || r.week_ending}_${r.contractType}_${r.companyId}`;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(r);
+      return acc;
+    }, {});
+    return Object.values(recordsByKey).map((group: any) => 
+      group.reduce((prev: any, curr: any) => ((curr.grossRevenue || curr.driver_gross || 0) > (prev.grossRevenue || prev.driver_gross || 0)) ? curr : prev)
+    );
   }, [driver.records, selectedEntity]);
 
   const allFilteredRecords = React.useMemo(() => {
@@ -466,16 +506,27 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     if (selectedPayDate !== 'ALL') {
       timeFiltered = baseRecords.filter((r: any) => (r.payDate || r.week_ending) <= selectedPayDate);
     }
-    if (selectedEntity === 'TOTAL') return timeFiltered;
-    const [type, val] = selectedEntity.split(':');
-    return timeFiltered.filter((r: any) => {
-      if (type === 'CTR') return (r.contractType && r.contractType !== '-' ? r.contractType : 'Unassigned') === val;
-      if (type === 'CMP') return (r.companyId && r.companyId !== '-' ? r.companyId : 'Unassigned') === val;
-      if (type === 'TEAM') return (r.teamId && r.teamId !== '-' ? r.teamId : 'Unassigned') === val;
-      if (type === 'FRA') return (r.franchiseId && r.franchiseId !== '-' ? r.franchiseId : 'Unassigned') === val;
-      if (type === 'DISP') return (r.dispatcherId && r.dispatcherId !== '-' ? r.dispatcherId : 'Unassigned') === val;
-      return true;
-    });
+    let base = timeFiltered;
+    if (selectedEntity !== 'TOTAL') {
+      const [type, val] = selectedEntity.split(':');
+      base = base.filter((r: any) => {
+        if (type === 'CTR') return (r.contractType && r.contractType !== '-' ? r.contractType : 'Unassigned') === val;
+        if (type === 'CMP') return (r.companyId && r.companyId !== '-' ? r.companyId : 'Unassigned') === val;
+        if (type === 'TEAM') return (r.teamId && r.teamId !== '-' ? r.teamId : 'Unassigned') === val;
+        if (type === 'FRA') return (r.franchiseId && r.franchiseId !== '-' ? r.franchiseId : 'Unassigned') === val;
+        if (type === 'DISP') return (r.dispatcherId && r.dispatcherId !== '-' ? r.dispatcherId : 'Unassigned') === val;
+        return true;
+      });
+    }
+    const recordsByKey = base.reduce((acc: any, r: any) => {
+      const key = `${r.payDate || r.week_ending}_${r.contractType}_${r.companyId}`;
+      if (!acc[key]) acc[key] = [];
+      acc[key].push(r);
+      return acc;
+    }, {});
+    return Object.values(recordsByKey).map((group: any) => 
+      group.reduce((prev: any, curr: any) => ((curr.grossRevenue || curr.driver_gross || 0) > (prev.grossRevenue || prev.driver_gross || 0)) ? curr : prev)
+    );
   }, [driver.allRecords, driver.records, selectedEntity, selectedPayDate]);
 
   const driverStats = React.useMemo(() => {
@@ -588,14 +639,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       let finalPnl = m.pnl;
       let finalFranchisePnlCalculated = m.franchisePnlCalculated;
 
-      if (!isLatest) {
-          finalRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          finalFranchiseRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          finalPnl -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          if (finalFranchisePnlCalculated) {
-              finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          }
-      }
+      
 
       const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
       totalGross += (r.grossRevenue || r.driver_gross || 0);
@@ -621,13 +665,13 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       if (fdp !== 0) { fuelDiscountPrice += fdp; fuelDiscountCount++; }
       fuelQuantity += Number(r.fuel_quantity ?? r.fuelUsed ?? r.fuel_gallons ?? 0);
 
-      companyPay += finalRevCol - (tpogCalc * finalFranchiseRevCol / 2);
-      fuelRebate += m.fuelRebate - (tpogCalc * m.franchiseFuelReb / 2);
-      wklyExp += m.wklyExp - (tpogCalc * m.franchiseWklyExp / 2);
-      tollCost += -m.tolls + (tpogCalc * m.franchiseTolls / 2);
-      poCoverage += m.po + (tpogCalc * m.franchisePo / 2);
-      dispatcherPay += m.dispPay - (tpogCalc * m.franchiseDispPay / 2);
-      recruitingCost += m.recruiting - (tpogCalc * m.franchiseRecruiting / 2);
+      companyPay += finalRevCol;
+      fuelRebate += m.fuelRebate;
+      wklyExp += m.wklyExp;
+      tollCost += -m.tolls;
+      poCoverage += m.po;
+      dispatcherPay += m.dispPay;
+      recruitingCost += m.recruiting;
       
       revBase += m.revBase || 0;
       balChange += finalBalChange;
@@ -681,7 +725,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
                         isExcluded = true;
                     }
                 }
-                const adjVal = isExcluded ? 0 : Number(v) - (tpogCalc * (r.contractType === 'TPOG' && r.franchiseId ? Number(v) / 2 : 0));
+                const adjVal = isExcluded ? 0 : Number(v);
                 if (!poBreakdown[k]) poBreakdown[k] = 0;
                 poBreakdown[k] += adjVal;
             });
@@ -767,12 +811,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         let finalFranchiseRevCol = m.franchiseRevCol;
         let finalFranchisePnlCalculated = m.franchisePnlCalculated;
 
-        if (!isLatest) {
-            finalFranchiseRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
-            if (finalFranchisePnlCalculated) {
-                finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
-            }
-        }
+        
         
         totalGross += (r.grossRevenue || r.driver_gross || 0);
         marginAmount += (r.marginAmount || 0);
@@ -800,7 +839,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         fuelRebate += m.franchiseFuelReb;
         wklyExp += m.franchiseWklyExp;
         tollCost += -m.franchiseTolls;
-        poCoverage += -m.franchisePo;
+        poCoverage += m.franchisePo;
         dispatcherPay += m.franchiseDispPay;
         recruitingCost += m.franchiseRecruiting;
         totalPnL += finalFranchisePnlCalculated;
@@ -943,13 +982,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         let finalBalChange = isLatest ? (rm.balChange || 0) : 0;
         let finalEscrowAdj = isLatest ? (rm.escrowAdj || 0) : 0;
 
-        if (!isLatest) {
-            finalRevCol -= ((rm.balChange || 0) + (rm.escrowAdj || 0));
-            finalPnl -= ((rm.balChange || 0) + (rm.escrowAdj || 0));
-            if (finalFranchisePnlCalculated) {
-                finalFranchisePnlCalculated -= ((rm.balChange || 0) + (rm.escrowAdj || 0));
-            }
-        }
+        
 
         sums.sGross += (r.grossRevenue || r.driver_gross || 0);
         sums.sMargin += (r.marginAmount || 0);
@@ -974,12 +1007,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         return sums;
     }, { sGross: 0, sMargin: 0, sNetPay: 0, sDispPay: 0, sInsExp: 0, sMiles: 0, sFuel: 0, sRevCol: 0, sFuelReb: 0, sWklyExp: 0, sTolls: 0, sPO: 0, sRecruiting: 0, sPnL: 0, sBalChange: 0, sEscrowAdj: 0 });
 
-    if (filteredRecords.length === 0 || sMiles === 0) {
-      if (sMiles === 0 && filteredRecords.length > 0) {
-        iss.push({ label: "Not enough data. 0 miles driven.", diff: 0, severity: "neutral" });
-      } else {
-        iss.push({ label: "No records available for calculation", diff: 0, severity: "neutral" });
-      }
+    if (filteredRecords.length === 0) {
+      iss.push({ label: "No records available for calculation", diff: 0, severity: "neutral" });
       const emptyStats = [
         { id: 'gross', name: 'Gross', val: null, total: null, fleet: targetAvg.gross || 0, diff: 0, severity: 'neutral' },
         { id: 'margin', name: 'Margin', val: null, total: null, fleet: targetAvg.margin || 0, diff: 0, severity: 'neutral' },
@@ -1001,6 +1030,10 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       return { issues: iss, perfStats: emptyStats, mainDiagnosis: 'neutral', avgPnL: 0, activeConf };
     }
 
+    if (sMiles === 0) {
+      iss.push({ label: "0 miles driven", diff: 0, severity: "neutral" });
+    }
+
     const calcVal = (val: number) => val / count;
 
     const avgGross = calcVal(sGross);
@@ -1019,6 +1052,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     const avgPnL = calcVal(sPnL);
 
     const getSeverity = (metricId: string, val: number) => {
+        if (sMiles === 0) return 'N/A';
         const rules = activeConf[metricId] || settings?.['GLOBAL']?.[metricId];
         if (!rules || (Number(rules.redMax) === 0 && Number(rules.greenMin) === 0 && Number(rules.orangeMax) === 0)) return 'neutral';
         
@@ -1364,7 +1398,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         </td>
         <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.recruitingCost)}</td>
         <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${rowMetrics.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(rowMetrics.totalPnL)}</td>
-        <td className={`px-2 py-1 text-right font-bold sticky right-0 w-[56px] min-w-[56px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.totalMiles === 0 ? 'text-zinc-500' : driver.ranking >= 80 ? 'text-emerald-400' : driver.ranking >= 50 ? 'text-yellow-400' : driver.ranking >= 20 ? 'text-amber-500' : 'text-rose-400'}`}>{driver.totalMiles === 0 ? 'N/A' : `${driver.ranking.toFixed(2)}%`}</td>
+        <td className={`px-2 py-1 text-right font-bold sticky right-0 w-[56px] min-w-[56px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.ranking >= 80 ? 'text-emerald-400' : driver.ranking >= 50 ? 'text-yellow-400' : driver.ranking >= 20 ? 'text-amber-500' : 'text-rose-400'}`}>{`${driver.ranking.toFixed(2)}%`}</td>
       </tr>
       {tpogMode === 'ALL' && franchiseRowMetrics.hasFranchise && (
         <tr className="bg-zinc-950/40 hover:relative hover:z-[9999999]">
@@ -1642,6 +1676,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
                         mainDiagnosis === 'good' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50 shadow-[0_0_8px_-2px_rgba(16,185,129,0.4)]' :
                         mainDiagnosis === 'neutral' ? 'bg-yellow-400/20 text-yellow-400 border-yellow-400/50 shadow-[0_0_8px_-2px_rgba(250,204,21,0.4)]' :
                         mainDiagnosis === 'warning' ? 'bg-amber-500/20 text-amber-500 border-amber-500/50 shadow-[0_0_8px_-2px_rgba(245,158,11,0.4)]' :
+                        mainDiagnosis === 'N/A' ? 'bg-zinc-500/20 text-zinc-400 border-zinc-500/50 shadow-[0_0_8px_-2px_rgba(113,113,122,0.4)]' :
                         'bg-rose-500/20 text-rose-500 border-rose-500/50 shadow-[0_0_8px_-2px_rgba(244,63,94,0.4)]'
                       }`}>{mainDiagnosis}</span>
                     )}
@@ -1709,6 +1744,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
                         };
                         
                         const getIcon = (severity: string) => {
+                          if (severity === 'N/A') return <Circle size={10} className="text-zinc-600" />;
                           if (severity === 'good') return <CheckCircle size={10} className="text-emerald-500" />;
                           if (severity === 'neutral') return <Info size={10} className="text-yellow-400" />;
                           if (severity === 'warning') return <AlertTriangle size={10} className="text-amber-500" />;
@@ -1768,7 +1804,16 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
   const enrichedMap = React.useMemo(() => {
     const map = new Map<string, any>();
     ((window as any).__ENRICHED_DRIVERS__ || []).forEach((ed: any) => {
-      map.set(`${ed.name}_${ed.payDate}_${ed.contractType}_${ed.companyId}`, ed);
+      let dStr = ed.payDate || ed.week_ending || '';
+      if (dStr.includes('T')) dStr = dStr.split('T')[0];
+      map.set(`${ed.name}_${dStr}_${ed.contractType}_${ed.companyId}`, ed);
+      
+      if (ed.contractType === 'TPOG WITH FRANCHISE') {
+        map.set(`${ed.name}_${dStr}_TPOG_${ed.companyId}`, ed);
+      }
+      if (ed.contractType === 'OO WITH FRANCHISE') {
+        map.set(`${ed.name}_${dStr}_OO_${ed.companyId}`, ed);
+      }
     });
     return map;
   }, [drivers]);
@@ -2142,12 +2187,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       const isLatest = (d.payDate || d.week_ending || '') === latestDatesByDriver.get(d.name || 'Unknown');
       let finalPnl = m.pnl;
       let finalFranchisePnlCalculated = m.franchisePnlCalculated;
-      if (!isLatest) {
-          finalPnl -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          if (finalFranchisePnlCalculated) {
-              finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          }
-      }
+      
       
       if (finalFranchisePnlCalculated) {
           finalPnl -= finalFranchisePnlCalculated;
@@ -2243,14 +2283,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       let finalPnl = m.pnl;
       let finalFranchisePnlCalculated = m.franchisePnlCalculated;
 
-      if (!isLatest) {
-          finalRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          finalFranchiseRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          finalPnl -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          if (finalFranchisePnlCalculated) {
-              finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
-          }
-      }
+      
 
       const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
       agg.effectiveDrivers += (d.effectiveDrivers || 0);
@@ -2435,13 +2468,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
          let finalPnl = m.pnl;
          let finalFranchisePnlCalculated = m.franchisePnlCalculated;
 
-         if (!isLatest) {
-             finalRevCol -= ((m.balChange || 0) + (m.escrowAdj || 0));
-             finalPnl -= ((m.balChange || 0) + (m.escrowAdj || 0));
-             if (finalFranchisePnlCalculated) {
-                 finalFranchisePnlCalculated -= ((m.balChange || 0) + (m.escrowAdj || 0));
-             }
-         }
+         
 
          const poCov = m.po;
          const revCol = finalRevCol;

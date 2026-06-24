@@ -20,10 +20,13 @@ let hasPlayedInitialAnimations = false;
 const getWeeklyAmountFromExp = (amount: number, exp?: any) => {
   if (!exp) return amount;
   if (exp.valid_from && exp.valid_to) {
-    const dFrom = new Date(exp.valid_from);
-    const dTo = new Date(exp.valid_to);
-    const daysDiff = Math.round((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-    if (daysDiff > 0) return amount / (daysDiff / 7);
+    const isTotalPeriodExp = ['Liability Insurance', 'Liability Insurance (Auto)', 'Liability Insurance (General)', 'Liability Insurance (Global)', 'Cargo Insurance', 'Lease Gap Coverage', 'Trailer Interchange', 'LAGO', 'PD Premium', 'Physical Damage'].includes(exp.name);
+    if (isTotalPeriodExp) {
+      const dFrom = new Date(exp.valid_from);
+      const dTo = new Date(exp.valid_to);
+      const daysDiff = Math.round((dTo.getTime() - dFrom.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      if (daysDiff > 0) return amount / (daysDiff / 7);
+    }
   }
   if (exp.frequency === 'Annually') return amount / 52;
   if (exp.frequency === 'Monthly') return amount / 4.33;
@@ -427,7 +430,7 @@ const MasterTable: React.FC<{
   const uniqueDrivers = Array.from(new Set(activeDriversForRows.map(d => (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned') ? 'Unassigned' : d.name))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const driverRows = [...activeDriversForRows].map(d => {
       const isUnassigned = (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned');
-      const compositeKey = isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`);
+      const compositeKey = isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`);
       return { ...d, _compositeKey: compositeKey, name: isUnassigned ? 'Unassigned' : d.name };
   }).reduce((acc, d) => {
       if (!acc.some((x: any) => x._compositeKey === d._compositeKey)) {
@@ -665,7 +668,7 @@ const MasterTable: React.FC<{
                                 groupBy === 'Company' ? ((d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId) :
                                 groupBy === 'Franchise' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')) :
                                 groupBy === 'Team' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')) : 
-                                (isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`));
+                                (isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`));
                     if (groupBy === 'Driver' && isUnassigned) key = 'Unassigned';
                     const safeKey = key || 'Unassigned';
         if (!map.has(safeKey)) map.set(safeKey, []);
@@ -2977,8 +2980,7 @@ const PnLView: React.FC<PnLViewProps> = ({
 
         const factoringData = getActiveAmount('Factoring', date);
 
-      const loggedMclooCompanies = new Set<string>();
-      const loggedTpogDrivers = new Set<string>();
+      
 
       weekDrivers.forEach(d => {
         let effContractType = d.contractType || '';
@@ -3251,33 +3253,7 @@ const PnLView: React.FC<PnLViewProps> = ({
                          (effTr * (c_trw + (c_phd / 4.0))) +
                          ((driver_gross + margin_amt) * (c_fact / 100.0)) +
                          (c_tcpm * (Number(d.milesDriven) || 0));
-                         if ((d.name === 'Allen Dixon' || d.name === 'Allen Dixon') && d.payDate === '2026-05-07' && type !== 'TPOG (Franchise PnL)' && !loggedTpogDrivers.has(`${d.name}_2026-05-07_REAL`)) {
-                 loggedTpogDrivers.add(`${d.name}_2026-05-07_REAL`);
-                 console.log(`--- REAL WEEKLY EXPENSES | DRIVER: ${d.name} | PAY DATE: ${d.payDate} ---`);
-                 console.log('FIXED TOTAL:', total);
-                 console.log('effNT:', effNT);
-                 console.log('effTr:', effTr);
-                 console.log('liability:', l_total * effNT);
-                 console.log('cargo:', c_cargo * effNT);
-                 console.log('leaseGapCoverage:', c_lease_gap * effNT);
-                 console.log('trailerInterchange:', c_ti * effNT);
-                 console.log('lago:', c_lago * effNT);
-                 console.log('phd_premium:', c_phd_p * effNT);
-                 console.log('phd (truck):', c_phd * effNT);
-                 console.log('phd (trailer):', (c_phd / 4.0) * effTr);
-                 console.log('truck_weekly:', c_tw * effNT);
-                 console.log('plates:', c_plates * effNT);
-                 console.log('telematics:', c_tel * effNT);
-                 console.log('phone_and_internet:', c_phone * effNT);
-                 console.log('office_supplies:', c_off * effNT);
-                 console.log('rent_and_parking:', c_rent * effNT);
-                 console.log('backup_mc:', c_bmc * effNT);
-                 console.log('backoffice_reg:', c_boreg * effNT);
-                 console.log('backoffice_tech:', c_botech * effNT);
-                 console.log('truck_cpm:', c_tcpm * (Number(d.milesDriven) || 0));
-                 console.log('trailer_weekly:', c_trw * effTr);
-                 console.log('factoring:', ((driver_gross + margin_amt) * (c_fact / 100.0)));
-             }
+                         
              return total;
          };
 
@@ -3286,33 +3262,7 @@ const PnLView: React.FC<PnLViewProps> = ({
          } else if (d.contractType === 'MCLOO') {
              company_fixed_full = (effNT * (liability + liabilityGeneral + cargo + leaseGap + trailerInterchange + lago + phd_premium + phd + truck_weekly + plates + telematics + phone_and_internet + office_supplies + rent_and_parking + backup_mc + backoffice_reg + backoffice_tech)) + (effTr * (trailer_weekly + (phd / 4.0))) + ((driver_gross + margin_amt) * (factoring / 100.0)) + (truck_cpm * (Number(d.milesDriven) || 0));
 
-             if (d.name === 'Allen Dixon' && d.payDate === '2026-05-14' && !loggedTpogDrivers.has(`${d.name}_2026-05-14_MCLOO`)) {
-                 loggedTpogDrivers.add(`${d.name}_2026-05-14_MCLOO`);
-                 console.log(`--- REAL WEEKLY EXPENSES | DRIVER: ${d.name} | TYPE: MCLOO | PAY DATE: ${d.payDate} ---`);
-                 console.log('FIXED TOTAL:', company_fixed_full);
-                 console.log('effNT:', effNT);
-                 console.log('effTr:', effTr);
-                 console.log('liability:', liability * effNT);
-                 console.log('cargo:', cargo * effNT);
-                 console.log('leaseGapCoverage:', leaseGap * effNT);
-                 console.log('trailerInterchange:', trailerInterchange * effNT);
-                 console.log('lago:', lago * effNT);
-                 console.log('phd_premium:', phd_premium * effNT);
-                 console.log('phd (truck):', phd * effNT);
-                 console.log('phd (trailer):', (phd / 4.0) * effTr);
-                 console.log('truck_weekly:', truck_weekly * effNT);
-                 console.log('plates:', plates * effNT);
-                 console.log('telematics:', telematics * effNT);
-                 console.log('phone_and_internet:', phone_and_internet * effNT);
-                 console.log('office_supplies:', office_supplies * effNT);
-                 console.log('rent_and_parking:', rent_and_parking * effNT);
-                 console.log('backup_mc:', backup_mc * effNT);
-                 console.log('backoffice_reg:', backoffice_reg * effNT);
-                 console.log('backoffice_tech:', backoffice_tech * effNT);
-                 console.log('truck_cpm:', truck_cpm * (Number(d.milesDriven) || 0));
-                 console.log('trailer_weekly:', trailer_weekly * effTr);
-                 console.log('factoring:', ((driver_gross + margin_amt) * (factoring / 100.0)));
-             }
+             
          } else {
              company_fixed_full = calculateFixedForType(d.contractType || '');
              if (isGarland) company_fixed_full -= effNT * (truck_weekly + phd_premium + phd + plates);
@@ -4495,6 +4445,9 @@ if (isCategorical) {
             }
         }
 
+        const origDrvBalanceChange = drvBalanceChange;
+        const origDrvEscrowAdj = drvEscrowAdj;
+
         const isLatest = (d.payDate || (d as any).week_ending || '') === latestDatesByDriver.get(d.name || 'Unknown');
         if (!isLatest) {
             drvBalanceChange = 0;
@@ -4510,7 +4463,7 @@ if (isCategorical) {
         drvZeroMiDrop = 0;
         if (dMiles === 0) {
             const prorated = drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd;
-            let effectiveBalChangeForPreDrop = drvBalanceChange;
+            let effectiveBalChangeForPreDrop = origDrvBalanceChange;
             if (isFranchise && !(d as any).isFranchiseStub) {
                  effectiveBalChangeForPreDrop = 0;
             }
@@ -4562,7 +4515,7 @@ if (isCategorical) {
         
         pnlProrated += (drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd) * companyTakeMulti;
 
-        let effectiveBalChangeForCompanyPay = drvBalanceChange;
+        let effectiveBalChangeForCompanyPay = origDrvBalanceChange;
         if (isFranchise && !(d as any).isFranchiseStub) {
              effectiveBalChangeForCompanyPay = 0;
         }
@@ -4572,7 +4525,7 @@ if (isCategorical) {
             effectiveBalChangeForCompanyPay + 
             drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd + 
             drvZeroMiDrop + 
-            drvEscrowAdj + 
+            origDrvEscrowAdj + 
             drvTollsAdj + 
             drvCashAdv + 
             drvCpmAdj + 

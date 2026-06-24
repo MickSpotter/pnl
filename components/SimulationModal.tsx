@@ -116,6 +116,7 @@ const SimulationModal: React.FC<SimulationModalProps> = ({
       setLocalSimConfig(simulationConfig);
       setLocalFixedExpenses(getInitialFixedExpenses());
       setLocalConfigContracts(getInitialContracts());
+      setModifiedFinImportIds([]);
       setPrevIsOpen(true);
   } else if (!isOpen && prevIsOpen) {
       setPrevIsOpen(false);
@@ -297,39 +298,51 @@ const fixedExpenseNames = Array.from(new Set([
   }, [drivers]);
 
  React.useEffect(() => {
+        let isMounted = true;
         if (isOpen) {
           const fetchFinData = async () => {
-             const { data: importData } = await supabase.from('finImport').select('*').order('week_ending', { ascending: false });
-             const { data: perUnitData } = await supabase.from('fixed_costs').select('*').order('week_ending', { ascending: false });
-             
-             if (importData) {
-                setFinImportData(importData);
-             }
-             if (perUnitData) {
-                setFinImportPerUnitData(perUnitData);
-             }
-             
-             const { fetchPnlConfigs } = await import('../lib/supabase');
-             const loadedPnlConfigs = await fetchPnlConfigs();
-             setPnlConfigs(loadedPnlConfigs.filter((c: any) => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE'));
-             const { data: revData } = await supabase.from('custom_fixed_revenue').select('*');
-             if (revData) {
-                setLocalRevenues(revData.map((r: any) => ({
-                    ...r,
-                    companyId: r.company_id,
-                    contractType: r.contract_type,
-                    franchiseId: r.franchise_id,
-                    is_standalone: true
-                })));
-             }
-             
-             const { data: poRulesData } = await supabase.from('po_rules').select('*');
-             if (poRulesData) {
-                 setLocalPoRules(poRulesData.filter((r: any) => r.status === 'Exclude'));
+             try {
+                 const [
+                     { data: importData },
+                     { data: perUnitData },
+                     { data: revData },
+                     { data: poRulesData }
+                 ] = await Promise.all([
+                     supabase.from('finImport').select('*').order('week_ending', { ascending: false }),
+                     supabase.from('fixed_costs').select('*').order('week_ending', { ascending: false }),
+                     supabase.from('custom_fixed_revenue').select('*'),
+                     supabase.from('po_rules').select('*')
+                 ]);
+
+                 const { fetchPnlConfigs } = await import('../lib/supabase');
+                 const loadedPnlConfigs = await fetchPnlConfigs();
+
+                 if (!isMounted) return;
+
+                 if (importData) setFinImportData(importData);
+                 if (perUnitData) setFinImportPerUnitData(perUnitData);
+                 setPnlConfigs(loadedPnlConfigs.filter((c: any) => c.contract_type !== 'TPOG WITH FRANCHISE' && c.contract_type !== 'OO WITH FRANCHISE'));
+                 
+                 if (revData) {
+                    setLocalRevenues(revData.map((r: any) => ({
+                        ...r,
+                        companyId: r.company_id,
+                        contractType: r.contract_type,
+                        franchiseId: r.franchise_id,
+                        is_standalone: true
+                    })));
+                 }
+                 
+                 if (poRulesData) {
+                     setLocalPoRules(poRulesData.filter((r: any) => r.status === 'Exclude'));
+                 }
+             } catch (err) {
+                 console.error(err);
              }
           };
           fetchFinData();
-    }
+        }
+        return () => { isMounted = false; };
   }, [isOpen]);
 
   if (!isOpen) return null;
@@ -805,7 +818,7 @@ const fixedExpenseNames = Array.from(new Set([
         .map(oe => oe.id);
 
       if (deletedIds.length > 0) {
-        await supabase.from('fixed_expenses').delete().in('id', deletedIds);
+        await supabase.from('fixed_expenses').delete().in('id', deletedIds).throwOnError();
       }
 
       const expensesToSave = processedExpandedExpenses.map(exp => ({
@@ -833,10 +846,7 @@ const fixedExpenseNames = Array.from(new Set([
               trailer_reduction_note: (exp as any).trailer_reduction_note || null
           }));
       if (expensesToSave.length > 0) {
-          const { error } = await supabase.from('fixed_expenses').upsert(expensesToSave, { onConflict: 'id' });
-          if (error) {
-              console.error("Error saving fixed expenses:", error);
-          }
+          await supabase.from('fixed_expenses').upsert(expensesToSave, { onConflict: 'id' }).throwOnError();
       }
       
 
@@ -878,7 +888,7 @@ const fixedExpenseNames = Array.from(new Set([
       const poIdsToDelete = currentPoIds.filter(id => !localPoIds.includes(id));
 
       if (poIdsToDelete.length > 0) {
-          await supabase.from('po_rules').delete().in('id', poIdsToDelete);
+          await supabase.from('po_rules').delete().in('id', poIdsToDelete).throwOnError();
       }
 
       const poToUpdate: any[] = [];
@@ -897,8 +907,8 @@ const fixedExpenseNames = Array.from(new Set([
           }
       });
 
-      if (poToUpdate.length > 0) await supabase.from('po_rules').upsert(poToUpdate);
-      if (poToInsert.length > 0) await supabase.from('po_rules').insert(poToInsert);
+      if (poToUpdate.length > 0) await supabase.from('po_rules').upsert(poToUpdate).throwOnError();
+      if (poToInsert.length > 0) await supabase.from('po_rules').insert(poToInsert).throwOnError();
 
       if (modifiedFinImportIds.length > 0) {
           const cleanData = (dataArray: any[]) => dataArray.map(item => {
@@ -921,10 +931,10 @@ const fixedExpenseNames = Array.from(new Set([
           const toInsert = cleanData(finImportData.filter(d => modifiedFinImportIds.includes(String(d.id)) && String(d.id).startsWith('new_')).map(({id, ...rest}) => rest));
           
           for (const rec of toUpdate) {
-              await supabase.from('finImport').update(rec).eq('id', rec.id);
+              await supabase.from('finImport').update(rec).eq('id', rec.id).throwOnError();
           }
           if (toInsert.length > 0) {
-              await supabase.from('finImport').insert(toInsert);
+              await supabase.from('finImport').insert(toInsert).throwOnError();
           }
       }
 
@@ -938,7 +948,10 @@ const fixedExpenseNames = Array.from(new Set([
 
       if (onDataSync) {
         setLoadingMessage("Fetching updated data...");
-        await onDataSync();
+        await Promise.race([
+          Promise.resolve(onDataSync()),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("Timeout: onDataSync traje predugo. Proveri pnl_table RLS polise.")), 15000))
+        ]);
       } else {
         await new Promise(resolve => setTimeout(resolve, 3500));
       }
@@ -949,6 +962,7 @@ const fixedExpenseNames = Array.from(new Set([
       setIsSaving(false);
       onClose();
     } catch (error) {
+      console.error(error);
       setIsSaving(false);
       onClose();
     }
