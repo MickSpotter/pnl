@@ -221,7 +221,11 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [isDashboardReady, setIsDashboardReady] = useState(false);
 
-  // -- EFFECTS --
+  useEffect(() => {
+    if (session?.user?.id) {
+      supabase.from('users').update({ last_active_at: new Date().toISOString() }).eq('id', session.user.id).then();
+    }
+  }, [session?.user?.id]);
   
   useEffect(() => {
     localStorage.setItem('tpog_sim_config', JSON.stringify(simulationConfig));

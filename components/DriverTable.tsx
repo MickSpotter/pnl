@@ -472,6 +472,81 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
   const selectedContract = selectedEntity.startsWith('CTR:') ? selectedEntity.split(':')[1] : 'ALL';
 
+  const configContract = React.useMemo(() => {
+    let ct = driver.contractType || 'Unassigned';
+    const upper = ct.toUpperCase();
+    if (upper.includes('TPOG')) return 'TPOG';
+    if (upper === 'OO' || upper.includes('OO WITH FRANCHISE')) return 'OO';
+    return ct;
+  }, [driver.contractType]);
+
+  const activeItems = React.useMemo(() => {
+    const config = pnlConfigs.find((c: any) => c.contract_type === configContract);
+    return config ? config.toggled_items : ['revenue_collected', 'fuel_rebate', 'dispatcher_pay', 'weekly_expenses', 'po', 'tolls', 'recruiting'];
+  }, [pnlConfigs, configContract]);
+
+  const renderDisabled = (itemKey: string, content: React.ReactNode) => {
+    const excludedContracts = new Set<string>();
+    const includedContracts = new Set<string>();
+    let excludedAmount = 0;
+
+    filteredRecords.forEach((r: any) => {
+        let ct = r.contractType || 'Unassigned';
+        let effCt = ct;
+        if (ct === 'TPOG' && r.franchiseId) effCt = 'TPOG WITH FRANCHISE';
+        if (ct === 'OO' && r.franchiseId) effCt = 'OO WITH FRANCHISE';
+
+        let configContract = effCt;
+        const upper = configContract.toUpperCase();
+        if (upper.includes('TPOG')) configContract = 'TPOG';
+        else if (upper === 'OO' || upper.includes('OO WITH FRANCHISE')) configContract = 'OO';
+
+        const config = pnlConfigs.find((c: any) => c.contract_type === configContract);
+        const activeItemsForRec = config ? config.toggled_items : ['revenue_collected', 'fuel_rebate', 'dispatcher_pay', 'weekly_expenses', 'po', 'tolls', 'recruiting'];
+
+        if (!activeItemsForRec.includes(itemKey)) {
+            excludedContracts.add(ct);
+            const m = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
+            const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
+            if (itemKey === 'revenue_collected') excludedAmount += m.revCol - (tpogCalc * (m.franchiseRevCol || 0) / 2);
+            else if (itemKey === 'fuel_rebate') excludedAmount += m.fuelRebate - (tpogCalc * (m.franchiseFuelReb || 0) / 2);
+            else if (itemKey === 'dispatcher_pay') excludedAmount += m.dispPay - (tpogCalc * (m.franchiseDispPay || 0) / 2);
+            else if (itemKey === 'weekly_expenses') excludedAmount += m.wklyExp - (tpogCalc * (m.franchiseWklyExp || 0) / 2);
+            else if (itemKey === 'po') excludedAmount += m.po - (tpogCalc * (m.franchisePo || 0) / 2);
+            else if (itemKey === 'tolls') excludedAmount += m.tolls - (tpogCalc * (m.franchiseTolls || 0) / 2);
+            else if (itemKey === 'recruiting') excludedAmount += m.recruiting - (tpogCalc * (m.franchiseRecruiting || 0) / 2);
+        } else {
+            includedContracts.add(ct);
+        }
+    });
+
+    if (excludedContracts.size === 0) return <>{content}</>;
+
+    if (excludedContracts.size > 0 && includedContracts.size > 0) {
+        const count = isAvgPerWeek ? Math.max(1, new Set(filteredRecords.map((r: any) => r.payDate || r.week_ending)).size) : 1;
+        const displayExclAmount = excludedAmount / count;
+
+        return (
+          <span className="relative group/disableditem flex items-center justify-end gap-0.5 cursor-help w-full" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
+              <span>{content}</span>
+              <span className="text-rose-500 font-bold text-[14px] shrink-0 leading-none pb-[1px]">!</span>
+              <div className="fixed hidden group-hover/disableditem:flex z-[100000] bg-zinc-800 border border-zinc-500 text-rose-300 px-2 py-1.5 rounded shadow-xl text-[10px] whitespace-normal w-max max-w-[200px] text-left pointer-events-none font-normal opacity-100 dynamic-tooltip">
+                  Excluded from PnL Calculation for {Array.from(excludedContracts).join(', ')}: {formatCurrency(Math.abs(displayExclAmount))}
+              </div>
+          </span>
+        );
+    }
+
+    return (
+      <span className="relative group/disableditem inline-block line-through decoration-rose-500 opacity-100 cursor-help" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
+        {content}
+        <div className="fixed hidden group-hover/disableditem:flex z-[100000] bg-zinc-800 border border-zinc-500 text-rose-300 px-2 py-1.5 rounded shadow-xl text-[10px] whitespace-nowrap pointer-events-none font-normal opacity-100 dynamic-tooltip">
+          Excluded from PnL Calculation
+        </div>
+      </span>
+    );
+  };
+
   const toggleMetric = (metric: string) => {
     setSelectedMetrics(prev => prev.includes(metric) && prev.length > 1 ? prev.filter(m => m !== metric) : prev.includes(metric) ? prev : [...prev, metric]);
   };
@@ -496,7 +571,27 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       return acc;
     }, {});
     return Object.values(recordsByKey).map((group: any) => 
-      group.reduce((prev: any, curr: any) => ((curr.grossRevenue || curr.driver_gross || 0) > (prev.grossRevenue || prev.driver_gross || 0)) ? curr : prev)
+      group.reduce((prev: any, curr: any) => {
+        const base = ((curr.grossRevenue || curr.driver_gross || 0) > (prev.grossRevenue || prev.driver_gross || 0)) ? curr : prev;
+        return {
+          ...base,
+          grossRevenue: (prev.grossRevenue || 0) + (curr.grossRevenue || 0),
+          driver_gross: (prev.driver_gross || 0) + (curr.driver_gross || 0),
+          marginAmount: (prev.marginAmount || 0) + (curr.marginAmount || 0),
+          netPay: (prev.netPay || 0) + (curr.netPay || 0),
+          milesDriven: (prev.milesDriven || 0) + (curr.milesDriven || 0),
+          tolls: (prev.tolls || 0) + (curr.tolls || 0),
+          tollCost: (prev.tollCost || 0) + (curr.tollCost || 0),
+          originalDbTolls: (prev.originalDbTolls || 0) + (curr.originalDbTolls || 0),
+          poCoverage: (prev.poCoverage || 0) + (curr.poCoverage || 0),
+          poAmount: (prev.poAmount || 0) + (curr.poAmount || 0),
+          pnlTotalPOCov: (prev.pnlTotalPOCov || 0) + (curr.pnlTotalPOCov || 0),
+          recruitingCost: (prev.recruitingCost || 0) + (curr.recruitingCost || 0),
+          recruiting_cost: (prev.recruiting_cost || 0) + (curr.recruiting_cost || 0),
+          fixed_costs: (prev.fixed_costs || 0) + (curr.fixed_costs || 0),
+          calculatedFixedCost: (prev.calculatedFixedCost || 0) + (curr.calculatedFixedCost || 0)
+        };
+      })
     );
   }, [driver.records, selectedEntity]);
 
@@ -525,7 +620,27 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       return acc;
     }, {});
     return Object.values(recordsByKey).map((group: any) => 
-      group.reduce((prev: any, curr: any) => ((curr.grossRevenue || curr.driver_gross || 0) > (prev.grossRevenue || prev.driver_gross || 0)) ? curr : prev)
+      group.reduce((prev: any, curr: any) => {
+        const base = ((curr.grossRevenue || curr.driver_gross || 0) > (prev.grossRevenue || prev.driver_gross || 0)) ? curr : prev;
+        return {
+          ...base,
+          grossRevenue: (prev.grossRevenue || 0) + (curr.grossRevenue || 0),
+          driver_gross: (prev.driver_gross || 0) + (curr.driver_gross || 0),
+          marginAmount: (prev.marginAmount || 0) + (curr.marginAmount || 0),
+          netPay: (prev.netPay || 0) + (curr.netPay || 0),
+          milesDriven: (prev.milesDriven || 0) + (curr.milesDriven || 0),
+          tolls: (prev.tolls || 0) + (curr.tolls || 0),
+          tollCost: (prev.tollCost || 0) + (curr.tollCost || 0),
+          originalDbTolls: (prev.originalDbTolls || 0) + (curr.originalDbTolls || 0),
+          poCoverage: (prev.poCoverage || 0) + (curr.poCoverage || 0),
+          poAmount: (prev.poAmount || 0) + (curr.poAmount || 0),
+          pnlTotalPOCov: (prev.pnlTotalPOCov || 0) + (curr.pnlTotalPOCov || 0),
+          recruitingCost: (prev.recruitingCost || 0) + (curr.recruitingCost || 0),
+          recruiting_cost: (prev.recruiting_cost || 0) + (curr.recruiting_cost || 0),
+          fixed_costs: (prev.fixed_costs || 0) + (curr.fixed_costs || 0),
+          calculatedFixedCost: (prev.calculatedFixedCost || 0) + (curr.calculatedFixedCost || 0)
+        };
+      })
     );
   }, [driver.allRecords, driver.records, selectedEntity, selectedPayDate]);
 
@@ -665,13 +780,13 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       if (fdp !== 0) { fuelDiscountPrice += fdp; fuelDiscountCount++; }
       fuelQuantity += Number(r.fuel_quantity ?? r.fuelUsed ?? r.fuel_gallons ?? 0);
 
-      companyPay += finalRevCol;
-      fuelRebate += m.fuelRebate;
-      wklyExp += m.wklyExp;
-      tollCost += -m.tolls;
-      poCoverage += m.po;
-      dispatcherPay += m.dispPay;
-      recruitingCost += m.recruiting;
+      companyPay += finalRevCol - (tpogCalc * finalFranchiseRevCol / 2);
+      fuelRebate += m.fuelRebate - (tpogCalc * m.franchiseFuelReb / 2);
+      wklyExp += m.wklyExp - (tpogCalc * m.franchiseWklyExp / 2);
+      tollCost += -m.tolls + (tpogCalc * m.franchiseTolls / 2);
+      poCoverage += m.po - (tpogCalc * m.franchisePo / 2);
+      dispatcherPay += m.dispPay - (tpogCalc * m.franchiseDispPay / 2);
+      recruitingCost += m.recruiting - (tpogCalc * m.franchiseRecruiting / 2);
       
       revBase += m.revBase || 0;
       balChange += finalBalChange;
@@ -984,19 +1099,20 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
         
 
+        const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
         sums.sGross += (r.grossRevenue || r.driver_gross || 0);
         sums.sMargin += (r.marginAmount || 0);
         sums.sNetPay += (r.netPay || 0);
-        sums.sDispPay += rm.dispPay;
+        sums.sDispPay += rm.dispPay - (tpogCalc * rm.franchiseDispPay / 2);
         sums.sInsExp += rm.insExp;
         sums.sMiles += (r.milesDriven || 0);
         sums.sFuel += rm.fuel;
-        sums.sRevCol += finalRevCol;
-        sums.sFuelReb += rm.fuelRebate;
-        sums.sWklyExp += rm.wklyExp;
-        sums.sTolls += rm.tolls;
-        sums.sPO += rm.po;
-        sums.sRecruiting += rm.recruiting;
+        sums.sRevCol += finalRevCol - (tpogCalc * rm.franchiseRevCol / 2);
+        sums.sFuelReb += rm.fuelRebate - (tpogCalc * rm.franchiseFuelReb / 2);
+        sums.sWklyExp += rm.wklyExp - (tpogCalc * rm.franchiseWklyExp / 2);
+        sums.sTolls += rm.tolls - (tpogCalc * rm.franchiseTolls / 2);
+        sums.sPO += rm.po - (tpogCalc * rm.franchisePo / 2);
+        sums.sRecruiting += rm.recruiting - (tpogCalc * rm.franchiseRecruiting / 2);
         sums.sBalChange += finalBalChange;
         sums.sEscrowAdj += finalEscrowAdj;
         let pnlToAdd = finalPnl;
@@ -1125,6 +1241,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
     });
 
     Array.from(groupedAllRecords.entries()).forEach(([date, records]) => {
+      const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
       records.forEach((r: any) => {
         const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
         let finalPnl = rm.pnl;
@@ -1137,13 +1254,13 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         runningSums.netPay += (r.netPay || 0);
         runningSums.insExp += rm.insExp;
         runningSums.fuel += rm.fuel;
-        runningSums.revCol += rm.revCol;
-        runningSums.fuelRebate += rm.fuelRebate;
-        runningSums.wklyExp += rm.wklyExp;
-        runningSums.tolls += rm.tolls;
-        runningSums.po += rm.po;
-        runningSums.dispPay += rm.dispPay;
-        runningSums.recruiting += rm.recruiting;
+        runningSums.revCol += rm.revCol - (tpogCalc * rm.franchiseRevCol / 2);
+        runningSums.fuelRebate += rm.fuelRebate - (tpogCalc * rm.franchiseFuelReb / 2);
+        runningSums.wklyExp += rm.wklyExp - (tpogCalc * rm.franchiseWklyExp / 2);
+        runningSums.tolls += rm.tolls - (tpogCalc * rm.franchiseTolls / 2);
+        runningSums.po += rm.po - (tpogCalc * rm.franchisePo / 2);
+        runningSums.dispPay += rm.dispPay - (tpogCalc * rm.franchiseDispPay / 2);
+        runningSums.recruiting += rm.recruiting - (tpogCalc * rm.franchiseRecruiting / 2);
         runningMiles += (r.milesDriven || 0);
       });
       runningCount += 1;
@@ -1169,6 +1286,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
       let fPnl = 0, fGross = 0, fMargin = 0, fNetPay = 0, fInsExp = 0, fFuel = 0, fRevCol = 0, fFuelReb = 0, fWklyExp = 0, fTolls = 0, fPo = 0, fDispPay = 0, fRecruiting = 0, fMiles = 0;
 
+      const tpogCalc = tpogMode === 'CALCULATED' ? 1 : 0;
       records.forEach((r: any) => {
         const rm = getRawMetrics(r, fixedExpenses, enrichedMap, pnlConfigs, poRules);
         let finalPnl = rm.pnl;
@@ -1181,13 +1299,13 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         fNetPay += (r.netPay || 0);
         fInsExp += rm.insExp;
         fFuel += rm.fuel;
-        fRevCol += rm.revCol;
-        fFuelReb += rm.fuelRebate;
-        fWklyExp += rm.wklyExp;
-        fTolls += rm.tolls;
-        fPo += rm.po;
-        fDispPay += rm.dispPay;
-        fRecruiting += rm.recruiting;
+        fRevCol += rm.revCol - (tpogCalc * rm.franchiseRevCol / 2);
+        fFuelReb += rm.fuelRebate - (tpogCalc * rm.franchiseFuelReb / 2);
+        fWklyExp += rm.wklyExp - (tpogCalc * rm.franchiseWklyExp / 2);
+        fTolls += rm.tolls - (tpogCalc * rm.franchiseTolls / 2);
+        fPo += rm.po - (tpogCalc * rm.franchisePo / 2);
+        fDispPay += rm.dispPay - (tpogCalc * rm.franchiseDispPay / 2);
+        fRecruiting += rm.recruiting - (tpogCalc * rm.franchiseRecruiting / 2);
         fMiles += (r.milesDriven || 0);
       });
 
@@ -1275,7 +1393,9 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
             <td className="px-2 py-1 text-right text-purple-400 opacity-70">{Math.round(rowMetrics.fuelQuantity)}</td>
           </>
         )}
-        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.companyPay)}</td>
+        <td className="px-2 py-1 text-right text-blue-400 !overflow-visible">
+          {renderDisabled('revenue_collected', formatCurrency(rowMetrics.companyPay))}
+        </td>
         {isRevColExpanded && (
           <>
             <td className="px-2 py-1 text-right text-zinc-400 font-mono">{rowMetrics.revBase < 0 ? '-' : '+'}{formatCurrency(Math.abs(rowMetrics.revBase))}</td>
@@ -1303,9 +1423,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 </td>
           </>
         )}
-        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.fuelRebate)}</td>
+        <td className="px-2 py-1 text-right text-blue-400 !overflow-visible">
+          {renderDisabled('fuel_rebate', formatCurrency(rowMetrics.fuelRebate))}
+        </td>
         <td className="group/wklyexp relative hover:z-[99999] px-2 py-1 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
-          -{formatCurrency(Math.abs(rowMetrics.wklyExp))}
+          {renderDisabled('weekly_expenses', `-${formatCurrency(Math.abs(rowMetrics.wklyExp))}`)}
           <div className="fixed hidden group-hover/wklyexp:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 dynamic-tooltip">
             <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Wkly Exp Breakdown:</div>
             {rowMetrics.insLiabAuto !== 0 && <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono text-zinc-300">{rowMetrics.insLiabAuto < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.insLiabAuto))}</span></div>}
@@ -1331,9 +1453,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
             {rowMetrics.fcFactoring !== 0 && <div className="flex justify-between gap-4"><span>Factoring:</span><span className="font-mono text-zinc-300">{rowMetrics.fcFactoring < 0 ? '+' : '-'}{formatCurrency(Math.abs(rowMetrics.fcFactoring))}</span></div>}
           </div>
         </td>
-        <td className="px-2 py-1 text-right text-blue-400">{rowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(rowMetrics.tollCost))}`}</td>
+        <td className="px-2 py-1 text-right text-blue-400 !overflow-visible">
+          {renderDisabled('tolls', rowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(rowMetrics.tollCost))}`)}
+        </td>
         <td className="group/po relative hover:z-[99999] px-2 py-1 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
-          {formatCurrency(rowMetrics.poCoverage)}
+          {renderDisabled('po', formatCurrency(rowMetrics.poCoverage))}
           {rowMetrics.poBreakdown && Object.keys(rowMetrics.poBreakdown).length > 0 && (
             <div className="fixed hidden group-hover/po:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 dynamic-tooltip">
               <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">PO Breakdown:</div>
@@ -1351,7 +1475,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
           )}
         </td>
         <td className="group/disp relative hover:z-[99999] px-2 py-1 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
-          {rowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(rowMetrics.dispatcherPay)}
+          {renderDisabled('dispatcher_pay', `${rowMetrics.dispatcherPay > 0 ? '+' : ''}${formatCurrency(rowMetrics.dispatcherPay)}`)}
           {rowMetrics.dispBreakdown && Object.keys(rowMetrics.dispBreakdown).length > 0 && (
             <div className="fixed hidden group-hover/disp:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[340px] max-w-[400px] pointer-events-none flex-col gap-1.5 whitespace-normal dynamic-tooltip">
               <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Dispatcher Pay Breakdown:</div>
@@ -1396,7 +1520,9 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
             </div>
           )}
         </td>
-        <td className="px-2 py-1 text-right text-blue-400">{formatCurrency(rowMetrics.recruitingCost)}</td>
+        <td className="px-2 py-1 text-right text-blue-400 !overflow-visible">
+          {renderDisabled('recruiting', formatCurrency(rowMetrics.recruitingCost))}
+        </td>
         <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${rowMetrics.totalPnL >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>{formatCurrency(rowMetrics.totalPnL)}</td>
         <td className={`px-2 py-1 text-right font-bold sticky right-0 w-[56px] min-w-[56px] z-20 transition-colors ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-900 group-hover:bg-zinc-800'} ${driver.ranking >= 80 ? 'text-emerald-400' : driver.ranking >= 50 ? 'text-yellow-400' : driver.ranking >= 20 ? 'text-amber-500' : 'text-rose-400'}`}>{`${driver.ranking.toFixed(2)}%`}</td>
       </tr>
@@ -1436,7 +1562,9 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
               <td className="px-2 py-1 text-right text-amber-400/50">{Math.round(franchiseRowMetrics.fuelQuantity)}</td>
             </>
           )}
-          <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.companyPay)}</td>
+          <td className="px-2 py-1 text-right text-amber-400/90 !overflow-visible">
+            {renderDisabled('revenue_collected', formatCurrency(franchiseRowMetrics.companyPay))}
+          </td>
           {isRevColExpanded && (
             <>
               <td className="px-2 py-1 text-right text-amber-400/70 font-mono">{franchiseRowMetrics.revBase < 0 ? '-' : '+'}{formatCurrency(Math.abs(franchiseRowMetrics.revBase))}</td>
@@ -1451,9 +1579,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
               <td className="px-2 py-1 text-right text-amber-400/70 font-mono">+{formatCurrency(Math.abs(franchiseRowMetrics.fullSharedLiability || 0))}</td>
             </>
           )}
-          <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.fuelRebate)}</td>
+          <td className="px-2 py-1 text-right text-amber-400/90 !overflow-visible">
+            {renderDisabled('fuel_rebate', formatCurrency(franchiseRowMetrics.fuelRebate))}
+          </td>
           <td className="group/franwklyexp relative hover:z-[99999] px-2 py-1 text-right text-amber-400/90 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
-            -{formatCurrency(Math.abs(franchiseRowMetrics.wklyExp))}
+            {renderDisabled('weekly_expenses', `-${formatCurrency(Math.abs(franchiseRowMetrics.wklyExp))}`)}
             <div className="fixed hidden group-hover/franwklyexp:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 dynamic-tooltip">
               <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Franchise Wkly Exp Breakdown:</div>
               {franchiseRowMetrics.insLiabAuto !== 0 && <div className="flex justify-between gap-4"><span>Liability (Auto):</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.insLiabAuto < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.insLiabAuto))}</span></div>}
@@ -1479,9 +1609,11 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
               {franchiseRowMetrics.fcFactoring !== 0 && <div className="flex justify-between gap-4"><span>Factoring:</span><span className="font-mono text-zinc-300">{franchiseRowMetrics.fcFactoring < 0 ? '+' : '-'}{formatCurrency(Math.abs(franchiseRowMetrics.fcFactoring))}</span></div>}
             </div>
           </td>
-          <td className="px-2 py-1 text-right text-amber-400/90">{franchiseRowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(franchiseRowMetrics.tollCost))}`}</td>
+          <td className="px-2 py-1 text-right text-amber-400/90 !overflow-visible">
+            {renderDisabled('tolls', franchiseRowMetrics.tollCost === 0 ? formatCurrency(0) : `-${formatCurrency(Math.abs(franchiseRowMetrics.tollCost))}`)}
+          </td>
           <td className="group/franpo relative hover:z-[99999] px-2 py-1 text-right text-amber-400/90 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
-            {formatCurrency(franchiseRowMetrics.poCoverage)}
+            {renderDisabled('po', formatCurrency(franchiseRowMetrics.poCoverage))}
             {franchiseRowMetrics.poBreakdown && Object.keys(franchiseRowMetrics.poBreakdown).length > 0 && (
               <div className="fixed hidden group-hover/franpo:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 dynamic-tooltip">
                 <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Franchise PO Breakdown:</div>
@@ -1499,7 +1631,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
             )}
           </td>
           <td className="group/frandisp relative hover:z-[99999] px-2 py-1 text-right text-amber-400/90 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
-            {franchiseRowMetrics.dispatcherPay > 0 ? '+' : ''}{formatCurrency(franchiseRowMetrics.dispatcherPay)}
+            {renderDisabled('dispatcher_pay', `${franchiseRowMetrics.dispatcherPay > 0 ? '+' : ''}${formatCurrency(franchiseRowMetrics.dispatcherPay)}`)}
             {franchiseRowMetrics.dispBreakdown && Object.keys(franchiseRowMetrics.dispBreakdown).length > 0 && (
               <div className="fixed hidden group-hover/frandisp:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[340px] max-w-[400px] pointer-events-none flex-col gap-1.5 whitespace-normal dynamic-tooltip">
                 <div className="font-bold text-white border-b border-zinc-600 pb-1 mb-1 text-[11px]">Franchise Dispatcher Pay Breakdown:</div>
@@ -1544,7 +1676,9 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
               </div>
             )}
           </td>
-          <td className="px-2 py-1 text-right text-amber-400/90">{formatCurrency(franchiseRowMetrics.recruitingCost)}</td>
+          <td className="px-2 py-1 text-right text-amber-400/90 !overflow-visible">
+            {renderDisabled('recruiting', formatCurrency(franchiseRowMetrics.recruitingCost))}
+          </td>
           <td className={`px-2 py-1 text-right font-bold sticky right-[56px] w-[80px] min-w-[80px] z-20 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'} ${franchiseRowMetrics.totalPnL >= 0 ? 'text-emerald-400/90' : 'text-rose-400/90'}`}>{formatCurrency(franchiseRowMetrics.totalPnL)}</td>
           <td className={`px-2 py-1 text-right text-zinc-600 sticky right-0 w-[56px] min-w-[56px] z-20 ${isExpanded ? 'bg-zinc-800' : 'bg-zinc-950'}`}>-</td>
         </tr>
@@ -1806,13 +1940,43 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
     ((window as any).__ENRICHED_DRIVERS__ || []).forEach((ed: any) => {
       let dStr = ed.payDate || ed.week_ending || '';
       if (dStr.includes('T')) dStr = dStr.split('T')[0];
-      map.set(`${ed.name}_${dStr}_${ed.contractType}_${ed.companyId}`, ed);
+      
+      const mergeFn = (key: string, curr: any) => {
+        if (map.has(key)) {
+          const prev = map.get(key);
+          const mergedPo = { ...(prev.po_breakdown || {}) };
+          Object.entries(curr.po_breakdown || {}).forEach(([k, v]) => {
+            mergedPo[k] = (mergedPo[k] || 0) + Number(v);
+          });
+          map.set(key, {
+            ...prev,
+            calculatedFixedCost: (prev.calculatedFixedCost || 0) + (curr.calculatedFixedCost || 0),
+            fixed_costs: (prev.fixed_costs || 0) + (curr.fixed_costs || 0),
+            insuranceCost: (prev.insuranceCost || 0) + (curr.insuranceCost || 0),
+            calculatedTolls: (prev.calculatedTolls || 0) + (curr.calculatedTolls || 0),
+            tolls: (prev.tolls || 0) + (curr.tolls || 0),
+            tollCost: (prev.tollCost || 0) + (curr.tollCost || 0),
+            poCoverage: (prev.poCoverage || 0) + (curr.poCoverage || 0),
+            pnlTotalPOCov: (prev.pnlTotalPOCov || 0) + (curr.pnlTotalPOCov || 0),
+            recruitingCost: (prev.recruitingCost || 0) + (curr.recruitingCost || 0),
+            dispatcherCommission: (prev.dispatcherCommission || 0) + (curr.dispatcherCommission || 0),
+            dispGrossAmount: (prev.dispGrossAmount || 0) + (curr.dispGrossAmount || 0),
+            dispMarginAmount: (prev.dispMarginAmount || 0) + (curr.dispMarginAmount || 0),
+            dispFixedAmount: (prev.dispFixedAmount || 0) + (curr.dispFixedAmount || 0),
+            po_breakdown: mergedPo
+          });
+        } else {
+          map.set(key, curr);
+        }
+      };
+
+      mergeFn(`${ed.name}_${dStr}_${ed.contractType}_${ed.companyId}`, ed);
       
       if (ed.contractType === 'TPOG WITH FRANCHISE') {
-        map.set(`${ed.name}_${dStr}_TPOG_${ed.companyId}`, ed);
+        mergeFn(`${ed.name}_${dStr}_TPOG_${ed.companyId}`, ed);
       }
       if (ed.contractType === 'OO WITH FRANCHISE') {
-        map.set(`${ed.name}_${dStr}_OO_${ed.companyId}`, ed);
+        mergeFn(`${ed.name}_${dStr}_OO_${ed.companyId}`, ed);
       }
     });
     return map;
@@ -2298,7 +2462,7 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       agg.totalPnL += pnlToAdd;
       agg.totalMiles += (Number(d.milesDriven) || 0);
       agg.marginAmount += (d.marginAmount || 0);
-      agg.poCoverage += m.po + (tpogCalc * m.franchisePo / 2);
+      agg.poCoverage += m.po - (tpogCalc * m.franchisePo / 2);
       agg.fuelCost += (d.fuelCost ? -Math.abs(d.fuelCost) : 0);
       agg.fuelSavings += (d.fuelSavings || 0);
       agg.totalFuel += m.fuel;

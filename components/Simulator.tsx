@@ -36,6 +36,8 @@ const Simulator: React.FC<SimulatorProps> = ({
   chartData,
   configContracts
 }) => {
+  const [simulatedPnlConfigs, setSimulatedPnlConfigs] = useState<any[]>([]);
+
   const driverWithEffectiveContracts = useMemo(() => {
     return drivers.map(d => {
       let effContract = d.contractType;
@@ -67,6 +69,17 @@ const Simulator: React.FC<SimulatorProps> = ({
   const [simCalcTypeFran, setSimCalcTypeFran] = useState<string>('TPOG_FRANCHISE');
   const [simFuelRebate, setSimFuelRebate] = useState<number>(0);
   
+  const [simPnlToggles, setSimPnlToggles] = useState<string[]>(['revenue_collected', 'fuel_rebate', 'dispatcher_pay', 'weekly_expenses', 'po', 'tolls', 'recruiting']);
+  const PNL_ITEMS = [
+    { id: 'revenue_collected', label: 'Revenue Collected' },
+    { id: 'fuel_rebate', label: 'Fuel Rebate' },
+    { id: 'dispatcher_pay', label: 'Disp. Pay' },
+    { id: 'weekly_expenses', label: 'Weekly Expenses' },
+    { id: 'po', label: 'PO' },
+    { id: 'tolls', label: 'Tolls' },
+    { id: 'recruiting', label: 'Recruiting' }
+  ];
+
   const availableContracts = useMemo(() => {
     let baseContracts = Array.from(new Set(driverWithEffectiveContracts.map(d => d.contractType))).filter(Boolean) as string[];
     if (configContracts) {
@@ -118,9 +131,9 @@ const Simulator: React.FC<SimulatorProps> = ({
   }, [selectedContractSim, configContracts]);
   
   useEffect(() => {
-    const allowedForTPOG = ['weeksOut', 'safety', 'speeding', 'grossTarget', 'tenure', 'fuel', 'fuelRebate'];
-    const allowedForHiddenRev = ['fuelRebate']; 
-    const allowedForOthers = ['revenueSplits', 'fuelRebate'];
+    const allowedForTPOG = ['weeksOut', 'safety', 'speeding', 'grossTarget', 'tenure', 'fuel', 'fuelRebate', 'pnlCalculation'];
+    const allowedForHiddenRev = ['fuelRebate', 'pnlCalculation']; 
+    const allowedForOthers = ['revenueSplits', 'fuelRebate', 'pnlCalculation'];
     
     if (['POG', 'CPM', 'ALL'].includes(selectedContractSim)) {
         if (!allowedForHiddenRev.includes(activeSimulator)) setActiveSimulator('fuelRebate');
@@ -363,7 +376,7 @@ const Simulator: React.FC<SimulatorProps> = ({
   }, [lockedDataRecords, targetDate, activeDrivers]);
 
   const rowLevelData = useMemo(() => {
-    if (selectedContractSim === 'ALL' && activeSimulator !== 'fuelRebate') return activeDrivers.map(d => ({ driver: d, isTarget: false }));
+    if (selectedContractSim === 'ALL' && activeSimulator !== 'fuelRebate' && activeSimulator !== 'pnlCalculation') return activeDrivers.map(d => ({ driver: d, isTarget: false }));
     
     const currentConfig = [...(configContracts || [])]
       .filter(c => c.contract_type === selectedContractSim)
@@ -439,11 +452,40 @@ const Simulator: React.FC<SimulatorProps> = ({
              activeOldPercent = 0;
              activeNewPercent = 0;
              activeOldDollars = oldFR;
-             activeNewDollars = newFR;
-             activePnlImpact = newFR - oldFR;
-             totalDiffDollars = 0;
+        activeNewDollars = newFR;
+        activePnlImpact = newFR - oldFR;
+        totalDiffDollars = 0;
+      } else if (activeSimulator === 'pnlCalculation') {
+            const m = driver.metrics || {};
+            
+            const rev = Number(m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay !== undefined ? m.companyPay : (driver.companyPay || 0))) || 0;
+            const fr = Number(m.pnlFuelRebate !== undefined ? m.pnlFuelRebate : (m.fuelRebate !== undefined ? m.fuelRebate : (driver.fuelRebate || driver.fuel_rebate || 0))) || 0;
+            
+            let disp = Number((m.pnlDispGrossAmount || 0) + (m.pnlDispMarginAmount || 0) + (m.pnlDispFixedAmount || 0)) || 0;
+            if (disp === 0) disp = Number(m.dispatcherPay !== undefined ? m.dispatcherPay : (driver.dispatcherCommission || 0)) || 0;
+            
+            const fixed = Number(m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed !== undefined ? m.allocatedFixed : (driver.calculatedFixedCost !== undefined ? driver.calculatedFixedCost : (driver.weeklyExpenses || driver.weekly_expenses || 0)))) || 0;
+            const po = Number(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov !== undefined ? m.totalPOCov : (m.poCoverage !== undefined ? m.poCoverage : (driver.poCoverage !== undefined ? driver.poCoverage : (m.poAmount !== undefined ? m.poAmount : (driver.poAmount !== undefined ? driver.poAmount : (m.po_amount !== undefined ? m.po_amount : (driver.po_amount !== undefined ? driver.po_amount : (m.po !== undefined ? m.po : (driver.po || 0)))))))))) || 0;
+            const tolls = Number(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls !== undefined ? m.tolls : (driver.tolls !== undefined ? driver.tolls : (driver.tollCost || 0)))) || 0;
+            const rec = Number(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting !== undefined ? m.totalRecruiting : (driver.recruitingCost !== undefined ? driver.recruitingCost : (driver.recruiting || 0)))) || 0;
+
+            let impact = 0;
+            if (!simPnlToggles.includes('revenue_collected')) impact -= rev;
+            if (!simPnlToggles.includes('fuel_rebate')) impact -= fr;
+            if (!simPnlToggles.includes('dispatcher_pay')) impact -= disp;
+            if (!simPnlToggles.includes('weekly_expenses')) impact += fixed;
+            if (!simPnlToggles.includes('po')) impact += Math.abs(po);
+            if (!simPnlToggles.includes('tolls')) impact += Math.abs(tolls);
+            if (!simPnlToggles.includes('recruiting')) impact += Math.abs(rec);
+
+            activeOldPercent = 'N/A';
+            activeNewPercent = 'N/A';
+            activeOldDollars = 0;
+            activeNewDollars = impact;
+            activePnlImpact = impact;
+            totalDiffDollars = 0;
           } else if (activeSimulator === 'revenueSplits') {
-            const isFran = driver.contractType === 'TPOG WITH FRANCHISE';
+        const isFran = driver.contractType === 'TPOG WITH FRANCHISE';
         const newC = isFran ? (hasModified ? simCompanyTakeFran : oldCompTakeFran) : (hasModified ? simCompanyTake : oldCompTake);
         const newM = isFran ? (hasModified ? simMarginTakeFran : oldMargTakeFran) : (hasModified ? simMarginTake : oldMargTake);
         const newD = isFran ? (hasModified ? simDispatcherTakeFran : oldDispTakeFran) : (hasModified ? simDispatcherTake : oldDispTake);
@@ -740,7 +782,7 @@ const Simulator: React.FC<SimulatorProps> = ({
           newTakeRatio
       };
     });
-  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, simCompanyTakeFran, simMarginTakeFran, simDispatcherTakeFran, simDispatcherMarginTakeFran, simCalcTypeFran, simFuelRebate, configContracts, fuelRebateRules, targetDate]);
+  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, simCompanyTakeFran, simMarginTakeFran, simDispatcherTakeFran, simDispatcherMarginTakeFran, simCalcTypeFran, simFuelRebate, configContracts, fuelRebateRules, targetDate, simPnlToggles]);
 
   const processedData = useMemo(() => {
     const rawData = rowLevelData.filter(d => d.isTarget);
@@ -792,22 +834,48 @@ const Simulator: React.FC<SimulatorProps> = ({
                   
                   if (isExpense) {
                      drv[key] = val * ratio;
+                     if (drv.metrics && drv.metrics[key] !== undefined) {
+                        drv.metrics[key] = drv.metrics[key] * ratio;
+                     }
                   }
                }
             });
             drv.companyPay = (drv.companyPay || 0) * ratio;
+            if (drv.metrics && drv.metrics.companyPay !== undefined) {
+               drv.metrics.companyPay = drv.metrics.companyPay * ratio;
+            }
          }
       }
 
-      return {
+      let simulatedCompanyPay = drv.companyPay;
+          if (activeSimulator === 'fuelRebate') {
+              simulatedCompanyPay = (drv.companyPay || 0) + d.activePnlImpact;
+          } else if (activeSimulator !== 'pnlCalculation' && !(drv.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits')) {
+              simulatedCompanyPay = drv.companyPay - d.totalDiffDollars;
+          }
+
+          const finalDrv = {
             ...drv,
-            netPay: drv.netPay + d.totalDiffDollars,
-            companyPay: activeSimulator === 'fuelRebate' ? ((drv.companyPay || 0) + d.activePnlImpact) : ((drv.contractType === 'TPOG WITH FRANCHISE' && activeSimulator === 'revenueSplits') ? drv.companyPay : drv.companyPay - d.totalDiffDollars),
+            metrics: drv.metrics ? { 
+              ...drv.metrics,
+              netPay: (drv.netPay || 0) + d.totalDiffDollars,
+              companyPay: simulatedCompanyPay,
+              pnlCompanyPay: simulatedCompanyPay,
+              fuelRebate: activeSimulator === 'fuelRebate' ? d.activeNewDollars : (drv.metrics.fuelRebate ?? drv.fuelRebate),
+              fuel_rebate: activeSimulator === 'fuelRebate' ? d.activeNewDollars : (drv.metrics.fuel_rebate ?? drv.fuel_rebate)
+            } : undefined,
+            netPay: (drv.netPay || 0) + d.totalDiffDollars,
+            companyPay: simulatedCompanyPay,
+            pnlCompanyPay: simulatedCompanyPay,
             fuelRebate: activeSimulator === 'fuelRebate' ? d.activeNewDollars : drv.fuelRebate,
             fuel_rebate: activeSimulator === 'fuelRebate' ? d.activeNewDollars : drv.fuel_rebate
           };
+
+          
+
+          return finalDrv;
         });
-      }, [rowLevelData, activeSimulator]);
+      }, [rowLevelData, activeSimulator, simPnlToggles]);
 
   const totalModuleImpact = useMemo(() => processedData.reduce((sum, d) => sum + d.activePnlImpact, 0), [processedData]);
 
@@ -828,6 +896,49 @@ const Simulator: React.FC<SimulatorProps> = ({
       return sortConfig.direction === 'asc' ? aVal - bVal : bVal - aVal;
     });
   }, [processedData, sortConfig]);
+
+  const simulatedCalculateMetrics = React.useCallback((groupDrivers: any[], isDriverView?: boolean) => {
+      const m = { ...calculateMetrics(groupDrivers, isDriverView) };
+      if (activeSimulator === 'pnlCalculation') {
+          const toggles = simPnlToggles;
+          let newNetIncome = m.netIncome || 0;
+          
+          if (!toggles.includes('revenue_collected')) { 
+              newNetIncome -= (m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay || 0));
+              m.pnlCompanyPay = 0; m.companyPay = 0; 
+          }
+          if (!toggles.includes('fuel_rebate')) { 
+              newNetIncome -= (m.pnlFuelRebate !== undefined ? m.pnlFuelRebate : (m.fuelRebate !== undefined ? m.fuelRebate : (m.fuel_rebate || 0)));
+              m.pnlFuelRebate = 0; m.fuelRebate = 0; m.fuel_rebate = 0;
+          }
+          if (!toggles.includes('dispatcher_pay')) { 
+              let disp = Number((m.pnlDispGrossAmount || 0) + (m.pnlDispMarginAmount || 0) + (m.pnlDispFixedAmount || 0)) || 0;
+              if (disp === 0) disp = Number(m.dispatcherPay || 0);
+              newNetIncome -= disp;
+              m.pnlDispGrossAmount = 0; m.pnlDispMarginAmount = 0; m.pnlDispFixedAmount = 0; m.dispatcherPay = 0; m.dispatcherCommission = 0;
+          }
+          if (!toggles.includes('weekly_expenses')) { 
+              newNetIncome += (m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed !== undefined ? m.allocatedFixed : (m.calculatedFixedCost !== undefined ? m.calculatedFixedCost : (m.weeklyExpenses !== undefined ? m.weeklyExpenses : (m.weekly_expenses || 0)))));
+              m.pnlAllocatedFixed = 0; m.allocatedFixed = 0; m.calculatedFixedCost = 0; m.weeklyExpenses = 0; m.weekly_expenses = 0; 
+          }
+          if (!toggles.includes('po')) { 
+              newNetIncome += Math.abs(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov !== undefined ? m.totalPOCov : (m.poCoverage !== undefined ? m.poCoverage : (m.poAmount !== undefined ? m.poAmount : (m.po_amount !== undefined ? m.po_amount : (m.po || 0))))));
+              m.pnlTotalPOCov = 0; m.totalPOCov = 0; m.poCoverage = 0; m.poAmount = 0; m.po_amount = 0; m.po = 0; 
+          }
+          if (!toggles.includes('tolls')) { 
+              newNetIncome += Math.abs(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls !== undefined ? m.tolls : (m.tollCost || 0)));
+              m.pnlTolls = 0; m.tolls = 0; m.tollCost = 0; 
+          }
+          if (!toggles.includes('recruiting')) { 
+              newNetIncome += Math.abs(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting !== undefined ? m.totalRecruiting : (m.recruitingCost !== undefined ? m.recruitingCost : (m.recruiting || 0))));
+              m.pnlTotalRecruiting = 0; m.totalRecruiting = 0; m.recruitingCost = 0; m.recruiting = 0; 
+          }
+          
+          m.disabledPnlItems = PNL_ITEMS.map(i => i.id).filter(i => !toggles.includes(i));
+          m.netIncome = newNetIncome;
+      }
+      return m;
+  }, [calculateMetrics, activeSimulator, simPnlToggles, PNL_ITEMS]);
 
   const formatMoney = (val: number) => {
     return val < 0 ? `-$${Math.abs(val).toFixed(2)}` : `$${val.toFixed(2)}`;
@@ -868,15 +979,17 @@ const Simulator: React.FC<SimulatorProps> = ({
             </div>
           </div>
           <div className="flex-1 overflow-auto pt-12 p-2">
-            <MasterTableComponent
-              companyMetrics={companyMetrics}
-              drivers={activeDrivers.map(d => ({ ...d, contractType: d.originalContractType || d.contractType }))}
-              calculateMetrics={calculateMetrics}
-              totalActiveCount={totalActiveCount}
-              selectedDate={selectedDate}
-              groupBy={groupBy}
-              chartData={chartData}
-            />
+            <MasterTableComponent 
+                  companyMetrics={companyMetrics}
+                  drivers={activeDrivers.map(d => ({ ...d, contractType: d.originalContractType || d.contractType }))}
+                  calculateMetrics={calculateMetrics}
+                  totalActiveCount={totalActiveCount}
+                  selectedDate={selectedDate}
+                  groupBy={groupBy}
+                  chartData={chartData}
+                  isAverageView={false}
+                  configContracts={configContracts}
+                />
           </div>
         </div>
         <div className="flex-1 bg-zinc-950 border border-purple-900/50 rounded-lg flex flex-col overflow-hidden shadow-2xl relative">
@@ -887,11 +1000,13 @@ const Simulator: React.FC<SimulatorProps> = ({
             <MasterTableComponent
               companyMetrics={companyMetrics}
               drivers={simulatedDrivers.map(d => ({ ...d, contractType: d.originalContractType || d.contractType }))}
-              calculateMetrics={calculateMetrics}
+              calculateMetrics={simulatedCalculateMetrics}
               totalActiveCount={totalActiveCount}
               selectedDate={selectedDate}
               groupBy={groupBy}
               chartData={chartData}
+              isAverageView={false}
+              configContracts={configContracts}
             />
           </div>
         </div>
@@ -941,6 +1056,7 @@ const Simulator: React.FC<SimulatorProps> = ({
             </>
           )}
           <option value="fuelRebate">Fuel Rebate</option>
+          <option value="pnlCalculation">PnL Calculation</option>
         </select>
           </div>
         </div>
@@ -1296,7 +1412,7 @@ const Simulator: React.FC<SimulatorProps> = ({
                     <span>Fuel Efficiency (MPG) Rules</span>
                     <div className="group relative cursor-help flex items-center">
                       <Info size={12} className="text-zinc-500 hover:text-purple-400 transition-colors" />
-                      <div className="hidden group-hover:block absolute right-8 mt-12 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[9999] pointer-events-none text-left border border-zinc-600 whitespace-pre-wrap">
+                      <div className="hidden group-hover:block absolute left-8 mt-12 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[9999] pointer-events-none text-left border border-zinc-600 whitespace-pre-wrap">
                         Encourages fuel efficiency. Drivers receive bonuses or penalties based on their MPG performance percentile compared to the fleet.
                       </div>
                     </div>
@@ -1331,7 +1447,7 @@ const Simulator: React.FC<SimulatorProps> = ({
                       <span>Fuel Rebate Simulator</span>
                       <div className="group relative cursor-help flex items-center">
                         <Info size={12} className="text-zinc-500 hover:text-rose-400 transition-colors" />
-                        <div className="hidden group-hover:block absolute right-8 mt-12 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[9999] pointer-events-none text-left border border-zinc-600 whitespace-pre-wrap">
+                        <div className="hidden group-hover:block absolute left-8 mt-12 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[9999] pointer-events-none text-left border border-zinc-600 whitespace-pre-wrap">
                           Simulates a flat Fuel Rebate amount applied to the driver. This will directly impact the Fuel Rebate column and the Total PnL.
                         </div>
                       </div>
@@ -1339,6 +1455,42 @@ const Simulator: React.FC<SimulatorProps> = ({
                     <div className="flex items-center gap-4 pt-1">
                       <label className="text-xs text-zinc-400 flex-1">Rebate Amount ($/mile)</label>
                       <input type="number" step="0.01" value={simFuelRebate} onChange={e => handleChange(setSimFuelRebate, e.target.value)} className="w-20 min-w-0 bg-zinc-900 border border-zinc-700 rounded px-2 py-1 text-xs text-white outline-none focus:border-rose-500 text-right" />
+                    </div>
+                  </div>
+                )}
+
+                {activeSimulator === 'pnlCalculation' && (
+                  <div className="bg-zinc-950 border border-zinc-800 rounded p-3 space-y-2">
+                    <h4 className="text-[10px] font-bold text-zinc-500 uppercase tracking-wider border-b border-zinc-800 pb-1.5 flex items-center gap-1.5">
+                      <span>PnL Calculation Simulator</span>
+                      <div className="group relative cursor-help flex items-center">
+                        <Info size={12} className="text-zinc-500 hover:text-purple-400 transition-colors" />
+                        <div className="hidden group-hover:block absolute left-8 mt-12 w-64 bg-zinc-800 text-zinc-200 text-[10px] p-2.5 rounded shadow-xl normal-case font-normal z-[9999] pointer-events-none text-left border border-zinc-600 whitespace-pre-wrap">
+                          Toggle items on or off to simulate their impact on the Total PnL. Turning off an expense increases the PnL, turning off revenue decreases it.
+                        </div>
+                      </div>
+                    </h4>
+                    <div className="flex flex-col gap-1.5 pt-1">
+                      {PNL_ITEMS.map((item) => {
+                         const isActive = simPnlToggles.includes(item.id);
+                         return (
+                           <div key={item.id} className="flex items-center gap-2">
+                             <button
+                               onClick={() => {
+                                 setHasModified(true);
+                                 if (isActive) {
+                                   setSimPnlToggles(simPnlToggles.filter(id => id !== item.id));
+                                 } else {
+                                   setSimPnlToggles([...simPnlToggles, item.id]);
+                                 }
+                               }}
+                               className={`px-2 py-1 w-full text-left rounded text-[10px] font-bold uppercase tracking-wider transition-colors border ${isActive ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30 hover:bg-emerald-500/20' : 'bg-zinc-900 text-zinc-600 border-zinc-800 hover:text-zinc-400 hover:bg-zinc-800 line-through decoration-zinc-600'}`}
+                             >
+                               {item.label}
+                             </button>
+                           </div>
+                         );
+                      })}
                     </div>
                   </div>
                 )}
@@ -1371,6 +1523,14 @@ const Simulator: React.FC<SimulatorProps> = ({
                         </th>
                         <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('activeNewDollars')}>
                           NEW FR {sortConfig.key === 'activeNewDollars' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
+                        </th>
+                      </>
+                    ) : activeSimulator === 'pnlCalculation' ? (
+                      <>
+                        <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors">
+                        </th>
+                        <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('activeNewDollars')}>
+                          IMPACT {sortConfig.key === 'activeNewDollars' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
                         </th>
                       </>
                     ) : (
@@ -1406,6 +1566,16 @@ const Simulator: React.FC<SimulatorProps> = ({
                           </td>
                           <td className="py-2 px-1 text-right font-mono whitespace-nowrap">
                             <span className="text-zinc-300 font-bold">{formatMoney(d.activeNewDollars)}</span>
+                          </td>
+                        </>
+                      ) : activeSimulator === 'pnlCalculation' ? (
+                        <>
+                          <td className="py-2 px-1 text-right font-mono whitespace-nowrap">
+                          </td>
+                          <td className="py-2 px-1 text-right font-mono whitespace-nowrap">
+                            <span className={Number(d.activeNewDollars) > 0 ? 'text-emerald-400 font-bold' : Number(d.activeNewDollars) < 0 ? 'text-rose-400 font-bold' : 'text-zinc-500 font-bold'}>
+                              {Number(d.activeNewDollars) > 0 ? '+' : ''}{formatMoney(d.activeNewDollars)}
+                            </span>
                           </td>
                         </>
                       ) : (

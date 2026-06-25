@@ -27,6 +27,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
   }, []);
 
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedPayDate, setSelectedPayDate] = useState<string>('ALL');
   const [sortConfig, setSortConfig] = useState<{ key: string; direction: 'asc' | 'desc' }>({ key: 'totalMargin', direction: 'desc' });
   const [expandedDispId, setExpandedDispId] = useState<string | null>(null);
   const [expandedTab, setExpandedTab] = useState<'chart' | 'list'>('chart');
@@ -108,7 +109,12 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
     const uniqueDates = Array.from(new Set(drivers.map(d => d.payDate).filter(Boolean)));
     const sortedDates = uniqueDates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
     const allowedDates = new Set(sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates);
-    const baseDrivers = drivers.filter(d => allowedDates.has(d.payDate));
+    let baseDrivers = drivers.filter(d => allowedDates.has(d.payDate));
+    
+    if (selectedPayDate !== 'ALL') {
+      baseDrivers = baseDrivers.filter(d => d.payDate === selectedPayDate);
+    }
+    
     const term = searchTerm ? searchTerm.toLowerCase() : '';
     const driverFilters = tableFilters.filter(f => f.field === 'Driver');
     
@@ -142,7 +148,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       
       return true;
     });
-  }, [drivers, searchTerm, tableFilters]);
+  }, [drivers, searchTerm, tableFilters, selectedPayDate]);
 
   const enrichedMap = React.useMemo(() => {
     const map = new Map<string, any>();
@@ -443,7 +449,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       disp.uniqueDrivers.add(driver.name);
 
       if (!disp.driverStats.has(driver.name)) {
-        disp.driverStats.set(driver.name, { gross: 0, margin: 0, pnl: 0, revColl: 0, fuelRebate: 0, wklyExp: 0, po: 0, tolls: 0, dispPay: 0, dispGrossPay: 0, dispMarginPay: 0, dispFixedPay: 0, dispSharedIns: 0, recruiting: 0, count: 0, effNonTeams: 0, effDrivers: 0, latestDate: driver.payDate || '1970-01-01', status: driver.status, companyId: driver.companyId, contractType: driver.contractType, franchiseId: driver.franchiseId, subStats: new Map() });
+        disp.driverStats.set(driver.name, { gross: 0, margin: 0, pnl: 0, revColl: 0, fuelRebate: 0, wklyExp: 0, po: 0, tolls: 0, dispPay: 0, dispGrossPay: 0, dispMarginPay: 0, dispFixedPay: 0, dispSharedIns: 0, recruiting: 0, count: 0, effNonTeams: 0, effDrivers: 0, latestDate: driver.payDate || '1970-01-01', status: driver.status, companyId: driver.companyId, contractType: driver.contractType, franchiseId: driver.franchiseId, subStats: new Map(), franchiseMetrics: null });
       }
       const stats = disp.driverStats.get(driver.name);
       stats.gross += gross;
@@ -463,6 +469,25 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       stats.count += 1;
       stats.effNonTeams += (driver.effectiveNonTeams || 0);
       stats.effDrivers += (driver.effectiveDrivers || 0);
+      
+      if (m.franchisePnlCalculated) {
+          if (!stats.franchiseMetrics) {
+              stats.franchiseMetrics = {
+                  gross: 0, margin: 0, revColl: 0, fuelRebate: 0, wklyExp: 0, po: 0, tolls: 0, dispPay: 0, recruiting: 0, pnl: 0
+              };
+          }
+          stats.franchiseMetrics.gross += gross;
+          stats.franchiseMetrics.margin += margin;
+          stats.franchiseMetrics.revColl += (m.franchiseRevCol || 0);
+          stats.franchiseMetrics.fuelRebate += (m.franchiseFuelReb || 0);
+          stats.franchiseMetrics.wklyExp += (m.franchiseWklyExp || 0);
+          stats.franchiseMetrics.po += (m.franchisePo || 0);
+          stats.franchiseMetrics.tolls += (m.franchiseTolls || 0);
+          stats.franchiseMetrics.dispPay += (m.franchiseDispPay || 0);
+          stats.franchiseMetrics.recruiting += (m.franchiseRecruiting || 0);
+          stats.franchiseMetrics.pnl += m.franchisePnlCalculated;
+      }
+
       const dDate = new Date(driver.payDate || '1970-01-01').getTime();
       const aggDate = new Date(stats.latestDate).getTime();
       if (dDate > aggDate || (dDate === aggDate && String(driver.status).toUpperCase() === 'TERMINATED')) {
@@ -798,6 +823,16 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                className="bg-zinc-900 border border-zinc-800 text-[11px] pl-7 pr-2 py-1 h-[26px] rounded w-64 text-zinc-300 focus:border-emerald-500 focus:outline-none" 
              />
            </div>
+           <select
+             value={selectedPayDate}
+             onChange={(e) => setSelectedPayDate(e.target.value)}
+             className="bg-zinc-900 border border-zinc-800 text-[11px] px-2 py-1 h-[26px] rounded text-zinc-300 focus:border-emerald-500 focus:outline-none cursor-pointer"
+           >
+             <option value="ALL">All Dates Combined</option>
+             {Array.from(new Set(drivers.map((d: any) => d.payDate).filter(Boolean))).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime()).map((date: any) => (
+               <option key={date} value={date}>{date}</option>
+             ))}
+           </select>
         </div>
         <div className="flex items-center gap-2 relative">
             <button 
@@ -1070,15 +1105,17 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
               return (
                 <React.Fragment key={disp.id}>
                   <tr 
-                    className={`hover:bg-zinc-900/50 cursor-pointer transition-colors ${expandedDispId === disp.id ? 'bg-zinc-800 z-20 relative [&>td]:border-t-2 [&>td]:border-emerald-500/50 [&>td:first-child]:border-l-2 [&>td:first-child]:border-emerald-500/50 [&>td:last-child]:border-r-2 [&>td:last-child]:border-emerald-500/50' : ''}`}
+                    className={`hover:bg-zinc-900/50 cursor-pointer transition-colors ${expandedDispId === disp.id ? 'bg-zinc-800 z-20 relative [&>td]:border-t-2 [&>td]:border-emerald-500/50' : ''}`}
                     onClick={() => {
                       if (expandedDispId !== disp.id) { setExpandedTab('chart'); setChartFilter('all'); }
                       setExpandedDispId(prev => prev === disp.id ? null : disp.id);
                     }}
                   >
-                    <td className={`px-2 py-1 font-sans flex items-center gap-2 text-zinc-200 sticky left-0 z-10 ${expandedDispId === disp.id ? 'bg-zinc-800' : 'bg-zinc-900'}`}>
-                      {expandedDispId === disp.id ? <ChevronUp size={12} className="text-zinc-500" /> : <ChevronDown size={12} className="text-zinc-500" />}
-                      <span className="font-semibold text-zinc-200">{disp.name}</span>
+                    <td className={`px-2 py-1 font-sans text-zinc-200 sticky left-0 z-10 ${expandedDispId === disp.id ? 'bg-zinc-800' : 'bg-zinc-900'}`}>
+                      <div className="flex items-center gap-2">
+                        {expandedDispId === disp.id ? <ChevronUp size={12} className="text-zinc-500" /> : <ChevronDown size={12} className="text-zinc-500" />}
+                        <span className="font-semibold text-zinc-200">{disp.name}</span>
+                      </div>
                     </td>
                     <td className="px-2 py-1 font-sans text-zinc-400">
                       {disp.teamName}
@@ -1210,7 +1247,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                     });
 
                     return (
-                      <tr className="bg-zinc-950/50 relative z-50 [&>td]:border-b-2 [&>td]:border-l-2 [&>td]:border-r-2 [&>td]:border-emerald-500/50">
+                      <tr className="bg-zinc-950/50 relative z-50 [&>td]:border-b-2 [&>td]:border-emerald-500/50">
                         <td colSpan={isDispPayExpanded ? 19 : 15} className="p-0 border-b border-zinc-800 relative z-50 overflow-visible">
                           <div className="sticky left-0 p-4 z-50 overflow-visible" style={{ width: 'var(--visible-width, calc(100vw - 40px))' }}>
                             <div className={`grid grid-cols-1 ${expandedTab === 'list' ? 'md:grid-cols-1' : 'md:grid-cols-3'} gap-4 h-[260px] items-stretch`}>
@@ -1395,12 +1432,38 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                                                   <td className={`px-2 py-1 text-right font-bold sticky right-[80px] bg-zinc-900 z-10 ${drvAvgPnL >= 0 ? 'text-emerald-500/70' : 'text-rose-500/70'}`}>{formatCurrency(showAverages ? drvAvgPnL : s.pnl)}</td>
                                                   <td className="px-2 py-1 text-center sticky right-0 bg-zinc-900 z-10 w-[80px] min-w-[80px]"><span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${drvDiagColor}`}>{drvDiagnosis}</span></td>
                                                 </tr>
+                                                {s.franchiseMetrics && (
+                                                  <tr className="bg-zinc-950/60 hover:bg-zinc-900/60">
+                                                    <td className="px-2 py-1 text-amber-400/90 flex items-center pl-6 sticky left-0 bg-zinc-950 z-10 border-r border-zinc-800/30 text-[10px]">
+                                                      <div className="w-3 h-3 border-l border-b border-zinc-600 rounded-bl mr-2 -mt-2"></div>
+                                                      └ TPOG (Franchise PnL)
+                                                    </td>
+                                                    <td className="px-2 py-1 text-zinc-500">{s.companyId || '-'}</td>
+                                                    <td className="px-2 py-1 text-zinc-500">TPOG Franchise PnL</td>
+                                                    <td className="px-2 py-1 text-zinc-500">{s.franchiseId || '-'}</td>
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(showAverages ? s.franchiseMetrics.gross/divisor : s.franchiseMetrics.gross)}</td>
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(showAverages ? s.franchiseMetrics.margin/divisor : s.franchiseMetrics.margin)}</td>
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(showAverages ? s.franchiseMetrics.revColl/divisor : s.franchiseMetrics.revColl)}</td>
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(showAverages ? s.franchiseMetrics.fuelRebate/divisor : s.franchiseMetrics.fuelRebate)}</td>
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">-{formatCurrency(Math.abs(showAverages ? s.franchiseMetrics.wklyExp/divisor : s.franchiseMetrics.wklyExp))}</td>
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(showAverages ? s.franchiseMetrics.po/divisor : s.franchiseMetrics.po)}</td>
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">-{formatCurrency(Math.abs(showAverages ? s.franchiseMetrics.tolls/divisor : s.franchiseMetrics.tolls))}</td>
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(showAverages ? s.franchiseMetrics.dispPay/divisor : s.franchiseMetrics.dispPay)}</td>
+                                                    {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">-</td>}
+                                                    {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">-</td>}
+                                                    {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">-</td>}
+                                                    {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">-</td>}
+                                                    <td className="px-2 py-1 text-right text-amber-400/70">{formatCurrency(showAverages ? s.franchiseMetrics.recruiting/divisor : s.franchiseMetrics.recruiting)}</td>
+                                                    <td className={`px-2 py-1 text-right font-bold sticky right-[80px] bg-zinc-950 z-10 ${s.franchiseMetrics.pnl >= 0 ? 'text-emerald-500/70' : 'text-rose-500/70'}`}>{formatCurrency(showAverages ? s.franchiseMetrics.pnl/divisor : s.franchiseMetrics.pnl)}</td>
+                                                    <td className="px-2 py-1 sticky right-0 bg-zinc-950 z-10 w-[80px] min-w-[80px]"></td>
+                                                  </tr>
+                                                )}
                                                 {isSubExpanded && s.subStats && Array.from(s.subStats.values()).map((sub: any, idx: number) => {
                                                   const subDivisor = sub.effNonTeams > 0 ? sub.effNonTeams : (sub.effDrivers > 0 ? sub.effDrivers : (sub.count > 0 ? sub.count : 1));
                                                   const subAvgPnL = sub.pnl / subDivisor;
                                                   return (
                                                     <tr key={`${dName}_sub_${idx}`} className="bg-zinc-950/60 hover:bg-zinc-900/60">
-                                                      <td className="px-2 py-1 text-zinc-500 flex items-center pl-6 sticky left-0 bg-zinc-950/60 z-10 border-r border-zinc-800/30 text-[10px]">
+                                                      <td className="px-2 py-1 text-zinc-500 flex items-center pl-6 sticky left-0 bg-zinc-950 z-10 border-r border-zinc-800/30 text-[10px]">
                                                         <div className="w-3 h-3 border-l border-b border-zinc-600 rounded-bl mr-2 -mt-2"></div>
                                                         Period Split
                                                       </td>
@@ -1420,8 +1483,8 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
                                                       {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">{formatCurrency(showAverages ? sub.dispFixedPay/subDivisor : sub.dispFixedPay)}</td>}
                                                       {isDispPayExpanded && <td className="px-2 py-1 text-right text-zinc-500 bg-zinc-700/20">{formatCurrency(showAverages ? sub.dispSharedIns/subDivisor : sub.dispSharedIns)}</td>}
                                                       <td className="px-2 py-1 text-right text-purple-400/40">{formatCurrency(showAverages ? sub.recruiting/subDivisor : sub.recruiting)}</td>
-                                                      <td className={`px-2 py-1 text-right font-bold sticky right-[80px] bg-zinc-950/60 z-10 ${subAvgPnL >= 0 ? 'text-emerald-500/40' : 'text-rose-500/40'}`}>{formatCurrency(showAverages ? subAvgPnL : sub.pnl)}</td>
-                                                      <td className="px-2 py-1 sticky right-0 bg-zinc-950/60 z-10 w-[80px] min-w-[80px]"></td>
+                                                      <td className={`px-2 py-1 text-right font-bold sticky right-[80px] bg-zinc-950 z-10 ${subAvgPnL >= 0 ? 'text-emerald-500/40' : 'text-rose-500/40'}`}>{formatCurrency(showAverages ? subAvgPnL : sub.pnl)}</td>
+                                                      <td className="px-2 py-1 sticky right-0 bg-zinc-950 z-10 w-[80px] min-w-[80px]"></td>
                                                     </tr>
                                                   )
                                                 })}

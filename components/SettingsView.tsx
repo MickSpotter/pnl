@@ -11,7 +11,20 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onDataSync }) => {
   const [users, setUsers] = useState<User[]>([]);
   const [expandedUser, setExpandedUser] = useState<string | null>(null);
 
-  useEffect(() => { fetchUsers(); }, []);
+  useEffect(() => { 
+    fetchUsers(); 
+    
+    const channel = supabase
+      .channel('users_realtime')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' }, (payload) => {
+        setUsers(prev => prev.map(u => u.id === payload.new.id ? { ...u, ...payload.new } : u));
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   const fetchUsers = async () => {
     const { data, error } = await supabase
@@ -121,6 +134,20 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onDataSync }) => {
                   </div>
 
                   <div className="flex items-center gap-4">
+                    {user.last_active_at && (Date.now() - new Date(user.last_active_at).getTime() < 300000) ? (
+                      <div className="flex items-center gap-2 mr-2">
+                        <div className="relative flex h-2 w-2">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                        </div>
+                        <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-wider">Active now</span>
+                      </div>
+                    ) : (
+                      <div className="text-[10px] text-zinc-500 font-mono mr-2 text-right">
+                        <div className="text-zinc-600 mb-0.5 text-[9px] uppercase tracking-wider">Last Active</div>
+                        {user.last_active_at ? new Date(user.last_active_at).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'N/A'}
+                      </div>
+                    )}
                     <button 
                       onClick={() => setExpandedUser(expandedUser === user.id ? null : user.id)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${expandedUser === user.id ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400'}`}

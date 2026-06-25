@@ -115,8 +115,12 @@ const DispatcherPay: React.FC<DispatcherPayProps> = ({
     })
     .sort((a, b) => {
        if (!sortConfig) {
-          const aAll = (!a.companyId || a.companyId === 'ALL') && (!(a as any).contractType || (a as any).contractType === 'ALL') && (!(a as any).team_name || (a as any).team_name === 'ALL') && (!(a as any).dispatcher_name || (a as any).dispatcher_name === 'ALL');
-          const bAll = (!b.companyId || b.companyId === 'ALL') && (!(b as any).contractType || (b as any).contractType === 'ALL') && (!(b as any).team_name || (b as any).team_name === 'ALL') && (!(b as any).dispatcher_name || (b as any).dispatcher_name === 'ALL');
+          const aDispAll = !(a as any).dispatcher_name || (a as any).dispatcher_name === 'ALL';
+          const bDispAll = !(b as any).dispatcher_name || (b as any).dispatcher_name === 'ALL';
+          if (aDispAll && !bDispAll) return -1;
+          if (!aDispAll && bDispAll) return 1;
+          const aAll = (!a.companyId || a.companyId === 'ALL') && (!(a as any).contractType || (a as any).contractType === 'ALL') && (!(a as any).team_name || (a as any).team_name === 'ALL');
+          const bAll = (!b.companyId || b.companyId === 'ALL') && (!(b as any).contractType || (b as any).contractType === 'ALL') && (!(b as any).team_name || (b as any).team_name === 'ALL');
           if (aAll && !bAll) return -1;
           if (!aAll && bAll) return 1;
           return 0;
@@ -217,86 +221,84 @@ const DispatcherPay: React.FC<DispatcherPayProps> = ({
        <div className="w-full border border-zinc-800 rounded-lg overflow-hidden bg-zinc-950/50 p-4">
           {dispPayTab === 'gross_margin' ? (
              <>
-                <table className="w-full text-left border-collapse table-fixed">
-                   <thead>
-                      <tr className="border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider">
-                         <th className="py-2 pr-1 font-bold w-[10%] cursor-pointer hover:text-zinc-200 transition-colors" onClick={() => handleSort('contract')}>
-                            <div className="flex items-center gap-1">Contract {sortConfig?.key === 'contract' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}</div>
-                         </th>
-                         <th className="py-2 px-1 font-bold w-[12%] cursor-pointer hover:text-zinc-200 transition-colors" onClick={() => handleSort('company')}>
-                            <div className="flex items-center gap-1">Company {sortConfig?.key === 'company' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}</div>
-                         </th>
-                         <th className="py-2 px-1 font-bold w-[12%] cursor-pointer hover:text-zinc-200 transition-colors" onClick={() => handleSort('team')}>
-                            <div className="flex items-center gap-1">Team {sortConfig?.key === 'team' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}</div>
-                         </th>
-                         <th className="py-2 px-1 font-bold w-[12%] cursor-pointer hover:text-zinc-200 transition-colors" onClick={() => handleSort('dispatcher')}>
-                            <div className="flex items-center gap-1">Dispatcher {sortConfig?.key === 'dispatcher' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}</div>
-                         </th>
-                         <th className="py-2 px-1 font-bold w-[11%] cursor-pointer hover:text-zinc-200 transition-colors" onClick={() => handleSort('valid_from')}>
-                            <div className="flex items-center gap-1">Valid From {sortConfig?.key === 'valid_from' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}</div>
-                         </th>
-                         <th className="py-2 px-1 font-bold w-[11%] cursor-pointer hover:text-zinc-200 transition-colors" onClick={() => handleSort('valid_to')}>
-                            <div className="flex items-center gap-1">Valid To {sortConfig?.key === 'valid_to' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}</div>
-                         </th>
-                         <th className="py-2 px-1 font-bold w-[8%]">Type</th>
-                         <th className="py-2 px-1 font-bold w-[19%]">Values</th>
-                         <th className="w-[5%]"></th>
-                      </tr>
-                   </thead>
-                   <tbody className="divide-y divide-zinc-800/30">
+                <div className="w-full text-left">
+                   <div className="flex items-center border-b border-zinc-800 text-[10px] text-zinc-400 uppercase font-bold tracking-wider pb-2 mb-2">
+                      <div className="w-[12%] px-1 cursor-pointer hover:text-zinc-200 transition-colors flex items-center gap-1" onClick={() => handleSort('dispatcher')}>
+                         Dispatcher {sortConfig?.key === 'dispatcher' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}
+                      </div>
+                      <div className="w-[10%] px-1 cursor-pointer hover:text-zinc-200 transition-colors flex items-center gap-1" onClick={() => handleSort('contract')}>
+                         Contract {sortConfig?.key === 'contract' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}
+                      </div>
+                      <div className="w-[12%] px-1 cursor-pointer hover:text-zinc-200 transition-colors flex items-center gap-1" onClick={() => handleSort('company')}>
+                         Company {sortConfig?.key === 'company' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}
+                      </div>
+                      <div className="w-[12%] px-1 cursor-pointer hover:text-zinc-200 transition-colors flex items-center gap-1" onClick={() => handleSort('team')}>
+                         Team {sortConfig?.key === 'team' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}
+                      </div>
+                      <div className="w-[11%] px-1 cursor-pointer hover:text-zinc-200 transition-colors flex items-center gap-1" onClick={() => handleSort('valid_from')}>
+                         Valid From {sortConfig?.key === 'valid_from' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}
+                      </div>
+                      <div className="w-[11%] px-1 cursor-pointer hover:text-zinc-200 transition-colors flex items-center gap-1" onClick={() => handleSort('valid_to')}>
+                         Valid To {sortConfig?.key === 'valid_to' && (sortConfig.direction === 'asc' ? <ChevronUp size={12}/> : <ChevronDown size={12}/>)}
+                      </div>
+                      <div className="w-[8%] px-1">Type</div>
+                      <div className="w-[19%] px-1">Values</div>
+                      <div className="w-[5%] px-1"></div>
+                   </div>
+                   <div className="flex flex-col gap-2">
                       {filteredAndSortedRules.map((rule) => (
-                         <tr key={rule.id} className="hover:bg-zinc-800/30 transition-colors group/row">
-                            <td className="py-2 pr-1">
-                               <MultiSelectDropdown options={availableContractTypes as string[]} selectedValue={(rule as any).contractType || ''} onChange={(val) => handleCompanyExpenseChange(rule.id, 'contractType' as any, val)} colorClass="text-purple-500 font-bold" borderClass="border-purple-700/50" />
-                            </td>
-                            <td className="py-2 px-1">
+                         <div key={rule.id} className="flex items-center bg-zinc-900/40 border border-zinc-800/80 rounded-lg p-1 hover:border-zinc-700 transition-colors group">
+                            <div className="w-[12%] px-1">
+                               <MultiSelectDropdown options={allDispatchers} selectedValue={(rule as any).dispatcher_name || ''} onChange={(val) => handleCompanyExpenseChange(rule.id, 'dispatcher_name', val)} colorClass="text-purple-500 font-bold" borderClass="border-purple-700/50" />
+                            </div>
+                            <div className="w-[10%] px-1">
+                               <MultiSelectDropdown options={availableContractTypes as string[]} selectedValue={(rule as any).contractType || ''} onChange={(val) => handleCompanyExpenseChange(rule.id, 'contractType' as any, val)} />
+                            </div>
+                            <div className="w-[12%] px-1">
                                <MultiSelectDropdown options={allCompanies} selectedValue={rule.companyId || ''} onChange={(val) => handleCompanyExpenseChange(rule.id, 'companyId', val)} />
-                            </td>
-                            <td className="py-2 px-1">
+                            </div>
+                            <div className="w-[12%] px-1">
                                <MultiSelectDropdown options={allTeams} selectedValue={(rule as any).team_name || ''} onChange={(val) => handleCompanyExpenseChange(rule.id, 'team_name' as any, val)} />
-                            </td>
-                            <td className="py-2 px-1">
-                               <MultiSelectDropdown options={allDispatchers} selectedValue={(rule as any).dispatcher_name || ''} onChange={(val) => handleCompanyExpenseChange(rule.id, 'dispatcher_name', val)} />
-                            </td>
-                            <td className="py-2 px-1">
+                            </div>
+                            <div className="w-[11%] px-1">
                                <input type="date" value={rule.valid_from || ''} onChange={(e) => handleCompanyExpenseChange(rule.id, 'valid_from', e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-[10px] text-zinc-200 focus:border-purple-500 outline-none transition-colors h-7" />
-                            </td>
-                            <td className="py-2 px-1">
+                            </div>
+                            <div className="w-[11%] px-1">
                                <input type="date" value={rule.valid_to || ''} onChange={(e) => handleCompanyExpenseChange(rule.id, 'valid_to', e.target.value)} style={{ colorScheme: 'dark' }} className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-[10px] text-zinc-200 focus:border-purple-500 outline-none transition-colors h-7" />
-                            </td>
-                            <td className="py-2 px-1">
-                               <select value={rule.unit || '%'} onChange={(e) => handleCompanyExpenseChange(rule.id, 'unit', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-xs text-zinc-300 focus:border-purple-500 outline-none h-7">
+                            </div>
+                            <div className="w-[8%] px-1">
+                               <select value={rule.unit || '%'} onChange={(e) => handleCompanyExpenseChange(rule.id, 'unit', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded px-1 py-1 text-[10px] text-zinc-300 focus:border-purple-500 outline-none h-7">
                                   <option value="%">%</option>
                                   <option value="$ per truck">$ per truck</option>
                                   <option value="$ total">$ total</option>
                                 </select>
-                            </td>
-                            <td className="py-2 px-1">
+                            </div>
+                            <div className="w-[19%] px-1">
                                {rule.unit === '$ per truck' || rule.unit === '$ total' || rule.unit === '$' ? (
                                   <div className="relative flex items-center h-7">
                                      <span className="absolute left-2 text-zinc-500 text-[10px] pointer-events-none">$</span>
-                                     <input type="number" value={rule.amount === 0 || rule.amount == null ? '' : rule.amount} onChange={(e) => handleCompanyExpenseChange(rule.id, 'amount', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-2 text-xs text-zinc-200 font-mono focus:border-purple-500 outline-none h-full" />
+                                     <input type="number" value={rule.amount === 0 || rule.amount == null ? '' : rule.amount} onChange={(e) => handleCompanyExpenseChange(rule.id, 'amount', e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-5 pr-2 text-[10px] text-zinc-200 font-mono focus:border-purple-500 outline-none h-full" />
                                   </div>
                                ) : (
                                   <div className="flex gap-1 h-7">
                                      <div className="relative flex items-center flex-1 h-full">
-                                        <input type="number" step="0.1" value={(rule as any).disp_gross_perc === 0 || (rule as any).disp_gross_perc == null ? '' : (rule as any).disp_gross_perc} onChange={(e) => handleCompanyExpenseChange(rule.id, 'disp_gross_perc' as any, e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-1 pr-4 text-[11px] text-zinc-200 font-mono focus:border-purple-500 outline-none h-full" placeholder="Gross" />
+                                        <input type="number" step="0.1" value={(rule as any).disp_gross_perc === 0 || (rule as any).disp_gross_perc == null ? '' : (rule as any).disp_gross_perc} onChange={(e) => handleCompanyExpenseChange(rule.id, 'disp_gross_perc' as any, e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-1 pr-4 text-[10px] text-zinc-200 font-mono focus:border-purple-500 outline-none h-full" placeholder="Gross" />
                                         <span className="absolute right-1 text-zinc-500 text-[9px] pointer-events-none">%</span>
                                      </div>
                                      <div className="relative flex items-center flex-1 h-full">
-                                        <input type="number" step="0.1" value={(rule as any).disp_margin_perc === 0 || (rule as any).disp_margin_perc == null ? '' : (rule as any).disp_margin_perc} onChange={(e) => handleCompanyExpenseChange(rule.id, 'disp_margin_perc' as any, e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-1 pr-4 text-[11px] text-zinc-200 font-mono focus:border-purple-500 outline-none h-full" placeholder="Margin" />
+                                        <input type="number" step="0.1" value={(rule as any).disp_margin_perc === 0 || (rule as any).disp_margin_perc == null ? '' : (rule as any).disp_margin_perc} onChange={(e) => handleCompanyExpenseChange(rule.id, 'disp_margin_perc' as any, e.target.value)} className="w-full bg-zinc-950 border border-zinc-700 rounded py-1 pl-1 pr-4 text-[10px] text-zinc-200 font-mono focus:border-purple-500 outline-none h-full" placeholder="Margin" />
                                         <span className="absolute right-1 text-zinc-500 text-[9px] pointer-events-none">%</span>
                                      </div>
                                   </div>
                                )}
-                            </td>
-                            <td className="py-2 pl-2 text-right">
+                            </div>
+                            <div className="w-[5%] px-1 flex justify-end">
                                <button onClick={() => handleDeleteCompanyExpense(String(rule.id))} className="text-zinc-600 hover:text-rose-500 transition-colors p-1 rounded flex justify-center items-center w-8 h-7"><Trash2 size={14} /></button>
-                            </td>
-                         </tr>
+                            </div>
+                         </div>
                       ))}
-                   </tbody>
-                </table>
+                   </div>
+                </div>
                 <button onClick={() => {
                    const newExp = {
                       id: Math.random().toString(36).substring(2, 11),

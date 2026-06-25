@@ -430,29 +430,11 @@ const MasterTable: React.FC<{
   const uniqueDrivers = Array.from(new Set(activeDriversForRows.map(d => (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned') ? 'Unassigned' : d.name))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const driverRows = [...activeDriversForRows].map(d => {
       const isUnassigned = (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned');
-      const compositeKey = isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`);
+      const compositeKey = isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}`;
       return { ...d, _compositeKey: compositeKey, name: isUnassigned ? 'Unassigned' : d.name };
   }).reduce((acc, d) => {
       if (!acc.some((x: any) => x._compositeKey === d._compositeKey)) {
-          if (selectedDate === 'ALL' && d.name !== 'Unassigned') {
-              const allDriverRecords = drivers.filter((r: any) => r.name === d.name);
-              allDriverRecords.sort((a: any, b: any) => new Date(b.payDate).getTime() - new Date(a.payDate).getTime());
-              const latestReal = allDriverRecords.find((r: any) => !(r as any).isStub && r.companyId !== 'UNRECONCILED') || allDriverRecords[0];
-              if (latestReal) {
-                  acc.push({
-                      ...d,
-                      companyId: latestReal.companyId,
-                      teamId: latestReal.teamId,
-                      franchiseId: latestReal.franchiseId,
-                      dispatcherId: latestReal.dispatcherId,
-                      contractType: latestReal.contractType
-                  });
-              } else {
-                  acc.push(d);
-              }
-          } else {
-              acc.push(d);
-          }
+          acc.push(d);
       }
       return acc;
   }, [] as any[]).sort((a: any, b: any) => (a.name || '').localeCompare(b.name || '')).filter((d: any) => !searchQuery || String(d.name || 'Unassigned').toLowerCase().startsWith(searchQuery.toLowerCase()));
@@ -668,7 +650,7 @@ const MasterTable: React.FC<{
                                 groupBy === 'Company' ? ((d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId) :
                                 groupBy === 'Franchise' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')) :
                                 groupBy === 'Team' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')) : 
-                                (isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}|${(d as any).isStub ? 'stub' : 'real'}`));
+                                (isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}`);
                     if (groupBy === 'Driver' && isUnassigned) key = 'Unassigned';
                     const safeKey = key || 'Unassigned';
         if (!map.has(safeKey)) map.set(safeKey, []);
