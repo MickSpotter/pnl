@@ -134,7 +134,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onDataSync }) => {
                   </div>
 
                   <div className="flex items-center gap-4">
-                    {user.last_active_at && (Date.now() - new Date(user.last_active_at).getTime() < 300000) ? (
+                    {user.is_online && user.last_active_at && (Date.now() - new Date(user.last_active_at).getTime() < 300000) ? (
                       <div className="flex items-center gap-2 mr-2">
                         <div className="relative flex h-2 w-2">
                           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
@@ -148,7 +148,7 @@ const SettingsView: React.FC<SettingsViewProps> = ({ onDataSync }) => {
                         {user.last_active_at ? new Date(user.last_active_at).toLocaleString('en-US', { timeZone: 'America/Chicago', hour12: true, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : 'N/A'}
                       </div>
                     )}
-                    <button 
+                    <button
                       onClick={() => setExpandedUser(expandedUser === user.id ? null : user.id)}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${expandedUser === user.id ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400'}`}
                     >

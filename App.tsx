@@ -188,6 +188,9 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   const handleConfirmLogout = async () => {
+    if (session?.user?.id) {
+      await supabase.from('users').update({ is_online: false }).eq('id', session.user.id);
+    }
     await supabase.auth.signOut();
     window.location.reload();
   };
@@ -222,9 +225,24 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
   const [isDashboardReady, setIsDashboardReady] = useState(false);
 
   useEffect(() => {
-    if (session?.user?.id) {
-      supabase.from('users').update({ last_active_at: new Date().toISOString() }).eq('id', session.user.id).then();
-    }
+    if (!session?.user?.id) return;
+
+    const updateActivity = () => {
+      supabase.from('users').update({ last_active_at: new Date().toISOString(), is_online: true }).eq('id', session.user.id).then();
+    };
+
+    updateActivity();
+    const intervalId = setInterval(updateActivity, 120000);
+
+    const handleBeforeUnload = () => {
+      supabase.from('users').update({ is_online: false }).eq('id', session.user.id).then();
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    return () => {
+      clearInterval(intervalId);
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+    };
   }, [session?.user?.id]);
   
   useEffect(() => {
