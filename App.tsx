@@ -178,6 +178,45 @@ const HARDCODED_GLOBAL_RULES = [
   { id: '1', dispatcher_base_gross_percent: 2.0, dispatcher_base_margin_percent: 20.0, franchise_split_percent: 50.0, valid_from: '2020-01-01' }
 ];
 
+const LogoutButton = ({ isSidebarCollapsed, handleConfirmLogout }: { isSidebarCollapsed: boolean, handleConfirmLogout: () => Promise<void> }) => {
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  
+  return (
+    <>
+      <button 
+        onClick={() => setShowLogoutConfirm(true)} 
+        className={`flex items-center text-zinc-500 hover:text-rose-400 transition-colors w-full ${isSidebarCollapsed ? 'justify-center py-2' : 'gap-2 text-[10px] py-1'}`}
+      >
+        <LogOut size={14} />
+        {!isSidebarCollapsed && <span className="font-bold uppercase tracking-wider">Sign Out</span>}
+      </button>
+
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90">
+          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-lg shadow-2xl max-w-sm w-full mx-4">
+            <h3 className="text-lg font-bold text-white mb-2">Sign Out</h3>
+            <p className="text-zinc-400 text-sm mb-6">Are you sure you want to sign out of the portal?</p>
+            <div className="flex gap-3 justify-end">
+              <button 
+                onClick={() => setShowLogoutConfirm(false)}
+                className="px-4 py-2 rounded text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={handleConfirmLogout}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-bold transition-colors shadow-lg shadow-rose-900/20"
+              >
+                Yes, Sign Out
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+};
+
 const AppContent: React.FC<{ session: any }> = ({ session }) => {
   const [currentRole, setCurrentRole] = useState<UserRole>(UserRole.ADMIN);
   const [activeTab, setActiveTab] = useState<'financials' | 'drivers' | 'dispatchers' | 'franchises' | 'settings'>('financials');
@@ -185,14 +224,20 @@ const AppContent: React.FC<{ session: any }> = ({ session }) => {
   // Unified Filter State: "ALL" | "CMP:id" | "FR:id" | "TM:id"
   const [globalFilter, setGlobalFilter] = useState<any>({ contracts: [], franchises: [], companies: [], teams: [], drivers: [] });
   const [isSidebarCollapsed, setSidebarCollapsed] = useState(false);
-  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
+  
 
   const handleConfirmLogout = async () => {
-    if (session?.user?.id) {
-      await supabase.from('users').update({ is_online: false }).eq('id', session.user.id);
+    try {
+      if (session?.user?.id) {
+        await supabase.from('users').update({ is_online: false }).eq('id', session.user.id);
+      }
+      await supabase.auth.signOut();
+    } catch (e) {
+    } finally {
+      localStorage.clear();
+      sessionStorage.clear();
+      window.location.replace(window.location.pathname);
     }
-    await supabase.auth.signOut();
-    window.location.reload();
   };
   
   // -- STATE MANAGEMENT --
@@ -287,8 +332,6 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
             const { data, error } = await supabase
               .from('pnl_secure_view')
               .select('*')
-              .order('pay_date', { ascending: false })
-              .order('driver_name', { ascending: true })
               .range(from, from + limit - 1);
 
             if (error) {
@@ -304,6 +347,17 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
               break;
             }
           }
+
+          allData.sort((a, b) => {
+            const dateA = new Date(a.pay_date || 0).getTime();
+            const dateB = new Date(b.pay_date || 0).getTime();
+            if (dateA !== dateB) {
+              return dateB - dateA;
+            }
+            const nameA = a.driver_name || '';
+            const nameB = b.driver_name || '';
+            return nameA.localeCompare(nameB);
+          });
 
           let loadedPromises = 0;
           const tickPromise = () => {
@@ -650,13 +704,7 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
               </div>
             )}
             
-            <button 
-              onClick={() => setShowLogoutConfirm(true)} 
-              className={`flex items-center text-zinc-500 hover:text-rose-400 transition-colors w-full ${isSidebarCollapsed ? 'justify-center py-2' : 'gap-2 text-[10px] py-1'}`}
-            >
-              <LogOut size={14} />
-              {!isSidebarCollapsed && <span className="font-bold uppercase tracking-wider">Sign Out</span>}
-            </button>
+            <LogoutButton isSidebarCollapsed={isSidebarCollapsed} handleConfirmLogout={handleConfirmLogout} />
           </div>
         </div>
       </aside>
@@ -717,28 +765,7 @@ const [poRules, setPoRules] = useState<PORule[]>([]);
         </div>
       </main>
 
-      {showLogoutConfirm && (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/80 backdrop-blur-sm">
-          <div className="bg-zinc-900 border border-zinc-800 p-6 rounded-lg shadow-2xl max-w-sm w-full mx-4">
-            <h3 className="text-lg font-bold text-white mb-2">Sign Out</h3>
-            <p className="text-zinc-400 text-sm mb-6">Are you sure you want to sign out of the portal?</p>
-            <div className="flex gap-3 justify-end">
-              <button 
-                onClick={() => setShowLogoutConfirm(false)}
-                className="px-4 py-2 rounded text-xs font-bold text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
-              >
-                Cancel
-              </button>
-              <button 
-                onClick={handleConfirmLogout}
-                className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white rounded text-xs font-bold transition-colors shadow-lg shadow-rose-900/20"
-              >
-                Yes, Sign Out
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      
 
     </div>
     </>
