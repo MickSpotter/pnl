@@ -4647,13 +4647,89 @@ if (isCategorical) {
 
 
   const chartData = useMemo(() => {
-    const cKey = `${cacheKey}-${selectedDate}-${chartWeeksLimit}-${groupBy}-${selectedEntities.join(',')}`;
+    const filterHash = JSON.stringify(tableFilters || []);
+    const cKey = `${cacheKey}-${selectedDate}-${chartWeeksLimit}-${groupBy}-${selectedEntities.join(',')}-${filterHash}`;
     if (globalChartCache && globalChartCacheKey === cKey) return globalChartCache;
 
-    if (enrichedDrivers.length === 0) return [];
+    const filteredChartDrivers = (!tableFilters || tableFilters.length === 0) ? enrichedDrivers : enrichedDrivers.filter(d => {
+          return tableFilters.every(rule => {
+              if (!rule.field || !rule.operator) return true;
+              let fieldValue: any;
+              switch (rule.field) {
+                      case 'Contract': fieldValue = d.contractType; break;
+                      case 'Company': fieldValue = d.companyId; break;
+                      case 'Team': fieldValue = d.teamId; break;
+                      case 'Franchise': fieldValue = d.franchiseId; break;
+                      case 'Driver': fieldValue = d.name; break;
+                      case 'Dispatcher': fieldValue = d.dispatcherId; break;
+                      case 'Eff Drivers': fieldValue = d.effectiveDrivers; break;
+                      case 'Eff Non Teams': fieldValue = d.effectiveNonTeams; break;
+                      case 'Eff Trailers': fieldValue = (d as any).effectiveTrailers; break;
+                      case 'Gross': fieldValue = d.grossRevenue; break;
+                      case 'Margin': fieldValue = d.marginAmount; break;
+                      case 'Miles': fieldValue = Number(d.milesDriven) || 0; break;
+                      case 'Net Pay': fieldValue = d.netPay ?? 0; break;
+                      case 'Med Net Pay': fieldValue = d.netPay ?? 0; break;
+                      case 'Disp. Pay': fieldValue = d.dispatcherCommission || 0; break;
+                      case 'Ins. Exp.': fieldValue = (d as any).insuranceCost || 0; break;
+                     case 'Fuel':
+        fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : (Number((d as any).spotter_fuel_saved ?? 0) !== 0 ? (Number((d as any).spotter_fuel_saved ?? 0) + (Number((d as any).fuel_saved ?? d.fuelSavings ?? 0) - Number((d as any).fuel_saved_2 ?? 0))) : Number((d as any).fuel_saved ?? d.fuelSavings ?? 0));
+        break;
+                      case 'Rev. Col.': fieldValue = d.companyPay || 0; break;
+                      case 'Rev Base': fieldValue = Number((d as any).revenue_base ?? (d as any).revenueBase ?? 0); break;
+                      case 'Bal Change': fieldValue = Number((d as any).balance_settle ?? (d as any).balanceSettle ?? 0) + Number((d as any).po_settle ?? (d as any).poSettle ?? 0) - Number((d as any).po_deductions ?? (d as any).poDeductions ?? 0); break;
+                      case 'Rev Prorated': fieldValue = 0; break;
+                      case '0 Mi Cap': fieldValue = 0; break;
+                      case 'Escrow Adj': fieldValue = Number((d as any).escrow_deduction ?? (d as any).escrowDeduct ?? 0); break;
+                      case 'Tolls Adj': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
+                      case 'Cash Adv': fieldValue = Number((d as any).cash_advance_percent ?? (d as any).cashAdvancePercent ?? 0); break;
+                      case 'CPM Adj': fieldValue = Number((d as any).revenue_cpm ?? (d as any).revenueCpm ?? 0) * (Number(d.milesDriven) || 0); break;
+                     case 'Fuel Adj':
+        fieldValue = (d.contractType?.includes('TPOG') || d.contractType === 'POG' || d.contractType === 'CPM') ? -Math.abs(d.fuelCost || 0) : (Number((d as any).spotter_fuel_saved ?? 0) !== 0 ? (Number((d as any).spotter_fuel_saved ?? 0) + (Number((d as any).fuel_saved ?? d.fuelSavings ?? 0) - Number((d as any).fuel_saved_2 ?? 0))) : Number((d as any).fuel_saved ?? d.fuelSavings ?? 0));
+        break;
+                      case 'Fuel Reb.': fieldValue = (d as any).fuelRebate || 0; break;
+                      case 'Wkly Exp.': fieldValue = (d as any).calculatedFixedCost || 0; break;
+                      case 'Tolls': fieldValue = Math.abs(d.tolls || d.tollCost || 0); break;
+                      case 'PO': fieldValue = Math.abs(d.poCoverage || 0); break;
+                      case 'Recruiting': fieldValue = Math.abs(d.recruitingCost || 0); break;
+                      case 'PnL 4w': fieldValue = 0; break;
+                      case '4w Avg': fieldValue = 0; break;
+                      case 'Total PnL': fieldValue = (d.companyPay || 0) + ((d as any).fuelRebate || 0) + ((d as any).dispSharedLiability || 0) - ((d as any).calculatedFixedCost || 0) - Math.abs(d.poCoverage || 0) - Math.abs(d.recruitingCost || 0) - Math.abs(d.tolls || d.tollCost || 0); break;
+                      default: return true;
+                  }
+
+             const isCategorical = ['Contract', 'Company', 'Team', 'Franchise', 'Driver', 'Dispatcher'].includes(rule.field);
+const isEmptyValue = fieldValue === undefined || fieldValue === null || String(fieldValue).trim() === '' || String(fieldValue).trim() === 'Unassigned';
+
+if (rule.operator === 'is empty') return isEmptyValue;
+if (rule.operator === 'is not empty') return !isEmptyValue;
+
+if (isCategorical) {
+    const safeVal = String(fieldValue || 'Unassigned');
+                  const selectedValues = Array.isArray(rule.value) ? rule.value : [];
+                  if (rule.operator === 'is one of') return selectedValues.includes(safeVal);
+                  if (rule.operator === 'is not one of') return !selectedValues.includes(safeVal);
+                  if (rule.operator === 'is') return selectedValues.length > 0 && selectedValues[0] === safeVal;
+                  if (rule.operator === 'is not') return selectedValues.length > 0 && selectedValues[0] !== safeVal;
+                  return true;
+              } else {
+                  const numVal = Number(fieldValue) || 0;
+                  const filterNum = Number(rule.value) || 0;
+                  if (rule.operator === 'is equal') return numVal === filterNum;
+                  if (rule.operator === 'is not equal') return numVal !== filterNum;
+                  if (rule.operator === 'is less than') return numVal < filterNum;
+                  if (rule.operator === 'is more than') return numVal > filterNum;
+                  if (rule.operator === 'is less or equal') return numVal <= filterNum;
+                  if (rule.operator === 'is more or equal') return numVal >= filterNum;
+                  return true;
+              }
+          });
+      });
+
+    if (filteredChartDrivers.length === 0) return [];
 
     const driversByDate: Record<string, any[]> = {};
-    enrichedDrivers.forEach(d => {
+    filteredChartDrivers.forEach(d => {
       if (!d.payDate) return;
       if (!driversByDate[d.payDate]) driversByDate[d.payDate] = [];
       driversByDate[d.payDate].push(d);
@@ -4891,7 +4967,7 @@ allDates = allDates.length > 6 ? allDates.slice(6) : allDates;
     globalChartCache = generatedChartData;
     globalChartCacheKey = cKey;
     return generatedChartData;
-  }, [enrichedDrivers, uniqueContracts, uniqueCompanies, uniqueTeams, uniqueFranchises, uniqueDrivers, calculateMetrics, selectedDate, latestPayDate, chartWeeksLimit, groupBy, selectedEntities, cacheKey]);
+  }, [enrichedDrivers, tableFilters, uniqueContracts, uniqueCompanies, uniqueTeams, uniqueFranchises, uniqueDrivers, calculateMetrics, selectedDate, latestPayDate, chartWeeksLimit, groupBy, selectedEntities, cacheKey]);
 
   useEffect(() => {
         if (onReady) {
