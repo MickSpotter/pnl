@@ -300,13 +300,13 @@ sharedInsBreakdown[comp] = actualSharedIns;
                 if (!exFran && r.contractType === 'TPOG' && r.franchiseId) calcFPo += Number(v);
             });
         }
-        const po = r.pnlTotalPOCov !== undefined ? Number(r.pnlTotalPOCov) : (enriched && enriched.po_breakdown ? calcPo : (enriched && enriched.poCoverage !== undefined ? Number(enriched.poCoverage) : -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0)))));
+        const po = (enriched && enriched.po_breakdown) ? calcPo : (r.pnlTotalPOCov !== undefined ? Number(r.pnlTotalPOCov) : (enriched && enriched.poCoverage !== undefined ? Number(enriched.poCoverage) : -(Math.abs(Number(r.poCoverage ?? r.poAmount ?? 0)))));
         const dispPay = enriched && enriched.dispatcherCommission !== undefined ? Number(enriched.dispatcherCommission) : calcDispPay;
         const recruiting = enriched && enriched.recruitingCost !== undefined ? Math.abs(Number(enriched.recruitingCost)) : Math.abs(Number(r.recruitingCost ?? r.recruiting_cost ?? 0));
         
-        const dispGrossAmt = enriched && enriched.dispGrossAmount !== undefined ? Math.abs(Number(enriched.dispGrossAmount)) : (driver_gross * (dispGrossPerc / 100));
-        const dispMarginAmt = enriched && enriched.dispMarginAmount !== undefined ? Math.abs(Number(enriched.dispMarginAmount)) : (margin_amt * (dispMarginPerc / 100));
-        const dispFixedAmt = enriched && enriched.dispFixedAmount !== undefined ? Math.abs(Number(enriched.dispFixedAmount)) : Math.abs(dispFixedAmount);
+        const dispGrossAmt = dispRule ? (driver_gross * (dispGrossPerc / 100)) : (enriched && enriched.dispGrossAmount !== undefined ? Math.abs(Number(enriched.dispGrossAmount)) : 0);
+        const dispMarginAmt = dispRule ? (margin_amt * (dispMarginPerc / 100)) : (enriched && enriched.dispMarginAmount !== undefined ? Math.abs(Number(enriched.dispMarginAmount)) : 0);
+        const dispFixedAmt = dispRule ? Math.abs(dispFixedAmount) : (enriched && enriched.dispFixedAmount !== undefined ? Math.abs(Number(enriched.dispFixedAmount)) : 0);
         
         let dispSharedAmt = 0;
         if (enriched) {
@@ -343,7 +343,7 @@ sharedInsBreakdown[comp] = actualSharedIns;
         let franchiseRecruiting = 0;
         let franchiseTolls = 0;
         if (effContractType === 'TPOG WITH FRANCHISE' || (ct === 'TPOG' && r.franchiseId)) {
-           let actualFRevCol = revCol + drvBalanceChange;
+           let actualFRevCol = revCol + drvBalanceChange - drvZeroMiDrop;
             let enrichedFWE = enriched && Number(enriched.franchise_fixed_costs_full) ? Number(enriched.franchise_fixed_costs_full) : undefined;
             let dbFWE = Number(r.franchise_fixed_costs_full) ? Number(r.franchise_fixed_costs_full) : undefined;
             let actualFWklyExp = enrichedFWE !== undefined ? enrichedFWE : (dbFWE !== undefined ? dbFWE : wklyExp);
@@ -398,7 +398,7 @@ sharedInsBreakdown[comp] = actualSharedIns;
           wklyExp, insExp, fuel, fuelRebate, revCol, tolls: Math.abs(dTollsFinal), po, dispPay, pnl, recruiting, 
           franchisePnl, franchisePnlCalculated, franchiseRevCol, franchiseFuelReb, franchiseDispPay, franchiseWklyExp, franchisePo, franchiseRecruiting, franchiseTolls,
           revBase: drvRevBase,
-          balChange: effectiveBalChangeForCompanyPay,
+          balChange: drvBalanceChange,
           prorated: drvTruckFloat + drvTruckWkly + drvOccIns + drvEld + drvIfta + drvMaintSupport + drvLiability + drvTruckPhd + drvTrailer + drvTrailerPhd,
           zeroMiDrop: drvZeroMiDrop,
           escrowAdj: drvEscrowAdj,
@@ -750,7 +750,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
       let finalBalChange = isLatest ? (m.balChange || 0) : 0;
       let finalEscrowAdj = isLatest ? (m.escrowAdj || 0) : 0;
       let finalRevCol = m.revCol;
-      let finalFranchiseRevCol = m.franchiseRevCol;
+      let finalFranchiseRevCol = m.franchiseRevCol - (m.balChange || 0) + finalBalChange;
       let finalPnl = m.pnl;
       let finalFranchisePnlCalculated = m.franchisePnlCalculated;
 
@@ -825,24 +825,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
         if (enrichedR.po_breakdown) {
             Object.entries(enrichedR.po_breakdown).forEach(([k, v]: [string, any]) => {
-                let isExcluded = false;
-                const allRule = poRules.find(ru => ru.contract_type === 'ALL' && ru.category_name === k && ru.status === 'Exclude');
-                if (allRule) isExcluded = true;
-                const cType = r.contractType || 'Unknown';
-                const relevantRule = poRules.find(ru => ru.contract_type === cType && ru.category_name === k && ru.status === 'Exclude');
-                if (relevantRule) {
-                    if (cType === 'TPOG') {
-                        const tpogScope = relevantRule.tpog || 'Only TPOG with franchises';
-                        if (tpogScope === 'ALL TPOG') isExcluded = true;
-                        else if (tpogScope === 'Only TPOG with franchises' && !!r.franchiseId) isExcluded = true;
-                        else if (tpogScope === 'Only TPOG without franchises' && !r.franchiseId) isExcluded = true;
-                    } else {
-                        isExcluded = true;
-                    }
-                }
-                const adjVal = isExcluded ? 0 : Number(v);
                 if (!poBreakdown[k]) poBreakdown[k] = 0;
-                poBreakdown[k] += adjVal;
+                poBreakdown[k] += Number(v);
             });
         }
       }
@@ -923,7 +907,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         
         let finalBalChange = isLatest ? (m.balChange || 0) : 0;
         let finalEscrowAdj = isLatest ? (m.escrowAdj || 0) : 0;
-        let finalFranchiseRevCol = m.franchiseRevCol;
+        let finalFranchiseRevCol = m.franchiseRevCol - (m.balChange || 0) + finalBalChange;
         let finalFranchisePnlCalculated = m.franchisePnlCalculated;
 
         
@@ -962,7 +946,7 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         revBase += m.revBase || 0;
         balChange += finalBalChange;
         prorated += m.prorated || 0;
-        zeroMiDrop += m.zeroMiDrop || 0;
+        zeroMiDrop += 0;
         escrowAdj += finalEscrowAdj;
         tollsAdj += m.tollsAdj || 0;
         cashAdv += m.cashAdv || 0;
@@ -1004,15 +988,8 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
 
           if (enrichedR.po_breakdown) {
             Object.entries(enrichedR.po_breakdown).forEach(([k, v]: [string, any]) => {
-              let isExcluded = false;
-              const allRule = poRules.find(ru => ru.contract_type === 'ALL' && ru.category_name === k && ru.status === 'Exclude');
-              if (allRule) isExcluded = true;
-              const stubRule = poRules.find(ru => (ru.contract_type === 'TPOG Franchise PnL' || ru.contract_type === 'TPOG (Franchise PnL)') && ru.category_name === k && ru.status === 'Exclude');
-              if (stubRule) {
-                  isExcluded = true;
-              }
               if (!poBreakdown[k]) poBreakdown[k] = 0;
-              poBreakdown[k] += isExcluded ? 0 : Number(v);
+              poBreakdown[k] += Number(v);
             });
           }
         }
@@ -1458,19 +1435,42 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
         </td>
         <td className="group/po relative hover:z-[99999] px-2 py-1 text-right text-blue-400 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
           {renderDisabled('po', formatCurrency(rowMetrics.poCoverage))}
-          {rowMetrics.poBreakdown && Object.keys(rowMetrics.poBreakdown).length > 0 && (
-            <div className="fixed hidden group-hover/po:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 dynamic-tooltip">
+         {rowMetrics.poBreakdown && Object.keys(rowMetrics.poBreakdown).length > 0 && (
+            <div className="fixed hidden group-hover/po:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-[200px] pointer-events-none flex-col gap-1 dynamic-tooltip whitespace-normal break-words">
               <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">PO Breakdown:</div>
               {poColumns.map(reason => {
-                const poVal = rowMetrics.poBreakdown?.[reason] || 0;
-                if (poVal === 0) return null;
+                if (!rowMetrics.poBreakdown || !(reason in rowMetrics.poBreakdown)) return null;
+                let poVal = rowMetrics.poBreakdown[reason];
+                let isExcluded = false;
+                const allRule = poRules.find(ru => ru.contract_type === 'ALL' && ru.category_name === reason && ru.status === 'Exclude');
+                if (allRule) isExcluded = true;
+                const cType = driver.contractType || 'Unknown';
+                const relevantRule = poRules.find(ru => ru.contract_type === cType && ru.category_name === reason && ru.status === 'Exclude');
+                if (relevantRule) {
+                    if (cType === 'TPOG') {
+                        const tpogScope = relevantRule.tpog || 'Only TPOG with franchises';
+                        if (tpogScope === 'ALL TPOG') isExcluded = true;
+                        else if (tpogScope === 'Only TPOG with franchises' && !!driver.franchiseId) isExcluded = true;
+                        else if (tpogScope === 'Only TPOG without franchises' && !driver.franchiseId) isExcluded = true;
+                    } else {
+                        isExcluded = true;
+                    }
+                }
+                if (driver.contractType === 'MCLOO') {
+                  poVal = poVal / 0.3;
+                }
                 return (
                   <div key={reason} className="flex justify-between gap-4">
-                    <span>{reason}:</span>
-                    <span className="font-mono text-zinc-300">{poVal < 0 ? '-' : ''}{formatCurrency(Math.abs(poVal))}</span>
+                    <span className={isExcluded ? 'text-zinc-500 line-through' : (poVal === 0 ? 'text-zinc-500' : '')}>{reason}:</span>
+                    <span className={`font-mono shrink-0 ${isExcluded ? 'text-zinc-500 line-through' : (poVal === 0 ? 'text-zinc-500' : 'text-zinc-300')}`}>{poVal < 0 ? '-' : ''}{formatCurrency(Math.abs(poVal))}</span>
                   </div>
                 );
               })}
+              {driver.contractType === 'MCLOO' && (
+                <div className="text-[9px] text-amber-400 mt-1 italic border-t border-zinc-700 pt-1 leading-tight">
+                  * Note: Tooltip displays 100% values.<br />Column calculates 30% for MCLOO.
+                </div>
+              )}
             </div>
           )}
         </td>
@@ -1615,15 +1615,22 @@ const DriverRow = React.memo(({ driver, isExpanded, onToggle, fleetAverages, set
           <td className="group/franpo relative hover:z-[99999] px-2 py-1 text-right text-amber-400/90 cursor-help !overflow-visible" onMouseMove={handleTooltipMouseMove} onMouseLeave={handleTooltipMouseLeave}>
             {renderDisabled('po', formatCurrency(franchiseRowMetrics.poCoverage))}
             {franchiseRowMetrics.poBreakdown && Object.keys(franchiseRowMetrics.poBreakdown).length > 0 && (
-              <div className="fixed hidden group-hover/franpo:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 dynamic-tooltip">
+              <div className="fixed hidden group-hover/franpo:flex z-[100000] bg-zinc-800 border border-zinc-500 text-zinc-200 p-3 rounded-lg shadow-2xl text-[10px] normal-case text-left w-max min-w-[200px] pointer-events-none flex-col gap-1 dynamic-tooltip whitespace-normal break-words">
                 <div className="font-bold text-sky-400 border-b border-zinc-600 pb-1 mb-1">Franchise PO Breakdown:</div>
                 {poColumns.map(reason => {
-                  const poVal = franchiseRowMetrics.poBreakdown?.[reason] || 0;
-                  if (poVal === 0) return null;
+                  if (!franchiseRowMetrics.poBreakdown || !(reason in franchiseRowMetrics.poBreakdown)) return null;
+                  const poVal = franchiseRowMetrics.poBreakdown[reason];
+                  let isExcluded = false;
+                  const allRule = poRules.find(ru => ru.contract_type === 'ALL' && ru.category_name === reason && ru.status === 'Exclude');
+                  if (allRule) isExcluded = true;
+                  const stubRule = poRules.find(ru => (ru.contract_type === 'TPOG Franchise PnL' || ru.contract_type === 'TPOG (Franchise PnL)') && ru.category_name === reason && ru.status === 'Exclude');
+                  if (stubRule) {
+                      isExcluded = true;
+                  }
                   return (
                     <div key={`fran-po-${reason}`} className="flex justify-between gap-4">
-                      <span>{reason}:</span>
-                      <span className="font-mono text-zinc-300">{poVal < 0 ? '-' : ''}{formatCurrency(Math.abs(poVal))}</span>
+                      <span className={isExcluded ? 'text-zinc-500 line-through' : (poVal === 0 ? 'text-zinc-500' : '')}>{reason}:</span>
+                      <span className={`font-mono shrink-0 ${isExcluded ? 'text-zinc-500 line-through' : (poVal === 0 ? 'text-zinc-500' : 'text-zinc-300')}`}>{poVal < 0 ? '-' : ''}{formatCurrency(Math.abs(poVal))}</span>
                     </div>
                   );
                 })}
@@ -2441,9 +2448,9 @@ const DriverTable: React.FC<DriverTableProps> = ({ drivers }) => {
       const isLatest = (d.payDate || d.week_ending || '') === latestDatesByDriver.get(d.name || 'Unknown');
       
       let finalBalChange = isLatest ? (m.balChange || 0) : 0;
-      let finalEscrowAdj = isLatest ? (m.escrowAdj || 0) : 0;
-      let finalRevCol = m.revCol;
-      let finalFranchiseRevCol = m.franchiseRevCol;
+        let finalEscrowAdj = isLatest ? (m.escrowAdj || 0) : 0;
+        let finalRevCol = m.revCol;
+        let finalFranchiseRevCol = m.franchiseRevCol - (m.balChange || 0) + finalBalChange;
       let finalPnl = m.pnl;
       let finalFranchisePnlCalculated = m.franchisePnlCalculated;
 

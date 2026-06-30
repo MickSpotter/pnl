@@ -428,9 +428,9 @@ const MasterTable: React.FC<{
   const uniqueFranchises = Array.from(new Set(activeDriversForRows.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueTeams = Array.from(new Set(activeDriversForRows.map(d => (d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
   const uniqueDrivers = Array.from(new Set(activeDriversForRows.map(d => (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned') ? 'Unassigned' : d.name))).sort().filter(c => !searchQuery || String(c).toLowerCase().startsWith(searchQuery.toLowerCase()));
-  const driverRows = [...activeDriversForRows].map(d => {
+  const driverRows = [...activeDriversForRows].sort((a: any, b: any) => new Date(b.payDate || 0).getTime() - new Date(a.payDate || 0).getTime()).map(d => {
       const isUnassigned = (!d.name || String(d.name).toLowerCase() === 'unknown driver' || String(d.name).toLowerCase() === 'unassigned');
-      const compositeKey = isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}`;
+      const compositeKey = isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}`);
       return { ...d, _compositeKey: compositeKey, name: isUnassigned ? 'Unassigned' : d.name };
   }).reduce((acc, d) => {
       if (!acc.some((x: any) => x._compositeKey === d._compositeKey)) {
@@ -443,8 +443,10 @@ const MasterTable: React.FC<{
           const driversByName = new Map<string, DriverPerformance[]>();
           groupDrivers.forEach(d => {
               const name = d.name || 'Unknown';
-              if (!driversByName.has(name)) driversByName.set(name, []);
-              driversByName.get(name)!.push(d);
+              const date = d.payDate || 'Unknown';
+              const key = `${name}|${date}`;
+              if (!driversByName.has(key)) driversByName.set(key, []);
+              driversByName.get(key)!.push(d);
           });
           const t: any = {
             rawEffCount: 0, effCount: 0, effNonTeamsCount: 0, effTrailersCount: 0, gross: 0, companyPay: 0,
@@ -650,7 +652,7 @@ const MasterTable: React.FC<{
                                 groupBy === 'Company' ? ((d.companyId === 'UNRECONCILED' || !d.companyId) ? 'Unassigned' : d.companyId) :
                                 groupBy === 'Franchise' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.franchiseId || 'No Franchise')) :
                                 groupBy === 'Team' ? ((d.companyId === 'UNRECONCILED' || (d as any).isStub) ? 'Unassigned' : (d.teamId || 'No Team')) : 
-                                (isUnassigned ? 'Unassigned' : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}`);
+                                (isUnassigned ? 'Unassigned' : (selectedDate === 'ALL' ? d.name : `${d.name}|${d.companyId || ''}|${d.teamId || ''}|${d.franchiseId || ''}|${d.dispatcherId || ''}|${d.contractType || ''}`));
                     if (groupBy === 'Driver' && isUnassigned) key = 'Unassigned';
                     const safeKey = key || 'Unassigned';
         if (!map.has(safeKey)) map.set(safeKey, []);
@@ -990,9 +992,13 @@ const MasterTable: React.FC<{
             value={`${val(metrics.pnlZeroMiDrop, div) < 0 ? '-' : (val(metrics.pnlZeroMiDrop, div) > 0 ? '+' : '')}${formatCurrency(Math.abs(val(metrics.pnlZeroMiDrop, div)))}`}
             tooltipContent={() => {
               let count = 0; let revBase = 0; let balChange = 0; let prorated = 0;
-              const uniqueNames = Array.from(new Set((rowDrivers || []).map(d => d.name || 'Unknown')));
-              uniqueNames.forEach(dName => {
-                  const drvRecords = rowDrivers.filter(d => d.name === dName);
+              const map = new Map<string, any[]>();
+              (rowDrivers || []).forEach(d => {
+                  const key = `${d.name || 'Unknown'}|${d.payDate || 'Unknown'}`;
+                  if (!map.has(key)) map.set(key, []);
+                  map.get(key)!.push(d);
+              });
+              map.forEach((drvRecords) => {
                   const m = calculateMetrics(drvRecords, true);
                   if (m.pnlZeroMiDrop < 0) {
                     count++;
@@ -2036,9 +2042,13 @@ const MasterTable: React.FC<{
                   let revBase = 0;
                   let balChange = 0;
                   let prorated = 0;
-                  const uniqueNames = Array.from(new Set((drivers || []).map(d => d.name || 'Unknown')));
-                  uniqueNames.forEach(dName => {
-                    const drvRecords = drivers.filter(d => d.name === dName);
+                  const map = new Map<string, any[]>();
+                  (drivers || []).forEach(d => {
+                      const key = `${d.name || 'Unknown'}|${d.payDate || 'Unknown'}`;
+                      if (!map.has(key)) map.set(key, []);
+                      map.get(key)!.push(d);
+                  });
+                  map.forEach((drvRecords) => {
                     const m = calculateMetrics(drvRecords, true);
                     if (m.pnlZeroMiDrop < 0) {
                       count++;
@@ -3568,6 +3578,21 @@ const PnLView: React.FC<PnLViewProps> = ({
           fixed_costs: company_fixed_full * (isFranchise ? companyTakeMulti : 1),
           franchise_fixed_costs_full: franchise_fixed_full,
           franchise_fixed_breakdown: f_breakdown,
+          franchise_po: (d as any).franchise_po !== undefined ? (d as any).franchise_po : (d.poAmount || 0),
+          franchise_po_breakdown: (() => {
+              let pb = d.po_breakdown;
+              if (typeof pb === 'string') {
+                  try { pb = JSON.parse(pb); } catch(e) {}
+              }
+              let fpb = (d as any).franchise_po_breakdown;
+              if (typeof fpb === 'string') {
+                  try { fpb = JSON.parse(fpb); } catch(e) {}
+              }
+              const base = pb && typeof pb === 'object' ? pb : {};
+              const over = fpb && typeof fpb === 'object' ? fpb : {};
+              const merged = { ...base, ...over };
+              return Object.keys(merged).length > 0 ? merged : null;
+          })(),
           insuranceCost: insurance_costs_calc,
           insLiabAuto: ins_liab_auto * cTake,
           insLiabGen: ins_liab_gen * cTake,
@@ -3582,6 +3607,9 @@ const PnLView: React.FC<PnLViewProps> = ({
           poCoverage: d.poCoverage ? (-Math.abs(Number(d.poCoverage))) * companyTakeMulti : 0,
           po_breakdown: d.po_breakdown ? (() => {
               let pb = d.po_breakdown;
+              if (typeof pb === 'string') {
+                  try { pb = JSON.parse(pb); } catch(e) {}
+              }
               const adjusted: any = {};
               if (pb && typeof pb === 'object') {
                   Object.entries(pb).forEach(([k, v]: any) => {
@@ -4550,10 +4578,15 @@ if (isCategorical) {
   
   const companyMetrics = useMemo(() => {
      const rawMetrics = calculateMetrics(displayedDrivers, groupBy === 'Driver');
-     const uniqueDriverNames = Array.from(new Set(displayedDrivers.map(d => d.name))).filter(Boolean);
+     
      let totalNetIncome = 0;
-     uniqueDriverNames.forEach(dName => {
-       const drvRecords = displayedDrivers.filter(drv => drv.name === dName);
+     const driversByNameAndDate = new Map<string, any[]>();
+     displayedDrivers.forEach(d => {
+         const key = `${d.name || 'Unknown'}|${d.payDate || 'Unknown'}`;
+         if (!driversByNameAndDate.has(key)) driversByNameAndDate.set(key, []);
+         driversByNameAndDate.get(key)!.push(d);
+     });
+     driversByNameAndDate.forEach(drvRecords => {
        const m = calculateMetrics(drvRecords, true);
        totalNetIncome += m.netIncome;
      });
@@ -4571,9 +4604,13 @@ if (isCategorical) {
 
      if (tpogFranchiseDrivers.length > 0) {
          let fNetIncome = 0;
-         const fUniqueDriverNames = Array.from(new Set(tpogFranchiseDrivers.map(d => d.name))).filter(Boolean);
-         fUniqueDriverNames.forEach(dName => {
-             const drvRecords = tpogFranchiseDrivers.filter(drv => drv.name === dName);
+         const fDriversByNameAndDate = new Map<string, any[]>();
+         tpogFranchiseDrivers.forEach(d => {
+             const key = `${d.name || 'Unknown'}|${d.payDate || 'Unknown'}`;
+             if (!fDriversByNameAndDate.has(key)) fDriversByNameAndDate.set(key, []);
+             fDriversByNameAndDate.get(key)!.push(d);
+         });
+         fDriversByNameAndDate.forEach(drvRecords => {
              const m = calculateMetrics(drvRecords, true);
              fNetIncome += ((m.netIncome - (m.pnlBalanceChange || 0) - (m.pnlEscrowAdj || 0)) + (m.excludedPoTotal || 0)) / 2 + (m.pnlBalanceChange || 0) + (m.pnlEscrowAdj || 0);
          });

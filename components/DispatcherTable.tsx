@@ -122,8 +122,8 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
     
     return baseDrivers.filter(driver => {
       const d = driver as any;
-      const dId = String(d.stub_dispatcher || d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || '').toLowerCase();
-      const tId = String(d.stub_team || d.teamId || d.teamName || d.team_name || d.team || '').toLowerCase();
+      const dId = String(d.dispatcherName || d.dispatcher_name || d.dispatcherId || d.dispatcher_id || d.dispatcher || d.stub_dispatcher || '').toLowerCase().trim();
+      const tId = String(d.teamName || d.team_name || d.teamId || d.team || d.stub_team || '').toLowerCase().trim();
       const dName = String(d.name || '').toLowerCase();
       
       if (term) {
@@ -159,42 +159,12 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
   }, [drivers]);
 
   const requestSort = (key: string) => {
-    const getChartData = (dispName: string, teamName: string) => {
-    const dataMap = new Map();
-    validDrivers.forEach(d => {
-      const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
-      const tId = d.teamId || d.teamName || d.team_name || d.team || 'Unassigned Team';
-      const dId = d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || 'Unassigned Dispatcher';
-      
-      if (dId === dispName && tId === teamName) {
-        const isTerminated = String(d.status).toUpperCase() === 'TERMINATED';
-        if (chartFilter === 'active' && isTerminated) return;
-        if (chartFilter === 'terminated' && !isTerminated) return;
-        if (chartFilter !== 'all' && chartFilter !== 'active' && chartFilter !== 'terminated' && d.name !== chartFilter) return;
-
-        const payD = d.payDate || 'Unknown';
-        if (!dataMap.has(payD)) {
-          dataMap.set(payD, { payDate: payD, gross: 0, margin: 0, pnl: 0 });
-        }
-        const cd = dataMap.get(payD);
-        cd.gross += (d.grossRevenue || d.driver_gross || 0);
-        cd.margin += (d.marginAmount || 0);
-        let finalPnl = m.pnl;
-        if (m.franchisePnlCalculated) {
-            finalPnl -= m.franchisePnlCalculated;
-        }
-        cd.pnl += finalPnl;
-      }
-    });
-    return Array.from(dataMap.values()).sort((a, b) => new Date(a.payDate).getTime() - new Date(b.payDate).getTime());
-  };
     let direction: 'asc' | 'desc' = 'desc';
     if (sortConfig.key === key && sortConfig.direction === 'desc') {
       direction = 'asc';
     }
     setSortConfig({ key, direction });
   };
-
   
 
   const toggleMetric = (metric: string) => {
@@ -208,7 +178,43 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
 
   const getChartData = React.useCallback((dispName: string, teamName: string) => {
     const dataMap = new Map();
-    validDrivers.forEach(d => {
+    const uniqueDates = Array.from(new Set(drivers.map(d => d.payDate).filter(Boolean)));
+    const sortedDates = uniqueDates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
+    const allowedDates = new Set(sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates);
+    let sourceDrivers = drivers.filter(d => allowedDates.has(d.payDate));
+    
+    if (selectedPayDate !== 'ALL') {
+      const selectedTime = new Date(selectedPayDate).getTime();
+      sourceDrivers = sourceDrivers.filter(d => new Date(d.payDate).getTime() <= selectedTime);
+    }
+    const term = searchTerm ? searchTerm.toLowerCase() : '';
+    const driverFilters = tableFilters.filter(f => f.field === 'Driver');
+    if (term || driverFilters.length > 0) {
+      sourceDrivers = sourceDrivers.filter(driver => {
+        const d = driver as any;
+        const dId = String(d.dispatcherName || d.dispatcher_name || d.dispatcherId || d.dispatcher_id || d.dispatcher || d.stub_dispatcher || '').toLowerCase().trim();
+        const tId = String(d.teamName || d.team_name || d.teamId || d.team || d.stub_team || '').toLowerCase().trim();
+        const dName = String(d.name || '').toLowerCase();
+        if (term && !dId.includes(term) && !tId.includes(term) && !dName.includes(term)) {
+          return false;
+        }
+        if (driverFilters.length > 0) {
+          const passesDriverFilter = driverFilters.every(rule => {
+            const vals = Array.isArray(rule.value) ? rule.value : [];
+            if (vals.length === 0) return true;
+            const hasDriver = vals.includes(driver.name);
+            if (rule.operator === 'is one of') return hasDriver;
+            if (rule.operator === 'is not one of') return !hasDriver;
+            if (rule.operator === 'is') return hasDriver;
+            if (rule.operator === 'is not') return !hasDriver;
+            return true;
+          });
+          if (!passesDriverFilter) return false;
+        }
+        return true;
+      });
+    }
+    sourceDrivers.forEach(d => {
       const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
       const tId = d.teamId || d.teamName || d.team_name || d.team || 'Unassigned Team';
       const dId = d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || 'Unassigned Dispatcher';
@@ -237,17 +243,31 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
         cd.gross += (d.grossRevenue || d.driver_gross || 0);
         cd.margin += (d.marginAmount || 0);
         let finalPnl = m.pnl;
+        let finalRevCol = m.revCol;
+        let finalDispPay = m.dispPay;
+        let finalWklyExp = m.wklyExp;
+        let finalTolls = m.tolls;
+        let finalPo = m.po;
+        let finalRecruiting = m.recruiting;
         if (m.franchisePnlCalculated) {
             finalPnl -= m.franchisePnlCalculated;
+            if (selectedPayDate !== 'ALL') {
+                finalRevCol -= (m.franchiseRevCol || 0) / 2;
+                finalDispPay -= (m.franchiseDispPay || 0) / 2;
+                finalWklyExp -= (m.franchiseWklyExp || 0) / 2;
+                finalTolls -= (m.franchiseTolls || 0) / 2;
+                finalPo -= (m.franchisePo || 0) / 2;
+                finalRecruiting -= (m.franchiseRecruiting || 0) / 2;
+            }
         }
         cd.pnl += finalPnl;
-        cd['disp. pay'] += m.dispPay;
-        cd['wkly exp'] += m.wklyExp;
-        cd['revenue collected'] += m.revCol;
-        cd.tolls += m.tolls;
+        cd['disp. pay'] += finalDispPay;
+        cd['wkly exp'] += finalWklyExp;
+        cd['revenue collected'] += finalRevCol;
+        cd.tolls += finalTolls;
         cd.fuel += m.fuel;
-        cd.po += m.po;
-        cd.recruiting += m.recruiting;
+        cd.po += finalPo;
+        cd.recruiting += finalRecruiting;
         cd.count += 1;
         cd.effNonTeams += (d.effectiveNonTeams || 0);
         cd.effDrivers += (d.effectiveDrivers || 0);
@@ -267,7 +287,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
        });
        return res;
     });
-  }, [validDrivers, fixedExpenses, enrichedMap, pnlConfigs, poRules, chartFilter, selectedMetrics]);
+  }, [drivers, selectedPayDate, searchTerm, tableFilters, fixedExpenses, enrichedMap, pnlConfigs, poRules, chartFilter, selectedMetrics]);
 
   const getSeverityForMetric = (metricId: string, val: number, specificConf: any = driverSettings?.['GLOBAL'] || {}) => {
       const rules = specificConf[metricId] || driverSettings?.['GLOBAL']?.[metricId];
@@ -287,6 +307,15 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
   };
 
   const { allDispatchers, driverRanks } = React.useMemo(() => {
+    const latestDatesByDriver = new Map<string, string>();
+    validDrivers.forEach(d => {
+      const name = d.name || 'Unknown';
+      const dDate = d.payDate || '';
+      if (!latestDatesByDriver.has(name) || dDate > (latestDatesByDriver.get(name) || '')) {
+        latestDatesByDriver.set(name, dDate);
+      }
+    });
+
     const globalDriverStats = new Map();
     validDrivers.forEach(d => {
       const nameLower = (d.name || '').toLowerCase();
@@ -331,7 +360,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
         
         const m = getRawMetrics(d, fixedExpenses, enrichedMap, pnlConfigs, poRules);
         const isStub = (d as any).isStub || ((d.effectiveDrivers || 0) === 0 && (Math.abs(m.po || 0) > 0 || Math.abs(d.tolls || d.tollCost || 0) > 0));
-        let dispatcherId = isStub ? (d.stub_dispatcher || 'Unassigned Dispatcher') : (d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || 'Unassigned Dispatcher');
+        let dispatcherId = d.dispatcherId || d.dispatcherName || d.dispatcher_name || d.dispatcher_id || d.dispatcher || d.stub_dispatcher || 'Unassigned Dispatcher';
         if (!dispatcherId || String(dispatcherId).trim().toLowerCase() === 'unassigned' || String(dispatcherId).trim().toLowerCase() === 'null') dispatcherId = 'Unassigned Dispatcher';
         
         const ct = d.contractType || 'ALL';
@@ -355,16 +384,8 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
               const m = getRawMetrics(driver, fixedExpenses, enrichedMap, pnlConfigs, poRules);
               const isStub = (driver as any).isStub || ((driver.effectiveDrivers || 0) === 0 && (Math.abs(m.po || 0) > 0 || Math.abs(driver.tolls || driver.tollCost || 0) > 0));
 
-              let teamId = 'Unassigned Team';
-              let dispatcherId = 'Unassigned Dispatcher';
-
-              if (isStub) {
-                  teamId = driver.stub_team || 'Unassigned Team';
-                  dispatcherId = driver.stub_dispatcher || 'Unassigned Dispatcher';
-              } else {
-                  teamId = driver.teamId || driver.teamName || driver.team_name || driver.team || 'Unassigned Team';
-                  dispatcherId = driver.dispatcherId || driver.dispatcherName || driver.dispatcher_name || driver.dispatcher_id || driver.dispatcher || 'Unassigned Dispatcher';
-              }
+              let teamId = driver.teamId || driver.teamName || driver.team_name || driver.team || driver.stub_team || 'Unassigned Team';
+              let dispatcherId = driver.dispatcherId || driver.dispatcherName || driver.dispatcher_name || driver.dispatcher_id || driver.dispatcher || driver.stub_dispatcher || 'Unassigned Dispatcher';
 
               if (!teamId || String(teamId).trim().toLowerCase() === 'unassigned' || String(teamId).trim().toLowerCase() === 'null') teamId = 'Unassigned Team';
               if (!dispatcherId || String(dispatcherId).trim().toLowerCase() === 'unassigned' || String(dispatcherId).trim().toLowerCase() === 'null') dispatcherId = 'Unassigned Dispatcher';
@@ -409,20 +430,42 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
 
               const disp = team.dispatchers.get(dispatcherId);
 
-      let finalPnl = m.pnl;
-      if (m.franchisePnlCalculated) {
-          finalPnl -= m.franchisePnlCalculated;
-      }
+      const isLatest = (driver.payDate || '') === latestDatesByDriver.get(driver.name || 'Unknown');
+      let finalBalChange = isLatest ? (m.balChange || 0) : 0;
+      
+      let finalRevCol = m.revCol;
+      let finalFuelRebate = m.fuelRebate;
+      let finalWklyExp = m.wklyExp;
+      let finalPo = m.po;
+      let finalTolls = m.tolls;
+      let finalDispPay = m.dispPay;
+      let finalRecruiting = m.recruiting;
+      
+      let finalFranchiseRevCol = (m.franchiseRevCol || 0) - (m.balChange || 0) + finalBalChange;
+
+                  let finalPnl = m.pnl;
+                  if (m.franchisePnlCalculated) {
+                      finalPnl -= m.franchisePnlCalculated;
+                      if (selectedPayDate !== 'ALL') {
+                          finalRevCol -= finalFranchiseRevCol / 2;
+                          finalFuelRebate -= (m.franchiseFuelReb || 0) / 2;
+                          finalWklyExp -= (m.franchiseWklyExp || 0) / 2;
+                          finalPo -= (m.franchisePo || 0) / 2;
+                          finalTolls -= (m.franchiseTolls || 0) / 2;
+                          finalDispPay -= (m.franchiseDispPay || 0) / 2;
+                          finalRecruiting -= (m.franchiseRecruiting || 0) / 2;
+                      }
+                  }
       const pnl = finalPnl;
       const gross = driver.grossRevenue || (driver as any).driver_gross || 0;
       const margin = driver.marginAmount || 0;
-      const revColl = m.revCol;
-      const fuelRebate = m.fuelRebate;
-      const wklyExp = m.wklyExp;
-      const po = m.po;
-      const tolls = m.tolls;
-      const dispPay = m.dispPay;
-      const recruiting = m.recruiting;
+      const revColl = finalRevCol;
+      const fuelRebate = finalFuelRebate;
+      const wklyExp = finalWklyExp;
+      const po = finalPo;
+      const tolls = finalTolls;
+      const dispPay = finalDispPay;
+      const recruiting = finalRecruiting;
 
       const dispGrossPay = m.dispGrossAmt || 0;
       const dispMarginPay = m.dispMarginAmt || 0;
@@ -478,7 +521,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
           }
           stats.franchiseMetrics.gross += gross;
           stats.franchiseMetrics.margin += margin;
-          stats.franchiseMetrics.revColl += (m.franchiseRevCol || 0);
+          stats.franchiseMetrics.revColl += finalFranchiseRevCol;
           stats.franchiseMetrics.fuelRebate += (m.franchiseFuelReb || 0);
           stats.franchiseMetrics.wklyExp += (m.franchiseWklyExp || 0);
           stats.franchiseMetrics.po += (m.franchisePo || 0);
@@ -693,7 +736,7 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
       }));
       
     return { allDispatchers: allDispatchersResult, driverRanks };
-  }, [validDrivers, fixedExpenses, enrichedMap, pnlConfigs, poRules, excludeZeroGross]);
+  }, [drivers, selectedPayDate, searchTerm, tableFilters, fixedExpenses, enrichedMap, pnlConfigs, poRules, chartFilter, selectedMetrics]);
 
   const filteredDispatchers = allDispatchers.filter(disp => {
     if (searchTerm) {
@@ -829,9 +872,14 @@ const DispatcherTable: React.FC<DispatcherTableProps> = ({ drivers }) => {
              className="bg-zinc-900 border border-zinc-800 text-[11px] px-2 py-1 h-[26px] rounded text-zinc-300 focus:border-emerald-500 focus:outline-none cursor-pointer"
            >
              <option value="ALL">All Dates Combined</option>
-             {Array.from(new Set(drivers.map((d: any) => d.payDate).filter(Boolean))).sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime()).map((date: any) => (
-               <option key={date} value={date}>{date}</option>
-             ))}
+             {(() => {
+               const uniqueDates = Array.from(new Set(drivers.map((d: any) => d.payDate).filter(Boolean)));
+               const sortedDates = uniqueDates.sort((a: any, b: any) => new Date(b).getTime() - new Date(a).getTime());
+               const allowedDates = sortedDates.length > 6 ? sortedDates.slice(0, -6) : sortedDates;
+               return allowedDates.map((date: any) => (
+                 <option key={date} value={date}>{date}</option>
+               ));
+             })()}
            </select>
         </div>
         <div className="flex items-center gap-2 relative">

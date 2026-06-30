@@ -316,8 +316,34 @@ const Simulator: React.FC<SimulatorProps> = ({
       }
 
       setSimFuelRebate(match ? Number(match.amount || 0) : 0);
-    }
-  }, [activeSimulator, selectedContractSim, hasModified, fuelRebateRules, targetDate]);
+        }
+      }, [activeSimulator, selectedContractSim, hasModified, fuelRebateRules, targetDate]);
+
+      useEffect(() => {
+        if (activeSimulator === 'pnlCalculation' && !hasModified && activeDrivers.length > 0) {
+          const contracts = Array.from(new Set(activeDrivers.map(d => d.contractType)));
+          let commonDisabled: string[] | null = null;
+          
+          contracts.forEach(c => {
+            const contractDrivers = activeDrivers.filter(d => d.contractType === c).map(d => ({ ...d, contractType: d.originalContractType || d.contractType }));
+            const m = calculateMetrics(contractDrivers, false) || {};
+            const disabled = m.disabledPnlItems || [];
+            if (commonDisabled === null) {
+              commonDisabled = disabled;
+            } else {
+              commonDisabled = commonDisabled.filter(id => disabled.includes(id));
+            }
+          });
+          
+          const finalDisabled = commonDisabled || [];
+          const newToggles = PNL_ITEMS.map(i => i.id).filter(id => !finalDisabled.includes(id));
+          
+          setSimPnlToggles(prev => {
+            if (JSON.stringify(prev) === JSON.stringify(newToggles)) return prev;
+            return newToggles;
+          });
+        }
+      }, [activeSimulator, selectedContractSim, hasModified, activeDrivers, calculateMetrics]);
 
   const targetDateRecords = useMemo(() => {
     if (!targetDate) return [];
@@ -378,6 +404,23 @@ const Simulator: React.FC<SimulatorProps> = ({
   const rowLevelData = useMemo(() => {
     if (selectedContractSim === 'ALL' && activeSimulator !== 'fuelRebate' && activeSimulator !== 'pnlCalculation') return activeDrivers.map(d => ({ driver: d, isTarget: false }));
     
+    let groupDisabledItems: string[] = [];
+    if (activeSimulator === 'pnlCalculation' && activeDrivers.length > 0) {
+      const contracts = Array.from(new Set(activeDrivers.map(d => d.contractType)));
+      let commonDisabled: string[] | null = null;
+      contracts.forEach(c => {
+        const contractDrivers = activeDrivers.filter(d => d.contractType === c);
+        const m = calculateMetrics(contractDrivers, false) || {};
+        const disabled = m.disabledPnlItems || [];
+        if (commonDisabled === null) {
+          commonDisabled = disabled;
+        } else {
+          commonDisabled = commonDisabled.filter(id => disabled.includes(id));
+        }
+      });
+      groupDisabledItems = commonDisabled || [];
+    }
+
     const currentConfig = [...(configContracts || [])]
       .filter(c => c.contract_type === selectedContractSim)
       .sort((a, b) => new Date(b.valid_from).getTime() - new Date(a.valid_from).getTime())[0];
@@ -456,27 +499,44 @@ const Simulator: React.FC<SimulatorProps> = ({
         activePnlImpact = newFR - oldFR;
         totalDiffDollars = 0;
       } else if (activeSimulator === 'pnlCalculation') {
-            const m = driver.metrics || {};
+            const m = calculateMetrics([driver], false) || {};
+            const dm = driver.metrics || {};
+            const disabledItems = groupDisabledItems;
             
-            const rev = Number(m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay !== undefined ? m.companyPay : (driver.companyPay || 0))) || 0;
-            const fr = Number(m.pnlFuelRebate !== undefined ? m.pnlFuelRebate : (m.fuelRebate !== undefined ? m.fuelRebate : (driver.fuelRebate || driver.fuel_rebate || 0))) || 0;
+            const rev = Number(disabledItems.includes('revenue_collected') ? (dm.revenue_collected !== undefined ? dm.revenue_collected : (driver.revenue_collected !== undefined ? driver.revenue_collected : (dm.companyPay !== undefined ? dm.companyPay : (driver.companyPay || 0)))) : (m.pnlRevenueCollected !== undefined ? m.pnlRevenueCollected : (m.revenue_collected !== undefined ? m.revenue_collected : (m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay || 0)))));
+            const fr = Number(disabledItems.includes('fuel_rebate') ? (dm.fuelRebate || dm.fuel_rebate || driver.fuelRebate || driver.fuel_rebate || 0) : (m.pnlFuelRebate !== undefined ? m.pnlFuelRebate : (m.fuelRebate !== undefined ? m.fuelRebate : (m.fuel_rebate || 0))));
             
-            let disp = Number((m.pnlDispGrossAmount || 0) + (m.pnlDispMarginAmount || 0) + (m.pnlDispFixedAmount || 0)) || 0;
-            if (disp === 0) disp = Number(m.dispatcherPay !== undefined ? m.dispatcherPay : (driver.dispatcherCommission || 0)) || 0;
+           const dGross = Number(driver.dispGrossAmount || 0);
+            const dMarg = Number(driver.dispMarginAmount || 0);
+            const dFixed = Number(driver.dispFixedAmount || 0);
+            const disp = dGross + dMarg + dFixed;
             
-            const fixed = Number(m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed !== undefined ? m.allocatedFixed : (driver.calculatedFixedCost !== undefined ? driver.calculatedFixedCost : (driver.weeklyExpenses || driver.weekly_expenses || 0)))) || 0;
-            const po = Number(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov !== undefined ? m.totalPOCov : (m.poCoverage !== undefined ? m.poCoverage : (driver.poCoverage !== undefined ? driver.poCoverage : (m.poAmount !== undefined ? m.poAmount : (driver.poAmount !== undefined ? driver.poAmount : (m.po_amount !== undefined ? m.po_amount : (driver.po_amount !== undefined ? driver.po_amount : (m.po !== undefined ? m.po : (driver.po || 0)))))))))) || 0;
-            const tolls = Number(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls !== undefined ? m.tolls : (driver.tolls !== undefined ? driver.tolls : (driver.tollCost || 0)))) || 0;
-            const rec = Number(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting !== undefined ? m.totalRecruiting : (driver.recruitingCost !== undefined ? driver.recruitingCost : (driver.recruiting || 0)))) || 0;
+            const fixed = Number(disabledItems.includes('weekly_expenses') ? (dm.allocatedFixed || dm.calculatedFixedCost || driver.calculatedFixedCost || driver.weeklyExpenses || driver.weekly_expenses || 0) : (m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed !== undefined ? m.allocatedFixed : (m.calculatedFixedCost !== undefined ? m.calculatedFixedCost : (m.weeklyExpenses !== undefined ? m.weeklyExpenses : (m.weekly_expenses || 0))))));
+            
+            const po = Math.abs(Number(disabledItems.includes('po') ? (dm.poCoverage || dm.poAmount || dm.po_amount || dm.po || driver.poCoverage || driver.poAmount || driver.po_amount || driver.po || 0) : (m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov !== undefined ? m.totalPOCov : (m.poCoverage !== undefined ? m.poCoverage : (m.poAmount !== undefined ? m.poAmount : (m.po_amount !== undefined ? m.po_amount : (m.po || 0))))))));
+            
+            const tolls = Math.abs(Number(disabledItems.includes('tolls') ? (dm.tolls || driver.tolls || driver.tollCost || 0) : (m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls !== undefined ? m.tolls : (m.tollCost || 0)))));
+            
+            const rec = Math.abs(Number(disabledItems.includes('recruiting') ? (dm.totalRecruiting || dm.recruitingCost || dm.recruiting || driver.recruitingCost || driver.recruiting || 0) : (m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting !== undefined ? m.totalRecruiting : (m.recruitingCost !== undefined ? m.recruitingCost : (m.recruiting || 0))))));
 
             let impact = 0;
-            if (!simPnlToggles.includes('revenue_collected')) impact -= rev;
-            if (!simPnlToggles.includes('fuel_rebate')) impact -= fr;
-            if (!simPnlToggles.includes('dispatcher_pay')) impact -= disp;
-            if (!simPnlToggles.includes('weekly_expenses')) impact += fixed;
-            if (!simPnlToggles.includes('po')) impact += Math.abs(po);
-            if (!simPnlToggles.includes('tolls')) impact += Math.abs(tolls);
-            if (!simPnlToggles.includes('recruiting')) impact += Math.abs(rec);
+            
+            if (hasModified) {
+                if (!disabledItems.includes('revenue_collected') && !simPnlToggles.includes('revenue_collected')) impact -= rev;
+                if (disabledItems.includes('revenue_collected') && simPnlToggles.includes('revenue_collected')) impact += rev;
+                if (!disabledItems.includes('fuel_rebate') && !simPnlToggles.includes('fuel_rebate')) impact -= fr;
+                if (disabledItems.includes('fuel_rebate') && simPnlToggles.includes('fuel_rebate')) impact += fr;
+                if (!disabledItems.includes('dispatcher_pay') && !simPnlToggles.includes('dispatcher_pay')) impact += Math.abs(disp);
+                if (disabledItems.includes('dispatcher_pay') && simPnlToggles.includes('dispatcher_pay')) impact -= Math.abs(disp);
+                if (!disabledItems.includes('weekly_expenses') && !simPnlToggles.includes('weekly_expenses')) impact += Math.abs(fixed);
+                if (disabledItems.includes('weekly_expenses') && simPnlToggles.includes('weekly_expenses')) impact -= Math.abs(fixed);
+                if (!disabledItems.includes('po') && !simPnlToggles.includes('po')) impact += Math.abs(po);
+                if (disabledItems.includes('po') && simPnlToggles.includes('po')) impact -= Math.abs(po);
+                if (!disabledItems.includes('tolls') && !simPnlToggles.includes('tolls')) impact += Math.abs(tolls);
+                if (disabledItems.includes('tolls') && simPnlToggles.includes('tolls')) impact -= Math.abs(tolls);
+                if (!disabledItems.includes('recruiting') && !simPnlToggles.includes('recruiting')) impact += Math.abs(rec);
+                if (disabledItems.includes('recruiting') && simPnlToggles.includes('recruiting')) impact -= Math.abs(rec);
+            }
 
             activeOldPercent = 'N/A';
             activeNewPercent = 'N/A';
@@ -484,6 +544,7 @@ const Simulator: React.FC<SimulatorProps> = ({
             activeNewDollars = impact;
             activePnlImpact = impact;
             totalDiffDollars = 0;
+          
           } else if (activeSimulator === 'revenueSplits') {
         const isFran = driver.contractType === 'TPOG WITH FRANCHISE';
         const newC = isFran ? (hasModified ? simCompanyTakeFran : oldCompTakeFran) : (hasModified ? simCompanyTake : oldCompTake);
@@ -782,7 +843,7 @@ const Simulator: React.FC<SimulatorProps> = ({
           newTakeRatio
       };
     });
-  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, simCompanyTakeFran, simMarginTakeFran, simDispatcherTakeFran, simDispatcherMarginTakeFran, simCalcTypeFran, simFuelRebate, configContracts, fuelRebateRules, targetDate, simPnlToggles]);
+  }, [activeDrivers, targetDateRecords, hasModified, activeSimulator, baseRate, enableWeeksOut, weeksOutTiers, weeksOutWeeklyMileage, enableSafety, safetyScoreBonus, safetyScoreThreshold, safetyScoreMileageThreshold, safetyBonusForfeitedOnSpeeding, enableSpeeding, speedingRangeTiers, enableGrossTarget, grossTargetTiers, enableTenure, tenureMilestones, enableFuel, fuelMpgRules, selectedContractSim, simCompanyTake, simMarginTake, simDispatcherTake, simDispatcherMarginTake, simCalcType, simCompanyTakeFran, simMarginTakeFran, simDispatcherTakeFran, simDispatcherMarginTakeFran, simCalcTypeFran, simFuelRebate, configContracts, fuelRebateRules, targetDate, simPnlToggles, calculateMetrics]);
 
   const processedData = useMemo(() => {
     const rawData = rowLevelData.filter(d => d.isTarget);
@@ -899,46 +960,54 @@ const Simulator: React.FC<SimulatorProps> = ({
 
   const simulatedCalculateMetrics = React.useCallback((groupDrivers: any[], isDriverView?: boolean) => {
       const m = { ...calculateMetrics(groupDrivers, isDriverView) };
-      if (activeSimulator === 'pnlCalculation') {
+      if (activeSimulator === 'pnlCalculation' && hasModified) {
           const toggles = simPnlToggles;
+          const disabledItems = m.disabledPnlItems || [];
           let newNetIncome = m.netIncome || 0;
           
-          if (!toggles.includes('revenue_collected')) { 
-              newNetIncome -= (m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay || 0));
-              m.pnlCompanyPay = 0; m.companyPay = 0; 
-          }
-          if (!toggles.includes('fuel_rebate')) { 
-              newNetIncome -= (m.pnlFuelRebate !== undefined ? m.pnlFuelRebate : (m.fuelRebate !== undefined ? m.fuelRebate : (m.fuel_rebate || 0)));
-              m.pnlFuelRebate = 0; m.fuelRebate = 0; m.fuel_rebate = 0;
-          }
-          if (!toggles.includes('dispatcher_pay')) { 
-              let disp = Number((m.pnlDispGrossAmount || 0) + (m.pnlDispMarginAmount || 0) + (m.pnlDispFixedAmount || 0)) || 0;
-              if (disp === 0) disp = Number(m.dispatcherPay || 0);
-              newNetIncome -= disp;
-              m.pnlDispGrossAmount = 0; m.pnlDispMarginAmount = 0; m.pnlDispFixedAmount = 0; m.dispatcherPay = 0; m.dispatcherCommission = 0;
-          }
-          if (!toggles.includes('weekly_expenses')) { 
-              newNetIncome += (m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed !== undefined ? m.allocatedFixed : (m.calculatedFixedCost !== undefined ? m.calculatedFixedCost : (m.weeklyExpenses !== undefined ? m.weeklyExpenses : (m.weekly_expenses || 0)))));
-              m.pnlAllocatedFixed = 0; m.allocatedFixed = 0; m.calculatedFixedCost = 0; m.weeklyExpenses = 0; m.weekly_expenses = 0; 
-          }
-          if (!toggles.includes('po')) { 
-              newNetIncome += Math.abs(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov !== undefined ? m.totalPOCov : (m.poCoverage !== undefined ? m.poCoverage : (m.poAmount !== undefined ? m.poAmount : (m.po_amount !== undefined ? m.po_amount : (m.po || 0))))));
-              m.pnlTotalPOCov = 0; m.totalPOCov = 0; m.poCoverage = 0; m.poAmount = 0; m.po_amount = 0; m.po = 0; 
-          }
-          if (!toggles.includes('tolls')) { 
-              newNetIncome += Math.abs(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls !== undefined ? m.tolls : (m.tollCost || 0)));
-              m.pnlTolls = 0; m.tolls = 0; m.tollCost = 0; 
-          }
-          if (!toggles.includes('recruiting')) { 
-              newNetIncome += Math.abs(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting !== undefined ? m.totalRecruiting : (m.recruitingCost !== undefined ? m.recruitingCost : (m.recruiting || 0))));
-              m.pnlTotalRecruiting = 0; m.totalRecruiting = 0; m.recruitingCost = 0; m.recruiting = 0; 
-          }
+          const rev = Number(m.pnlRevenueCollected !== undefined ? m.pnlRevenueCollected : (m.revenue_collected !== undefined ? m.revenue_collected : (m.pnlCompanyPay !== undefined ? m.pnlCompanyPay : (m.companyPay || 0))));
+          if (!disabledItems.includes('revenue_collected') && !toggles.includes('revenue_collected')) newNetIncome -= rev;
+          if (disabledItems.includes('revenue_collected') && toggles.includes('revenue_collected')) newNetIncome += rev;
+          if (!toggles.includes('revenue_collected')) { m.pnlRevenueCollected = 0; m.revenue_collected = 0; m.pnlCompanyPay = 0; m.companyPay = 0; }
+          
+          const fr = Number(m.pnlFuelRebate !== undefined ? m.pnlFuelRebate : (m.fuelRebate !== undefined ? m.fuelRebate : (m.fuel_rebate || 0)));
+          if (!disabledItems.includes('fuel_rebate') && !toggles.includes('fuel_rebate')) newNetIncome -= fr;
+          if (disabledItems.includes('fuel_rebate') && toggles.includes('fuel_rebate')) newNetIncome += fr;
+          if (!toggles.includes('fuel_rebate')) { m.pnlFuelRebate = 0; m.fuelRebate = 0; m.fuel_rebate = 0; }
+          
+          const dGross = Number(m.dispGrossAmount || 0);
+          const dMarg = Number(m.dispMarginAmount || 0);
+          const dFixed = Number(m.dispFixedAmount || 0);
+          const disp = Math.abs(dGross + dMarg + dFixed);
+          if (!disabledItems.includes('dispatcher_pay') && !toggles.includes('dispatcher_pay')) newNetIncome += disp;
+          if (disabledItems.includes('dispatcher_pay') && toggles.includes('dispatcher_pay')) newNetIncome -= disp;
+          if (!toggles.includes('dispatcher_pay')) { m.pnlDispGrossAmount = 0; m.pnlDispMarginAmount = 0; m.pnlDispFixedAmount = 0; m.dispatcherPay = Number(m.dispSharedLiability || 0); m.dispatcherCommission = Number(m.dispSharedLiability || 0); }
+          
+          const fixed = Number(m.pnlAllocatedFixed !== undefined ? m.pnlAllocatedFixed : (m.allocatedFixed !== undefined ? m.allocatedFixed : (m.calculatedFixedCost !== undefined ? m.calculatedFixedCost : (m.weeklyExpenses !== undefined ? m.weeklyExpenses : (m.weekly_expenses || 0)))));
+          if (!disabledItems.includes('weekly_expenses') && !toggles.includes('weekly_expenses')) newNetIncome += fixed;
+          if (disabledItems.includes('weekly_expenses') && toggles.includes('weekly_expenses')) newNetIncome -= fixed;
+          if (!toggles.includes('weekly_expenses')) { m.pnlAllocatedFixed = 0; m.allocatedFixed = 0; m.calculatedFixedCost = 0; m.weeklyExpenses = 0; m.weekly_expenses = 0; }
+          
+          const po = Math.abs(m.pnlTotalPOCov !== undefined ? m.pnlTotalPOCov : (m.totalPOCov !== undefined ? m.totalPOCov : (m.poCoverage !== undefined ? m.poCoverage : (m.poAmount !== undefined ? m.poAmount : (m.po_amount !== undefined ? m.po_amount : (m.po || 0))))));
+          if (!disabledItems.includes('po') && !toggles.includes('po')) newNetIncome += po;
+          if (disabledItems.includes('po') && toggles.includes('po')) newNetIncome -= po;
+          if (!toggles.includes('po')) { m.pnlTotalPOCov = 0; m.totalPOCov = 0; m.poCoverage = 0; m.poAmount = 0; m.po_amount = 0; m.po = 0; }
+          
+          const tolls = Math.abs(m.pnlTolls !== undefined ? m.pnlTolls : (m.tolls !== undefined ? m.tolls : (m.tollCost || 0)));
+          if (!disabledItems.includes('tolls') && !toggles.includes('tolls')) newNetIncome += tolls;
+          if (disabledItems.includes('tolls') && toggles.includes('tolls')) newNetIncome -= tolls;
+          if (!toggles.includes('tolls')) { m.pnlTolls = 0; m.tolls = 0; m.tollCost = 0; }
+          
+          const rec = Math.abs(m.pnlTotalRecruiting !== undefined ? m.pnlTotalRecruiting : (m.totalRecruiting !== undefined ? m.totalRecruiting : (m.recruitingCost !== undefined ? m.recruitingCost : (m.recruiting || 0))));
+          if (!disabledItems.includes('recruiting') && !toggles.includes('recruiting')) newNetIncome += rec;
+          if (disabledItems.includes('recruiting') && toggles.includes('recruiting')) newNetIncome -= rec;
+          if (!toggles.includes('recruiting')) { m.pnlTotalRecruiting = 0; m.totalRecruiting = 0; m.recruitingCost = 0; m.recruiting = 0; }
           
           m.disabledPnlItems = PNL_ITEMS.map(i => i.id).filter(i => !toggles.includes(i));
           m.netIncome = newNetIncome;
       }
       return m;
-  }, [calculateMetrics, activeSimulator, simPnlToggles, PNL_ITEMS]);
+  }, [calculateMetrics, activeSimulator, simPnlToggles, PNL_ITEMS, hasModified]);
 
   const formatMoney = (val: number) => {
     return val < 0 ? `-$${Math.abs(val).toFixed(2)}` : `$${val.toFixed(2)}`;
@@ -1526,13 +1595,7 @@ const Simulator: React.FC<SimulatorProps> = ({
                         </th>
                       </>
                     ) : activeSimulator === 'pnlCalculation' ? (
-                      <>
-                        <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors">
-                        </th>
-                        <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('activeNewDollars')}>
-                          IMPACT {sortConfig.key === 'activeNewDollars' && (sortConfig.direction === 'asc' ? '↑' : '↓')}
-                        </th>
-                      </>
+                      <></>
                     ) : (
                       <>
                         <th className="py-2 px-1 font-medium text-right cursor-pointer hover:text-white transition-colors" onClick={() => handleSort('activeOldPercent')}>
@@ -1569,15 +1632,7 @@ const Simulator: React.FC<SimulatorProps> = ({
                           </td>
                         </>
                       ) : activeSimulator === 'pnlCalculation' ? (
-                        <>
-                          <td className="py-2 px-1 text-right font-mono whitespace-nowrap">
-                          </td>
-                          <td className="py-2 px-1 text-right font-mono whitespace-nowrap">
-                            <span className={Number(d.activeNewDollars) > 0 ? 'text-emerald-400 font-bold' : Number(d.activeNewDollars) < 0 ? 'text-rose-400 font-bold' : 'text-zinc-500 font-bold'}>
-                              {Number(d.activeNewDollars) > 0 ? '+' : ''}{formatMoney(d.activeNewDollars)}
-                            </span>
-                          </td>
-                        </>
+                        <></>
                       ) : (
                         <>
                           <td className="py-2 px-1 text-right font-mono whitespace-nowrap">

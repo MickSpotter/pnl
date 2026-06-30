@@ -69,7 +69,7 @@ export default function DriverSettings({ onClose, settings, onSave, contracts = 
   };
 
   return (
-    <div className="fixed inset-0 bg-black/60 z-[999] flex items-center justify-center p-4">
+   <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-[999999] flex items-center justify-center p-4">
       <div className="bg-zinc-950 border border-zinc-800 rounded-lg shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col">
         <div className="p-4 border-b border-zinc-800 flex justify-between items-center bg-zinc-900/50">
           <h2 className="text-base font-bold text-zinc-200">Diagnosis Custom Rules</h2>
